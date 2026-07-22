@@ -1,0 +1,155 @@
+{
+  "app_name": "Gandhikar",
+  "personality": "3 Editorial Mobile LIGHT",
+  "personality_one_liner": "A dignified, empowering, and accessible interface that uses an Indian-inspired civic palette and editorial structure to evoke calm strength and wisdom.",
+  "color": {
+    "surface": "#FDFBF7",
+    "onSurface": "#1A202C",
+    "surfaceSecondary": "#F4F1EA",
+    "onSurfaceSecondary": "#374151",
+    "surfaceTertiary": "#EAE4D9",
+    "onSurfaceTertiary": "#4B5563",
+    "surfaceInverse": "#1A202C",
+    "onSurfaceInverse": "#FDFBF7",
+    "brand": "#0A1C3A",
+    "brandPrimary": "#0A1C3A",
+    "onBrandPrimary": "#FDFBF7",
+    "brandSecondary": "#C65D3B",
+    "onBrandSecondary": "#FDFBF7",
+    "brandTertiary": "#4B6F54",
+    "onBrandTertiary": "#FDFBF7",
+    "success": "#2D6A4F",
+    "onSuccess": "#FDFBF7",
+    "warning": "#D97706",
+    "onWarning": "#FDFBF7",
+    "error": "#B91C1C",
+    "onError": "#FDFBF7",
+    "info": "#1E40AF",
+    "onInfo": "#FDFBF7",
+    "border": "#D1D5DB",
+    "borderStrong": "#9CA3AF",
+    "divider": "#E5E7EB"
+  },
+  "typography": {
+    "displayFontFamily": "Libre Baskerville",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous editorial rhythm with large breathing room; ample padding around content to support accessibility and low-literacy users.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [],
+    "dont's": [
+      "No glassmorphism. Use solid editorial surfaces and warm parchment tones for depth. Keep UI extremely plain and high-contrast for accessibility."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "Primary voice AI interface where users can ask legal questions, with a prominent microphone and quick access to critical rights.",
+      "states": {
+        "loading": "Subtle waveform pulsing or Ashoka wheel spin indicating listening/processing.",
+        "empty": "Large 'Tap to Speak' visual instruction with a dignified abstract illustration.",
+        "error": "Clear 'Try again' text with a prominent retry button."
+      },
+      "layout": "Large voice interaction area prominently placed in the center or bottom thumb zone. Below the voice interface, a horizontally scrolling or simple grid of 'Know Your Rights' scannable cards. Use massive touch targets."
+    },
+    {
+      "name": "Know Your Rights",
+      "purpose": "Categorized legal rights (e.g., Police Stop, FIR filing) broken into scannable, digestible editorial cards.",
+      "states": {
+        "loading": "Skeleton list with editorial spacing.",
+        "empty": "No topics found message.",
+        "error": "Failed to load topics with a retry action."
+      },
+      "layout": "Editorial list with large serif typography for headings, clear Phosphor icons, and ample white space. Content is chunked into small, scannable sections."
+    },
+    {
+      "name": "Chat History",
+      "purpose": "Access past questions and exact BNS/Constitution quotes for quick retrieval.",
+      "states": {
+        "loading": "Skeleton list items.",
+        "empty": "Illustration of scales of justice with text 'No past questions yet'.",
+        "error": "Failed to load history with retry button."
+      },
+      "layout": "Simple vertical list with dates and high-contrast text snippets. Tapping an item opens the full editorial view of the legal quote."
+    },
+    {
+      "name": "Settings & Profile",
+      "purpose": "Manage language selection (crucial for this app), voice preferences, and emergency contacts.",
+      "states": {
+        "loading": "Spinner centered.",
+        "empty": "N/A",
+        "error": "Failed to load profile."
+      },
+      "layout": "Single column list. Very large, clear toggle controls and language selection buttons for low-literacy accessibility."
+    }
+  ],
+  "images": {
+    "mahatma_gandhi_statue": {
+      "url": "https://images.pexels.com/photos/37982431/pexels-photo-37982431.jpeg",
+      "alt": "A bronze statue of Mahatma Gandhi with a spinning wheel, adorned with flowers, in a public square with people around."
+    },
+    "indian_flag_ashoka": {
+      "url": "https://images.pexels.com/photos/13214707/pexels-photo-13214707.jpeg",
+      "alt": "Vibrant Indian flag featuring the Ashoka Chakra, symbolizing patriotism and national pride."
+    },
+    "scales_of_justice": {
+      "url": "https://images.unsplash.com/photo-1768839719921-6a554fb3e847?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwyfHxzY2FsZXMlMjBvZiUyMGp1c3RpY2UlMjBicm9uemV8ZW58MHx8fHwxNzg0NzU3OTUxfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Statue of justice holding scales against blue background"
+    },
+    "parliament_building": {
+      "url": "https://images.pexels.com/photos/19883686/pexels-photo-19883686.jpeg",
+      "alt": "View of Rashtrapati Bhavan in New Delhi with manicured gardens and sunrise sky."
+    },
+    "preamble_abstract": {
+      "url": "https://images.unsplash.com/photo-1585752016136-9e69e158b8cb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzd8MHwxfHNlYXJjaHwxfHxpbmRpYW4lMjBjb25zdGl0dXRpb24lMjBwcmVhbWJsZSUyMGFic3RyYWN0fGVufDB8fHx8MTc4NDc1NzkzN3ww&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract text representing the constitution preamble"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Emphasize accessibility: Use large typography, clear visual hierarchy, and massive touch targets for the primary voice interactions, as the user base may have low literacy.",
+    "Implement plain language and clear labels throughout the UI, with support for 22 languages via clear language toggles in Settings/Profile.",
+    "Use Libre Baskerville for headings (evoking the Constitution and dignity) and Plus Jakarta Sans for body text (usability and scanning).",
+    "Do not use generic 'AI' icons like brains or sparkles; use dignified abstractions or clean UI feedback (waveforms, Ashoka wheel inspired loader) for the voice assistant.",
+    "The color palette incorporates a dignified Ashoka Navy (#0A1C3A), Saffron (#C65D3B), and Ashoka Green (#4B6F54) selectively to evoke an Indian civic identity without being overly saturated. Keep the background in warm surface (Khadi white) for an editorial feel.",
+    "The Home screen must prominently feature a large voice recording button (mic) in the thumb zone for easy access, paired with waveform feedback during listening states.",
+    "Apply gradient-to-dark scrims (top-to-bottom transparent to >=70% surfaceInverse) any time text is rendered on imagery."
+  ]
+}
