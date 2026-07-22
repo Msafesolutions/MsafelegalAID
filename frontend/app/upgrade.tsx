@@ -22,6 +22,7 @@ export default function Upgrade() {
   const [pricing, setPricing] = useState<Pricing | null>(null);
   const [loading, setLoading] = useState(false);
   const [checkingReturn, setCheckingReturn] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/billing/pricing`).then(r => r.json()).then(setPricing).catch(() => {});
@@ -43,6 +44,7 @@ export default function Upgrade() {
 
   const upgrade = useCallback(async () => {
     if (!token) return;
+    setErrorMsg(null);
     setLoading(true);
     try {
       const returnUrl = Linking.createURL('/upgrade');
@@ -52,8 +54,9 @@ export default function Upgrade() {
         body: JSON.stringify({ return_url: returnUrl }),
       });
       const data = await r.json();
-      if (data.already_pro) { await refreshUser(); Alert.alert('Already Pro', 'You already have Pro access.'); return; }
-      if (!data.url) throw new Error(data.detail || 'Failed to create checkout');
+      if (!r.ok) throw new Error(data.detail || `Checkout failed (HTTP ${r.status})`);
+      if (data.already_pro) { await refreshUser(); setErrorMsg('You already have Pro access.'); return; }
+      if (!data.url) throw new Error('Failed to create checkout session');
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, returnUrl);
       if (result.type === 'success' && result.url && data.session_id) {
@@ -65,7 +68,9 @@ export default function Upgrade() {
         if (v.is_pro) { await refreshUser(); Alert.alert('Welcome to Pro', 'Your account is now Pro.'); }
       }
     } catch (e: any) {
-      Alert.alert('Upgrade failed', e?.message || 'Please try again');
+      const msg = e?.message || 'Please try again';
+      setErrorMsg(msg);
+      if (Platform.OS !== 'web') Alert.alert('Upgrade failed', msg);
     } finally {
       setLoading(false);
     }
@@ -127,21 +132,29 @@ export default function Upgrade() {
             <Text style={styles.alreadyProText}>You are already a Pro member</Text>
           </View>
         ) : (
-          <Pressable
-            testID="upgrade-cta-button"
-            style={[styles.cta, (loading || checkingReturn) && { opacity: 0.6 }]}
-            disabled={loading || checkingReturn}
-            onPress={upgrade}
-          >
-            {loading || checkingReturn ? (
-              <ActivityIndicator color={theme.colors.onBrandPrimary} />
-            ) : (
-              <>
-                <Ionicons name="star" size={18} color={theme.colors.onBrandPrimary} />
-                <Text style={styles.ctaText}>Upgrade to Pro {pricing ? `— ${pricing.pro_price_label}` : ''}</Text>
-              </>
+          <>
+            {errorMsg && (
+              <View testID="upgrade-error" style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={18} color={theme.colors.error} />
+                <Text style={styles.errorText}>{errorMsg}</Text>
+              </View>
             )}
-          </Pressable>
+            <Pressable
+              testID="upgrade-cta-button"
+              style={[styles.cta, (loading || checkingReturn) && { opacity: 0.6 }]}
+              disabled={loading || checkingReturn}
+              onPress={upgrade}
+            >
+              {loading || checkingReturn ? (
+                <ActivityIndicator color={theme.colors.onBrandPrimary} />
+              ) : (
+                <>
+                  <Ionicons name="star" size={18} color={theme.colors.onBrandPrimary} />
+                  <Text style={styles.ctaText}>Upgrade to Pro {pricing ? `— ${pricing.pro_price_label}` : ''}</Text>
+                </>
+              )}
+            </Pressable>
+          </>
         )}
 
         <Text style={styles.footer}>Powered by Stripe · Secured payments · Refunds at sole discretion of Msafe.</Text>
@@ -187,4 +200,6 @@ const styles = StyleSheet.create({
   alreadyPro: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.sm, padding: theme.spacing.lg, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, marginTop: theme.spacing.xl, borderWidth: 1, borderColor: theme.colors.brandSecondary },
   alreadyProText: { color: theme.colors.brand, fontWeight: '700' },
   footer: { textAlign: 'center', color: theme.colors.onSurfaceTertiary, marginTop: theme.spacing.lg, fontSize: 11 },
+  errorBox: { flexDirection: 'row', gap: 8, alignItems: 'center', padding: theme.spacing.md, backgroundColor: '#FEE2E2', borderColor: theme.colors.error, borderWidth: 1, borderRadius: theme.radius.md, marginTop: theme.spacing.lg },
+  errorText: { flex: 1, color: theme.colors.error, fontSize: 13, fontWeight: '600' },
 });
