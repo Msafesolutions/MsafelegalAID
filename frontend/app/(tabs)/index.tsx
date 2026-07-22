@@ -18,7 +18,8 @@ const SUGGESTIONS = [
 ];
 
 export default function ChatScreen() {
-  const { token, language, model } = useAuth();
+  const { token, user, language, model } = useAuth();
+  const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -26,10 +27,19 @@ export default function ChatScreen() {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [showBanner, setShowBanner] = useState(true);
   const scrollRef = useRef<ScrollView>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
+  // Configure audio mode ONCE for playback through the loudspeaker (not earpiece).
   useEffect(() => {
+    (async () => {
+      try {
+        if (Platform.OS !== 'web') {
+          await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+        }
+      } catch {}
+    })();
     return () => { Speech.stop(); };
   }, []);
 
