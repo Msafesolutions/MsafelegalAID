@@ -84,6 +84,11 @@ export default function Settings() {
           </Text>
         </View>
 
+        <View testID="copyright-block" style={styles.copyBlock}>
+          <Text style={styles.copyLine}>© {new Date().getFullYear()} Callistus Moses</Text>
+          <Text style={styles.copySub}>An Msafe product · All rights reserved</Text>
+        </View>
+
         <Pressable testID="logout-button" style={styles.logoutBtn} onPress={confirmLogout}>
           <Ionicons name="log-out-outline" size={20} color={theme.colors.error} />
           <Text style={styles.logoutText}>Sign out</Text>
@@ -171,6 +176,9 @@ const styles = StyleSheet.create({
   aboutText: { color: theme.colors.onSurfaceSecondary, lineHeight: 22, fontSize: 13 },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: theme.spacing.lg, marginTop: theme.spacing.xl, borderWidth: 1, borderColor: theme.colors.error, borderRadius: theme.radius.md },
   logoutText: { color: theme.colors.error, fontWeight: '700' },
+  copyBlock: { alignItems: 'center', marginTop: theme.spacing.xl, paddingVertical: theme.spacing.lg },
+  copyLine: { color: theme.colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  copySub: { color: theme.colors.onSurfaceTertiary, fontSize: 11, marginTop: 2, letterSpacing: 0.5 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: theme.colors.surface, borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, padding: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: theme.colors.border, alignSelf: 'center', marginBottom: theme.spacing.md },

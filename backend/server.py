@@ -491,11 +491,15 @@ async def get_topic(topic_id: str):
 
 @api.get("/health")
 async def health():
-    return {"status": "ok", "app": "Gandhikar"}
+    return {"status": "ok", "app": "Gandhikar", "copyright": "© Callistus Moses", "company": "Msafe"}
 
 @api.get("/")
 async def root():
-    return {"message": "Gandhikar API - Empowering every Indian citizen with knowledge of their rights."}
+    return {
+        "message": "Gandhikar API - Empowering every Indian citizen with knowledge of their rights.",
+        "copyright": "© Callistus Moses",
+        "company": "Msafe",
+    }
 
 # Mount router
 app.include_router(api)

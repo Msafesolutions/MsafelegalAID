@@ -61,6 +61,7 @@ export default function Signup() {
               </Link>
             </View>
           </View>
+          <Text testID="signup-copyright" style={styles.copyright}>© {new Date().getFullYear()} Callistus Moses · An Msafe product</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -82,4 +83,5 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'center', marginTop: theme.spacing.lg },
   link: { color: theme.colors.brandSecondary, fontWeight: '700' },
   error: { color: theme.colors.error, marginTop: theme.spacing.md },
+  copyright: { textAlign: 'center', color: '#8A93A6', marginTop: theme.spacing.xl, fontSize: 11, letterSpacing: 0.5 },
 });

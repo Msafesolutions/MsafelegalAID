@@ -33,7 +33,20 @@ def auth_headers(token):
 def test_health():
     r = requests.get(f"{API}/health", timeout=15)
     assert r.status_code == 200
-    assert r.json().get("status") == "ok"
+    j = r.json()
+    assert j.get("status") == "ok"
+    # Copyright / Company attribution (iteration 2)
+    assert j.get("copyright") == "© Callistus Moses", j
+    assert j.get("company") == "Msafe", j
+
+
+def test_root_has_copyright_and_company():
+    r = requests.get(f"{API}/", timeout=15)
+    assert r.status_code == 200
+    j = r.json()
+    assert j.get("copyright") == "© Callistus Moses", j
+    assert j.get("company") == "Msafe", j
+    assert "Gandhikar" in j.get("message", "")
 
 
 # --- Auth ---

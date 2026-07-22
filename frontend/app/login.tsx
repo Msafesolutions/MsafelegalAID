@@ -76,6 +76,7 @@ export default function Login() {
           </View>
 
           <Text style={styles.footer}>सत्य • अहिंसा • अधिकार</Text>
+          <Text testID="login-copyright" style={styles.copyright}>© {new Date().getFullYear()} Callistus Moses · An Msafe product</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -98,4 +99,5 @@ const styles = StyleSheet.create({
   link: { color: theme.colors.brandSecondary, fontWeight: '700' },
   error: { color: theme.colors.error, marginTop: theme.spacing.md },
   footer: { textAlign: 'center', color: theme.colors.brandSecondary, marginTop: theme.spacing.xxl, letterSpacing: 2 },
+  copyright: { textAlign: 'center', color: '#8A93A6', marginTop: theme.spacing.md, fontSize: 11, letterSpacing: 0.5 },
 });
