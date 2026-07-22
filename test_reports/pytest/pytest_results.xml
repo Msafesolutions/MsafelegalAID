@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="9" time="14.619" timestamp="2026-07-22T22:16:33.707156+00:00" hostname="agent-env-cc98f4d0-4ddf-40ed-bad3-f66fb6abbbcb"><testcase classname="tests.test_gandhikar_api" name="test_health" time="0.323" /><testcase classname="tests.test_gandhikar_api" name="test_login_wrong_password" time="0.313" /><testcase classname="tests.test_gandhikar_api" name="test_auth_me" time="0.511" /><testcase classname="tests.test_gandhikar_api" name="test_register_new_user_returns_token" time="0.316"><failure message="AssertionError: assert 'test_new_178...@gandhikar.in' == 'TEST_new_178...@gandhikar.in'&#10;  &#10;  - TEST_new_1784758595122@gandhikar.in&#10;  ? ^^^^&#10;  + test_new_1784758595122@gandhikar.in&#10;  ? ^^^^">backend/tests/test_gandhikar_api.py:59: in test_register_new_user_returns_token
+    assert j["user"]["email"] == email
+E   AssertionError: assert 'test_new_178...@gandhikar.in' == 'TEST_new_178...@gandhikar.in'
+E     
+E     - TEST_new_1784758595122@gandhikar.in
+E     ? ^^^^
+E     + test_new_1784758595122@gandhikar.in
+E     ? ^^^^</failure></testcase><testcase classname="tests.test_gandhikar_api" name="test_languages_23" time="0.070" /><testcase classname="tests.test_gandhikar_api" name="test_models_3" time="0.116" /><testcase classname="tests.test_gandhikar_api" name="test_topics_8" time="0.087" /><testcase classname="tests.test_gandhikar_api" name="test_chat_stream_and_persistence" time="10.933" /><testcase classname="tests.test_gandhikar_api" name="test_tts_returns_audio" time="1.608" /></testsuite></testsuites>

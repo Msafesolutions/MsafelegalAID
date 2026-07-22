@@ -1,24 +1,28 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "Gandhikar",
+    "slug": "gandhikar",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
+    "scheme": "gandhikar",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.bnsknowyourrights.hzll5n"
+      "bundleIdentifier": "com.emergent.gandhikar",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Speak your legal questions in your language"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#0A1C3A"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.bnsknowyourrights.hzll5n"
+      "package": "com.emergent.gandhikar",
+      "permissions": ["RECORD_AUDIO"]
     },
     "web": {
       "bundler": "metro",
@@ -27,13 +31,14 @@
     },
     "plugins": [
       "expo-router",
+      "expo-audio",
       [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#0A1C3A"
         }
       ]
     ],

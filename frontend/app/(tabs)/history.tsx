@@ -1,0 +1,94 @@
+import { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useAuth, API_BASE } from '@/src/auth';
+import { theme } from '@/src/theme';
+
+type Session = { id: string; title: string; updated_at: string; language: string };
+
+export default function History() {
+  const { token } = useAuth();
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/chat/sessions`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await r.json();
+      setSessions(data);
+    } catch {}
+    finally { setLoading(false); }
+  }, [token]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const remove = async (id: string) => {
+    Alert.alert('Delete conversation?', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await fetch(`${API_BASE}/api/chat/sessions/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+        setSessions(s => s.filter(x => x.id !== id));
+      } },
+    ]);
+  };
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']} testID="history-screen">
+      <View style={styles.header}>
+        <Text style={styles.h1}>Your Conversations</Text>
+        <Text style={styles.h2}>Every question you've asked, saved.</Text>
+      </View>
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator color={theme.colors.brand} /></View>
+      ) : sessions.length === 0 ? (
+        <View style={styles.empty}>
+          <Ionicons name="chatbubbles-outline" size={64} color={theme.colors.brandSecondary} />
+          <Text style={styles.emptyTitle}>No conversations yet</Text>
+          <Text style={styles.emptySub}>Ask your first legal question on the Ask tab.</Text>
+          <Pressable testID="start-chat-btn" style={styles.startBtn} onPress={() => router.push('/(tabs)')}>
+            <Text style={styles.startBtnText}>Start asking</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <FlatList
+          data={sessions}
+          keyExtractor={i => i.id}
+          contentContainerStyle={{ padding: theme.spacing.lg }}
+          renderItem={({ item }) => (
+            <Pressable testID={`session-${item.id}`} style={styles.row} onPress={() => router.push(`/session/${item.id}`)}>
+              <Ionicons name="document-text-outline" size={22} color={theme.colors.brand} />
+              <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+                <Text style={styles.title} numberOfLines={2}>{item.title || 'Untitled'}</Text>
+                <Text style={styles.meta}>{new Date(item.updated_at).toLocaleString()}</Text>
+              </View>
+              <Pressable testID={`delete-${item.id}`} onPress={() => remove(item.id)} hitSlop={10}>
+                <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+              </Pressable>
+            </Pressable>
+          )}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: theme.colors.surface },
+  header: { padding: theme.spacing.xl, paddingBottom: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.divider },
+  h1: { fontFamily: theme.fonts.display, fontSize: 28, color: theme.colors.brand, fontWeight: '700' },
+  h2: { color: theme.colors.onSurfaceSecondary, marginTop: 4 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
+  emptyTitle: { fontFamily: theme.fonts.display, fontSize: 20, color: theme.colors.onSurface, marginTop: theme.spacing.lg, fontWeight: '700' },
+  emptySub: { color: theme.colors.onSurfaceSecondary, marginTop: theme.spacing.sm, textAlign: 'center' },
+  startBtn: { backgroundColor: theme.colors.brand, borderRadius: theme.radius.md, paddingHorizontal: theme.spacing.xl, paddingVertical: theme.spacing.md, marginTop: theme.spacing.xl },
+  startBtnText: { color: theme.colors.onBrandPrimary, fontWeight: '700' },
+  row: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.lg, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, marginBottom: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border },
+  title: { color: theme.colors.onSurface, fontSize: 15, fontWeight: '600' },
+  meta: { color: theme.colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+});
