@@ -1,6 +1,7 @@
 """Gandhikar - AI Legal Empowerment Bot Backend."""
 import os
 import io
+import json
 import uuid
 import logging
 import bcrypt
@@ -203,43 +204,49 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         system_message=system_prompt,
     ).with_model(body.model_provider, body.model_name)
 
-    async def event_gen() -> AsyncGenerator[bytes, None]:
-        # Emit session id first so client can attach
-        yield f"data: {{\"type\":\"session\",\"session_id\":\"{session_id}\"}}\n\n".encode()
+    def sse(obj: dict) -> bytes:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
 
-        full = ""
-        try:
-            async for ev in chat.stream_message(UserMessage(text=body.message)):
-                if isinstance(ev, TextDelta):
-                    full += ev.content
-                    # Safe JSON escape
-                    safe = ev.content.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
-                    yield f"data: {{\"type\":\"delta\",\"content\":\"{safe}\"}}\n\n".encode()
-                elif isinstance(ev, StreamDone):
-                    break
-        except Exception as e:
-            logger.exception("LLM stream error")
-            err = str(e).replace("\"", "'")[:200]
-            yield f"data: {{\"type\":\"error\",\"error\":\"{err}\"}}\n\n".encode()
-
-        # Save assistant message
+    async def save_assistant(content: str, error: Optional[str] = None):
         assistant_id = str(uuid.uuid4())
-        await db.messages.insert_one({
+        doc = {
             "id": assistant_id,
             "session_id": session_id,
             "user_id": user["id"],
             "role": "assistant",
-            "content": full,
+            "content": content,
             "language": body.language,
             "model_provider": body.model_provider,
             "model_name": body.model_name,
             "created_at": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        if error:
+            doc["error"] = error
+        await db.messages.insert_one(doc)
         await db.sessions.update_one(
             {"id": session_id},
             {"$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
         )
-        yield b"data: {\"type\":\"done\"}\n\n"
+
+    async def event_gen() -> AsyncGenerator[bytes, None]:
+        yield sse({"type": "session", "session_id": session_id})
+        full = ""
+        errored: Optional[str] = None
+        try:
+            async for ev in chat.stream_message(UserMessage(text=body.message)):
+                if isinstance(ev, TextDelta):
+                    full += ev.content
+                    yield sse({"type": "delta", "content": ev.content})
+                elif isinstance(ev, StreamDone):
+                    break
+        except Exception as e:
+            logger.exception("LLM stream error")
+            errored = str(e)[:300]
+            yield sse({"type": "error", "error": errored})
+        finally:
+            # Save whatever we have, even if client disconnected mid-stream.
+            await save_assistant(full, errored)
+        yield sse({"type": "done"})
 
     return StreamingResponse(
         event_gen(),
@@ -495,7 +502,7 @@ app.include_router(api)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
