@@ -7,7 +7,7 @@ const USER_KEY = 'gk_user';
 const LANG_KEY = 'gk_lang';
 const MODEL_KEY = 'gk_model';
 
-export type User = { id: string; email: string; name: string; language: string };
+export type User = { id: string; email: string; name: string; phone?: string; language: string; is_pro?: boolean; pro_since?: string | null; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
 export type Language = { code: string; name: string; native: string; tts: string };
 export type ModelChoice = { provider: string; name: string; label: string; recommended?: boolean };
 
@@ -20,8 +20,9 @@ type AuthCtx = {
   model: ModelChoice;
   setModel: (m: ModelChoice) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
+  register: (email: string, password: string, name: string, phone: string, terms_accepted: boolean, terms_version: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 };
 
 const DEFAULT_LANG: Language = { code: 'en', name: 'English', native: 'English', tts: 'en-IN' };
@@ -70,15 +71,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await persist(data.token, data.user);
   };
 
-  const register = async (email: string, password: string, name: string) => {
+  const register = async (email: string, password: string, name: string, phone: string, terms_accepted: boolean, terms_version: string) => {
     const r = await fetch(`${API}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ email, password, name, phone, terms_accepted, terms_version }),
     });
     if (!r.ok) throw new Error((await r.json()).detail || 'Register failed');
     const data = await r.json();
     await persist(data.token, data.user);
+  };
+
+  const refreshUser = async () => {
+    if (!token) return;
+    try {
+      const r = await fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+      if (r.ok) {
+        const u = await r.json();
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
+        setUser(u);
+      }
+    } catch {}
   };
 
   const logout = async () => {
@@ -98,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, login, register, logout }}>
+    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, login, register, logout, refreshUser }}>
       {children}
     </Ctx.Provider>
   );

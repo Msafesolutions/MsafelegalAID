@@ -2,20 +2,26 @@ import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useAuth, API_BASE, Language, ModelChoice } from '@/src/auth';
 import { theme } from '@/src/theme';
 
 export default function Settings() {
-  const { user, logout, language, setLanguage, model, setModel } = useAuth();
+  const { user, logout, language, setLanguage, model, setModel, refreshUser } = useAuth();
+  const router = useRouter();
   const [langs, setLangs] = useState<Language[]>([]);
   const [models, setModels] = useState<ModelChoice[]>([]);
   const [showLang, setShowLang] = useState(false);
   const [showModel, setShowModel] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [termsText, setTermsText] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/reference/languages`).then(r => r.json()).then(setLangs);
     fetch(`${API_BASE}/api/reference/models`).then(r => r.json()).then(setModels);
-  }, []);
+    fetch(`${API_BASE}/api/legal/terms`).then(r => r.json()).then(d => setTermsText(d.text)).catch(() => {});
+    refreshUser();
+  }, [refreshUser]);
 
   const confirmLogout = () => {
     if (Platform.OS === 'web') {
@@ -41,10 +47,32 @@ export default function Settings() {
         <View style={styles.profile}>
           <View style={styles.avatar}><Text style={styles.avatarTxt}>{user?.name?.[0]?.toUpperCase() || 'G'}</Text></View>
           <View style={{ marginLeft: theme.spacing.md, flex: 1 }}>
-            <Text style={styles.name}>{user?.name}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.name}>{user?.name}</Text>
+              {user?.is_pro && (
+                <View testID="profile-pro-badge" style={styles.proBadge}>
+                  <Ionicons name="star" size={10} color={theme.colors.onBrandSecondary} />
+                  <Text style={styles.proBadgeText}>PRO</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.email}>{user?.email}</Text>
+            {!!user?.phone && <Text style={styles.email} testID="profile-phone">{user.phone}</Text>}
           </View>
         </View>
+
+        <Pressable
+          testID="pro-upsell-card"
+          style={[styles.upsell, user?.is_pro && { backgroundColor: theme.colors.brandTertiary }]}
+          onPress={() => router.push('/upgrade')}
+        >
+          <Ionicons name="star" size={22} color={theme.colors.onBrandPrimary} />
+          <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+            <Text style={styles.upsellTitle}>{user?.is_pro ? 'Gandhikar Pro · Active' : 'Upgrade to Gandhikar Pro'}</Text>
+            <Text style={styles.upsellSub}>{user?.is_pro ? 'Lawyer-consultation-style answers unlocked' : 'Lawyer-style depth · Drafts · Escalation paths'}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.onBrandPrimary} />
+        </Pressable>
 
         <Text style={styles.section}>Preferences</Text>
 
@@ -74,6 +102,16 @@ export default function Settings() {
           <HelpRow label="Child Helpline" number="1098" />
           <HelpRow label="Human Rights Commission" number="14433" />
         </View>
+
+        <Text style={styles.section}>Legal</Text>
+        <Pressable testID="view-terms" style={styles.row} onPress={() => setShowTerms(true)}>
+          <Ionicons name="document-text-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+            <Text style={styles.rowTitle}>Terms & Conditions</Text>
+            <Text style={styles.rowValue}>Accepted v{user?.terms_version || '1.0'}{user?.terms_accepted_at ? ' · ' + new Date(user.terms_accepted_at).toLocaleDateString() : ''}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
+        </Pressable>
 
         <Text style={styles.section}>About</Text>
         <View style={styles.aboutCard}>
@@ -113,6 +151,20 @@ export default function Settings() {
         selectedId={`${model.provider}-${model.name}`}
         onSelect={(item) => { setModel(item.data); setShowModel(false); }}
       />
+
+      <Modal visible={showTerms} animationType="slide" onRequestClose={() => setShowTerms(false)} testID="settings-terms-modal">
+        <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.surface }} edges={['top', 'bottom']}>
+          <View style={styles.termsHeader}>
+            <Text style={styles.termsHeaderTitle}>Terms & Conditions</Text>
+            <Pressable testID="close-settings-terms" onPress={() => setShowTerms(false)} hitSlop={10}>
+              <Ionicons name="close" size={28} color={theme.colors.onBrandPrimary} />
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
+            <Text style={styles.termsBody}>{termsText}</Text>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -179,6 +231,14 @@ const styles = StyleSheet.create({
   copyBlock: { alignItems: 'center', marginTop: theme.spacing.xl, paddingVertical: theme.spacing.lg },
   copyLine: { color: theme.colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   copySub: { color: theme.colors.onSurfaceTertiary, fontSize: 11, marginTop: 2, letterSpacing: 0.5 },
+  proBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: theme.colors.brandSecondary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: theme.radius.pill },
+  proBadgeText: { color: theme.colors.onBrandSecondary, fontSize: 9, fontWeight: '800' },
+  upsell: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.brandSecondary, borderRadius: theme.radius.lg, padding: theme.spacing.lg, marginTop: theme.spacing.md },
+  upsellTitle: { color: theme.colors.onBrandPrimary, fontWeight: '800', fontSize: 15 },
+  upsellSub: { color: '#FDE8DA', fontSize: 12, marginTop: 2 },
+  termsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: theme.spacing.lg, backgroundColor: theme.colors.brand },
+  termsHeaderTitle: { color: theme.colors.onBrandPrimary, fontFamily: theme.fonts.display, fontSize: 20, fontWeight: '700' },
+  termsBody: { color: theme.colors.onSurface, fontSize: 13, lineHeight: 20 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: theme.colors.surface, borderTopLeftRadius: theme.radius.lg, borderTopRightRadius: theme.radius.lg, padding: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: theme.colors.border, alignSelf: 'center', marginBottom: theme.spacing.md },

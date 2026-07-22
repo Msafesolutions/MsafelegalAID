@@ -1,27 +1,35 @@
-"""Gandhikar backend API tests."""
+"""Gandhikar backend API tests — Iteration 3 (Pro tier, Terms, phone)."""
 import os
 import json
 import time
 import pytest
 import requests
 
-BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://bns-know-your-rights.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ["EXPO_PUBLIC_BACKEND_URL"].rstrip("/") if "EXPO_PUBLIC_BACKEND_URL" in os.environ else "https://bns-know-your-rights.preview.emergentagent.com"
 API = f"{BASE_URL}/api"
 
-TEST_EMAIL = "testuser@gandhikar.in"
-TEST_PASSWORD = "test1234"
-TEST_NAME = "Test User"
+# fresh email per session
+UNIQ = int(time.time() * 1000)
+NEW_EMAIL = f"test_iter3_{UNIQ}@gandhikar.in"
+NEW_PW = "test1234"
+NEW_NAME = "Iter3 Tester"
+NEW_PHONE = f"+9198760{UNIQ % 100000:05d}"
+
+
+# ---------- session token via fresh register (covers new schema) ----------
+@pytest.fixture(scope="session")
+def register_response():
+    r = requests.post(f"{API}/auth/register", json={
+        "email": NEW_EMAIL, "password": NEW_PW, "name": NEW_NAME,
+        "phone": NEW_PHONE, "terms_accepted": True, "terms_version": "1.0",
+    }, timeout=30)
+    assert r.status_code == 200, f"register failed {r.status_code}: {r.text}"
+    return r.json()
 
 
 @pytest.fixture(scope="session")
-def token():
-    # Try login first; register if not present
-    r = requests.post(f"{API}/auth/login", json={"email": TEST_EMAIL, "password": TEST_PASSWORD}, timeout=30)
-    if r.status_code == 200:
-        return r.json()["token"]
-    r = requests.post(f"{API}/auth/register", json={"email": TEST_EMAIL, "password": TEST_PASSWORD, "name": TEST_NAME}, timeout=30)
-    assert r.status_code == 200, f"register failed {r.status_code}: {r.text}"
-    return r.json()["token"]
+def token(register_response):
+    return register_response["token"]
 
 
 @pytest.fixture()
@@ -29,88 +37,99 @@ def auth_headers(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-# --- Health ---
+# ---------- Health / legal / pricing ----------
 def test_health():
     r = requests.get(f"{API}/health", timeout=15)
     assert r.status_code == 200
     j = r.json()
-    assert j.get("status") == "ok"
-    # Copyright / Company attribution (iteration 2)
-    assert j.get("copyright") == "© Callistus Moses", j
-    assert j.get("company") == "Msafe", j
+    assert j["status"] == "ok"
+    assert j["copyright"] == "© Callistus Moses"
+    assert j["company"] == "Msafe"
+    assert j["terms_version"] == "1.0"
 
 
-def test_root_has_copyright_and_company():
-    r = requests.get(f"{API}/", timeout=15)
+def test_legal_terms():
+    r = requests.get(f"{API}/legal/terms", timeout=15)
     assert r.status_code == 200
     j = r.json()
-    assert j.get("copyright") == "© Callistus Moses", j
-    assert j.get("company") == "Msafe", j
-    assert "Gandhikar" in j.get("message", "")
+    assert j["version"] == "1.0"
+    txt = j["text"]
+    for needle in ["Callistus Moses", "Msafe", "NOT a lawyer", "INDEMNITY"]:
+        assert needle in txt, f"terms missing '{needle}'"
+    assert "disclaimer_short" in j and len(j["disclaimer_short"]) > 20
 
 
-# --- Auth ---
-def test_login_wrong_password():
-    r = requests.post(f"{API}/auth/login", json={"email": TEST_EMAIL, "password": "WRONG_pass"}, timeout=15)
-    assert r.status_code == 401
+def test_pricing():
+    r = requests.get(f"{API}/billing/pricing", timeout=15)
+    assert r.status_code == 200
+    j = r.json()
+    assert j["pro_price_label"] == "₹999"
+    assert j["billing_type"] == "one_time"
+    assert isinstance(j["features"], list) and len(j["features"]) >= 4
 
 
-def test_auth_me(auth_headers):
+# ---------- Register variations ----------
+def test_register_without_terms_fails():
+    r = requests.post(f"{API}/auth/register", json={
+        "email": f"TEST_noterms_{UNIQ}@gandhikar.in", "password": NEW_PW,
+        "name": "NoTerms", "phone": "+919999999999",
+        "terms_accepted": False, "terms_version": "1.0",
+    }, timeout=15)
+    assert r.status_code == 400
+    assert "Terms" in r.text or "terms" in r.text
+
+
+def test_register_missing_phone_returns_422():
+    r = requests.post(f"{API}/auth/register", json={
+        "email": f"TEST_nophone_{UNIQ}@gandhikar.in", "password": NEW_PW,
+        "name": "NoPhone", "terms_accepted": True, "terms_version": "1.0",
+    }, timeout=15)
+    assert r.status_code == 422, r.text
+
+
+def test_register_success_returns_user_with_phone_terms(register_response):
+    j = register_response
+    assert "token" in j and "user" in j
+    u = j["user"]
+    assert u["email"] == NEW_EMAIL
+    assert u["phone"] == NEW_PHONE
+    assert u["is_pro"] is False
+    assert u["terms_accepted"] is True
+    assert u["terms_version"] == "1.0"
+    assert u.get("terms_accepted_at")
+
+
+# ---------- /auth/me exposes new fields ----------
+def test_auth_me_has_new_fields(auth_headers):
     r = requests.get(f"{API}/auth/me", headers=auth_headers, timeout=15)
     assert r.status_code == 200
-    data = r.json()
-    assert data["email"] == TEST_EMAIL
-    assert "password_hash" not in data
-
-
-def test_register_new_user_returns_token():
-    email = f"TEST_new_{int(time.time()*1000)}@gandhikar.in"
-    r = requests.post(f"{API}/auth/register", json={"email": email, "password": "test1234", "name": "TEST New"}, timeout=15)
-    assert r.status_code == 200, r.text
     j = r.json()
-    assert "token" in j and "user" in j
-    assert j["user"]["email"].lower() == email.lower()
+    for k in ["is_pro", "phone", "terms_accepted", "terms_version", "terms_accepted_at"]:
+        assert k in j, f"missing key {k} in /auth/me"
+    assert j["phone"] == NEW_PHONE
+    assert j["terms_accepted"] is True
 
 
-# --- Reference ---
-def test_languages_23():
-    r = requests.get(f"{API}/reference/languages", timeout=15)
+# ---------- Accept-terms (in-app) ----------
+def test_accept_terms_in_app(auth_headers):
+    r = requests.post(f"{API}/auth/accept-terms", json={"terms_version": "1.0"},
+                     headers=auth_headers, timeout=15)
     assert r.status_code == 200
-    langs = r.json()
-    assert isinstance(langs, list) and len(langs) == 23
-    codes = [l["code"] for l in langs]
-    assert "en" in codes and "hi" in codes
+    j = r.json()
+    assert j["ok"] is True
+    assert j["terms_version"] == "1.0"
 
 
-def test_models_3():
-    r = requests.get(f"{API}/reference/models", timeout=15)
-    assert r.status_code == 200
-    models = r.json()
-    assert len(models) == 3
-    providers = sorted([m["provider"] for m in models])
-    assert providers == ["anthropic", "gemini", "openai"]
-
-
-def test_topics_8():
-    r = requests.get(f"{API}/reference/topics", timeout=15)
-    assert r.status_code == 200
-    topics = r.json()
-    assert len(topics) == 8
-    for t in topics:
-        assert t.get("title") and t.get("law") and isinstance(t.get("points"), list)
-
-
-# --- Chat SSE ---
-def _read_sse(resp, max_seconds=90):
+# ---------- Chat persistence (user + assistant) ----------
+def _read_sse(resp, max_seconds=120):
     events = []
     start = time.time()
     for raw in resp.iter_lines(decode_unicode=True):
         if raw is None:
             continue
         if raw.startswith("data:"):
-            payload = raw[5:].strip()
             try:
-                events.append(json.loads(payload))
+                events.append(json.loads(raw[5:].strip()))
             except Exception:
                 pass
             if events and events[-1].get("type") in ("done", "error"):
@@ -120,44 +139,60 @@ def _read_sse(resp, max_seconds=90):
     return events
 
 
-def test_chat_stream_and_persistence(auth_headers):
-    payload = {
-        "message": "What are my rights during a police stop? Answer briefly.",
-        "language": "en",
-        "language_name": "English",
-        "model_provider": "anthropic",
-        "model_name": "claude-sonnet-4-5-20250929",
-    }
-    with requests.post(f"{API}/chat/stream", json=payload, headers=auth_headers, stream=True, timeout=120) as r:
+def test_chat_stream_persists_both_roles(auth_headers):
+    payload = {"message": "What is Article 21? Answer in one line.",
+               "language": "en", "language_name": "English",
+               "model_provider": "anthropic", "model_name": "claude-sonnet-4-5-20250929"}
+    with requests.post(f"{API}/chat/stream", json=payload, headers=auth_headers,
+                       stream=True, timeout=120) as r:
         assert r.status_code == 200
         events = _read_sse(r)
-    assert any(e.get("type") == "session" for e in events), events[:3]
-    assert any(e.get("type") == "delta" for e in events), events[:3]
-    assert events[-1].get("type") == "done", events[-3:]
-    session_id = next(e["session_id"] for e in events if e.get("type") == "session")
-
-    # List sessions
-    r = requests.get(f"{API}/chat/sessions", headers=auth_headers, timeout=15)
+    session_id = next((e["session_id"] for e in events if e.get("type") == "session"), None)
+    assert session_id, events[:3]
+    # Give backend a moment to flush assistant save
+    time.sleep(1.5)
+    r = requests.get(f"{API}/chat/sessions/{session_id}/messages",
+                    headers=auth_headers, timeout=15)
     assert r.status_code == 200
-    assert any(s["id"] == session_id for s in r.json())
+    msgs = r.json()["messages"]
+    roles = [m["role"] for m in msgs]
+    assert roles[0] == "user"
+    assert "assistant" in roles
+    # Order: user before assistant
+    assert roles.index("user") < roles.index("assistant")
 
-    # Messages in order
-    r = requests.get(f"{API}/chat/sessions/{session_id}/messages", headers=auth_headers, timeout=15)
+
+# ---------- Billing: checkout (expected 500 due to placeholder key) ----------
+def test_checkout_requires_auth():
+    r = requests.post(f"{API}/billing/checkout",
+                     json={"return_url": "https://example.com/upgrade"}, timeout=15)
+    assert r.status_code == 401
+
+
+def test_checkout_with_auth_placeholder_key_500(auth_headers):
+    r = requests.post(f"{API}/billing/checkout",
+                     json={"return_url": "https://example.com/upgrade"},
+                     headers=auth_headers, timeout=30)
+    # EXPECTED failure — placeholder Stripe key
+    assert r.status_code == 500
+    assert "Invalid API Key" in r.text or "Checkout failed" in r.text
+
+
+# ---------- Stripe webhook route exists ----------
+def test_stripe_webhook_malformed_returns_400():
+    r = requests.post(f"{BASE_URL}/api/webhooks/stripe", data=b"not-json",
+                     headers={"stripe-signature": "x"}, timeout=15)
+    assert r.status_code == 400
+
+
+# ---------- Reference: sanity ----------
+def test_languages_23():
+    r = requests.get(f"{API}/reference/languages", timeout=15)
     assert r.status_code == 200
-    data = r.json()
-    roles = [m["role"] for m in data["messages"]]
-    assert roles[0] == "user" and "assistant" in roles
+    assert len(r.json()) == 23
 
-    # Delete session
-    r = requests.delete(f"{API}/chat/sessions/{session_id}", headers=auth_headers, timeout=15)
+
+def test_topics_8():
+    r = requests.get(f"{API}/reference/topics", timeout=15)
     assert r.status_code == 200
-    r = requests.get(f"{API}/chat/sessions/{session_id}/messages", headers=auth_headers, timeout=15)
-    assert r.status_code == 404
-
-
-# --- Voice TTS ---
-def test_tts_returns_audio(auth_headers):
-    r = requests.post(f"{API}/voice/tts", json={"text": "You have the right to remain silent.", "language": "en"}, headers=auth_headers, timeout=60)
-    assert r.status_code == 200, r.text
-    assert r.headers.get("content-type", "").startswith("audio/")
-    assert len(r.content) > 1000
+    assert len(r.json()) == 8

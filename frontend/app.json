@@ -22,7 +22,9 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.emergent.gandhikar",
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -40,7 +42,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#0A1C3A"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

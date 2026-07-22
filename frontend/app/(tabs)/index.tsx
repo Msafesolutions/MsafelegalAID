@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import * as Speech from 'expo-speech';
-import { AudioModule, RecordingPresets, useAudioRecorder } from 'expo-audio';
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder } from 'expo-audio';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 
@@ -99,9 +100,16 @@ export default function ChatScreen() {
       return;
     }
     Speech.stop();
+    // Force loudspeaker: switch audio mode back to playback (not recording).
+    try {
+      if (Platform.OS !== 'web') {
+        await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false, shouldPlayInBackground: false });
+      }
+    } catch {}
     setSpeakingId(msgId);
     Speech.speak(text, {
       language: language.tts,
+      volume: 1.0,
       onDone: () => setSpeakingId(null),
       onStopped: () => setSpeakingId(null),
       onError: () => setSpeakingId(null),
@@ -115,7 +123,7 @@ export default function ChatScreen() {
         Alert.alert('Microphone permission', 'Please enable microphone to speak your question.');
         return;
       }
-      await AudioModule.setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
       setRecording(true);
@@ -130,6 +138,12 @@ export default function ChatScreen() {
       setTranscribing(true);
       await recorder.stop();
       const uri = recorder.uri;
+      // Immediately switch audio mode back to loudspeaker playback
+      try {
+        if (Platform.OS !== 'web') {
+          await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+        }
+      } catch {}
       if (!uri) { setTranscribing(false); return; }
 
       const form = new FormData();
@@ -158,11 +172,39 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.safe} edges={['top']} testID="chat-screen">
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Gandhikar</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={styles.title}>Gandhikar</Text>
+            {user?.is_pro && (
+              <View testID="pro-badge" style={styles.proBadge}>
+                <Ionicons name="star" size={11} color={theme.colors.onBrandSecondary} />
+                <Text style={styles.proBadgeText}>PRO</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.subtitle}>{language.native} • {model.label}</Text>
         </View>
         <View style={styles.badge}><Text style={styles.badgeText}>BNS · संविधान</Text></View>
       </View>
+
+      {showBanner && (
+        <View testID="disclaimer-banner" style={styles.banner}>
+          <Ionicons name="warning-outline" size={18} color={theme.colors.warning} />
+          <Text style={styles.bannerText}>
+            Legal information — not legal advice. AI answers may be wrong. For real matters consult an advocate. Emergency: 112.
+          </Text>
+          <Pressable testID="dismiss-banner" onPress={() => setShowBanner(false)} hitSlop={10}>
+            <Ionicons name="close" size={18} color={theme.colors.onSurfaceSecondary} />
+          </Pressable>
+        </View>
+      )}
+
+      {!user?.is_pro && messages.length > 2 && (
+        <Pressable testID="chat-upgrade-cta" style={styles.upgradeBanner} onPress={() => router.push('/upgrade')}>
+          <Ionicons name="star" size={16} color={theme.colors.onBrandSecondary} />
+          <Text style={styles.upgradeBannerText}>Upgrade to Pro for lawyer-style depth</Text>
+          <Ionicons name="chevron-forward" size={16} color={theme.colors.onBrandSecondary} />
+        </Pressable>
+      )}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={80}>
         <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -266,4 +308,10 @@ const styles = StyleSheet.create({
   mic: { width: 52, height: 52, borderRadius: 26, backgroundColor: theme.colors.brandSecondary, alignItems: 'center', justifyContent: 'center' },
   micActive: { backgroundColor: theme.colors.error },
   send: { width: 52, height: 52, borderRadius: 26, backgroundColor: theme.colors.brand, alignItems: 'center', justifyContent: 'center' },
+  proBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: theme.colors.brandSecondary, paddingHorizontal: 8, paddingVertical: 3, borderRadius: theme.radius.pill },
+  proBadgeText: { color: theme.colors.onBrandSecondary, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  banner: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, padding: theme.spacing.md, backgroundColor: '#FFF6E5', borderBottomWidth: 1, borderBottomColor: '#F0D68A' },
+  bannerText: { flex: 1, color: '#7A4C00', fontSize: 12, lineHeight: 16 },
+  upgradeBanner: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, backgroundColor: theme.colors.brandSecondary, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md },
+  upgradeBannerText: { flex: 1, color: theme.colors.onBrandSecondary, fontWeight: '700', fontSize: 13 },
 });

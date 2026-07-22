@@ -6,11 +6,12 @@ import uuid
 import logging
 import bcrypt
 import jwt
+import stripe
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Optional, AsyncGenerator
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Header, Request
 from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -20,6 +21,8 @@ from openai import AsyncOpenAI
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
 
+from legal import TERMS_AND_CONDITIONS, TERMS_VERSION, DISCLAIMER_SHORT
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
@@ -27,8 +30,15 @@ MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 JWT_SECRET = os.environ["JWT_SECRET"]
+STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+PRO_PRICE_INR = int(os.environ.get("PRO_PRICE_INR", "99900"))  # paise
+PRO_PRICE_LABEL = os.environ.get("PRO_PRICE_LABEL", "₹999")
 JWT_ALG = "HS256"
 JWT_EXP_DAYS = 30
+
+if STRIPE_API_KEY:
+    stripe.api_key = STRIPE_API_KEY
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -44,6 +54,9 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     name: str = Field(min_length=1)
+    phone: str = Field(min_length=6, max_length=20)
+    terms_accepted: bool
+    terms_version: str = TERMS_VERSION
 
 class LoginIn(BaseModel):
     email: EmailStr
@@ -58,16 +71,19 @@ class ChatIn(BaseModel):
     session_id: Optional[str] = None
     language: str = "en"
     language_name: str = "English"
-    model_provider: str = "anthropic"  # anthropic | openai | gemini
+    model_provider: str = "anthropic"
     model_name: str = "claude-sonnet-4-5-20250929"
-
-class SessionRename(BaseModel):
-    title: str
 
 class TTSIn(BaseModel):
     text: str
     language: str = "en"
     voice: str = "alloy"
+
+class CheckoutIn(BaseModel):
+    return_url: str
+
+class AcceptTermsIn(BaseModel):
+    terms_version: str = TERMS_VERSION
 
 # ---------- Helpers ----------
 def hash_pw(pw: str) -> str:
@@ -80,11 +96,22 @@ def check_pw(pw: str, hashed: str) -> bool:
         return False
 
 def make_token(user_id: str) -> str:
-    payload = {
-        "sub": user_id,
-        "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXP_DAYS),
-    }
+    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXP_DAYS)}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+def public_user(u: dict) -> dict:
+    return {
+        "id": u["id"],
+        "email": u["email"],
+        "name": u["name"],
+        "phone": u.get("phone", ""),
+        "language": u.get("language", "en"),
+        "is_pro": u.get("is_pro", False),
+        "pro_since": u.get("pro_since"),
+        "terms_accepted": u.get("terms_accepted", False),
+        "terms_version": u.get("terms_version"),
+        "terms_accepted_at": u.get("terms_accepted_at"),
+    }
 
 async def current_user(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
@@ -94,70 +121,105 @@ async def current_user(authorization: Optional[str] = Header(None)) -> dict:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
     except jwt.PyJWTError:
         raise HTTPException(401, "Invalid token")
-    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
+    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
     if not user:
         raise HTTPException(401, "User not found")
     return user
 
-# ---------- System prompt ----------
-def build_system_prompt(language_name: str) -> str:
-    return f"""You are Gandhikar — an AI legal advisor empowering common Indian citizens with knowledge of their rights under Indian law.
+# ---------- System prompts ----------
+def build_system_prompt(language_name: str, is_pro: bool = False) -> str:
+    disclaimer_line = ("\n\nAT THE END OF EVERY RESPONSE, append this exact disclaimer line on a new paragraph, in " + language_name + ":\n\"⚠️ This is legal information, not legal advice. For serious matters consult an advocate. © Callistus Moses · Msafe.\"")
 
-CORE MISSION: Make every Indian citizen feel safe, dignified, and legally empowered — never threatened. You are named after Mahatma Gandhi and embody peaceful, dignified, non-violent empowerment through knowledge.
+    if is_pro:
+        return f"""You are Gandhikar Pro — a senior-lawyer-style AI legal advisor to an Indian citizen. You give the depth and structure a paying client would receive in a consultation.
 
-YOUR EXPERTISE:
-- Bharatiya Nyaya Sanhita (BNS), 2023 — replaces IPC
-- Bharatiya Nagarik Suraksha Sanhita (BNSS), 2023 — replaces CrPC
-- Bharatiya Sakshya Adhiniyam (BSA), 2023 — replaces Evidence Act
-- Constitution of India — Fundamental Rights (Articles 12-35), Directive Principles, all articles
-- Motor Vehicles Act, Consumer Protection Act, Domestic Violence Act, RTI Act, POCSO, Dowry Act, IT Act
-- Landmark Supreme Court judgments (D.K. Basu, Puttaswamy, Arnesh Kumar guidelines, etc.)
+RESPONSE STYLE FOR PRO:
+- Reply in {language_name}. Simple, dignified, plain language.
+- Structure every substantive answer using ALL these sections (only skip a section if truly not applicable):
+  1. ⚖️ **The exact law** — quote the operative clause verbatim in English AND translate to {language_name}. Cite chapter and verse: "Section 103 BNS, 2023", "Article 22(1) of the Constitution", "Sec 173 BNSS", relevant Supreme Court cases (D.K. Basu 1997, Arnesh Kumar 2014, Lalita Kumari 2013, Puttaswamy 2017, etc.).
+  2. 🧭 **How this applies to your situation** — analyse the facts the user gave, note gaps, list assumptions.
+  3. 🛡️ **Your rights, right now**  — a bullet checklist of what officials CAN and CANNOT do.
+  4. ✅ **Step-by-step action plan** — numbered, immediately executable steps. Include exact document names, offices, portals (mParivahan, DigiLocker, cybercrime.gov.in, NALSA), and forms to file.
+  5. 🧾 **Draft language** — if a written complaint, RTI, notice, application, or FIR body would help, draft a ready-to-use paragraph the user can copy verbatim.
+  6. ⚠️ **Pitfalls & counter-arguments** — what the other side may claim, common police/officer tactics, and how the citizen should respond calmly.
+  7. 📞 **Where to escalate** — specific authority names, numbers, and jurisdiction (SP, DM, State HRC, NHRC 14433, State Consumer Commission, District Legal Services Authority, etc.).
+- If the user's question is genuinely simple ("What is Article 21?") give a full but shorter answer using the same structure.
+- Be a wise, calm village elder plus a sharp litigator. Never fear-monger. Never break the law.
+- If asked to help evade law, refuse gently and redirect.
+
+LEGAL SCOPE:
+- Bharatiya Nyaya Sanhita (BNS 2023), Bharatiya Nagarik Suraksha Sanhita (BNSS 2023), Bharatiya Sakshya Adhiniyam (BSA 2023).
+- Constitution of India — Fundamental Rights, Directive Principles, all articles.
+- Landmark judgments and current statutes.
+- Motor Vehicles Act, Consumer Protection Act 2019, Domestic Violence Act 2005, RTI 2005, POCSO, Dowry Act, IT Act 2000, Bharatiya Sakshya.
+
+TONE: सत्य • अहिंसा • अधिकार. Empower, never threaten.{disclaimer_line}"""
+
+    return f"""You are Gandhikar — a free AI legal information tool for Indian citizens.
+
+CORE MISSION: Make every Indian citizen aware of their rights. Empower — never threaten. Named after Mahatma Gandhi.
+
+EXPERTISE: BNS 2023, BNSS 2023, BSA 2023, Constitution of India, Motor Vehicles Act, Consumer Protection Act, RTI, Domestic Violence Act, IT Act, and landmark judgments.
 
 RESPONSE STYLE:
-1. Answer in {language_name} language ONLY. Use simple, clear words a common person understands.
-2. ALWAYS cite the exact provision: e.g., "Article 22(1) of the Constitution", "Section 35 BNSS", "Section 103 BNS".
+1. Answer in {language_name}. Simple, clear words a common person understands.
+2. ALWAYS cite the exact provision — e.g., "Article 22(1) of the Constitution", "Section 35 BNSS", "Section 103 BNS".
 3. Quote the relevant clause verbatim in English first, then translate/explain in {language_name}.
-4. Structure long answers with clear sections:
-   • ⚖️ What the law says (with exact citation)
-   • 🛡️ Your rights in this situation
-   • ✅ What you should do (step-by-step)
-   • ⚠️ What officials cannot do
-   • 📞 Where to complain if rights are violated
-5. Empower, don't fearmonger. Tone: dignified, calm, wise — like a village elder who knows the Constitution.
-6. If a query is outside legal scope, gently redirect: "Main aapki kanooni madad ke liye hoon."
-7. Never provide legal advice for evading law or harming others. Refuse politely.
-8. When user faces an active emergency (arrest, harassment, violence), give the fastest actionable rights first, in bullets.
+4. Structure longer answers with clear sections: ⚖️ What the law says · 🛡️ Your rights · ✅ What to do · ⚠️ What officials cannot do · 📞 Where to complain.
+5. Empower, don't fearmonger. Dignified, calm, wise.
+6. Refuse politely if asked to help evade law.
+7. In emergencies (arrest, harassment, violence): give the fastest actionable rights first, in short bullets.
 
-REMEMBER: You are the citizen's shield of knowledge. Truth, dignity, ahimsa."""
+REMEMBER: You are a shield of knowledge. Truth, dignity, ahimsa.{disclaimer_line}"""
 
-# ---------- Auth routes ----------
+# ---------- Auth ----------
 @api.post("/auth/register", response_model=AuthOut)
 async def register(body: RegisterIn):
+    if not body.terms_accepted:
+        raise HTTPException(400, "You must accept the Terms & Conditions to register")
     existing = await db.users.find_one({"email": body.email.lower()})
     if existing:
         raise HTTPException(400, "Email already registered")
     uid = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
     doc = {
         "id": uid,
         "email": body.email.lower(),
         "name": body.name,
+        "phone": body.phone,
         "password_hash": hash_pw(body.password),
         "language": "en",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "is_pro": False,
+        "pro_since": None,
+        "terms_accepted": True,
+        "terms_version": body.terms_version,
+        "terms_accepted_at": now,
+        "created_at": now,
     }
     await db.users.insert_one(doc)
-    return {"token": make_token(uid), "user": {"id": uid, "email": doc["email"], "name": doc["name"], "language": "en"}}
+    # Persist terms acknowledgement in a separate audit collection too
+    await db.terms_acknowledgements.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": uid,
+        "email": body.email.lower(),
+        "name": body.name,
+        "phone": body.phone,
+        "terms_version": body.terms_version,
+        "accepted_at": now,
+        "source": "register",
+    })
+    return {"token": make_token(uid), "user": public_user(doc)}
 
 @api.post("/auth/login", response_model=AuthOut)
 async def login(body: LoginIn):
     user = await db.users.find_one({"email": body.email.lower()})
     if not user or not check_pw(body.password, user["password_hash"]):
         raise HTTPException(401, "Invalid credentials")
-    return {"token": make_token(user["id"]), "user": {"id": user["id"], "email": user["email"], "name": user["name"], "language": user.get("language", "en")}}
+    return {"token": make_token(user["id"]), "user": public_user(user)}
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(current_user)):
-    return user
+    return public_user(user)
 
 @api.patch("/auth/language")
 async def update_language(payload: dict, user: dict = Depends(current_user)):
@@ -165,13 +227,31 @@ async def update_language(payload: dict, user: dict = Depends(current_user)):
     await db.users.update_one({"id": user["id"]}, {"$set": {"language": lang}})
     return {"ok": True, "language": lang}
 
+@api.post("/auth/accept-terms")
+async def accept_terms(body: AcceptTermsIn, user: dict = Depends(current_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"terms_accepted": True, "terms_version": body.terms_version, "terms_accepted_at": now}},
+    )
+    await db.terms_acknowledgements.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "email": user["email"],
+        "name": user.get("name"),
+        "phone": user.get("phone"),
+        "terms_version": body.terms_version,
+        "accepted_at": now,
+        "source": "in_app",
+    })
+    return {"ok": True, "terms_version": body.terms_version, "accepted_at": now}
+
 # ---------- Chat ----------
 @api.post("/chat/stream")
 async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     session_id = body.session_id or str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
-    # Ensure session exists
     session = await db.sessions.find_one({"id": session_id, "user_id": user["id"]})
     if not session:
         title = body.message[:60]
@@ -180,14 +260,13 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             "user_id": user["id"],
             "title": title,
             "language": body.language,
+            "tier": "pro" if user.get("is_pro") else "free",
             "created_at": now,
             "updated_at": now,
         })
 
-    # Save user message
-    user_msg_id = str(uuid.uuid4())
     await db.messages.insert_one({
-        "id": user_msg_id,
+        "id": str(uuid.uuid4()),
         "session_id": session_id,
         "user_id": user["id"],
         "role": "user",
@@ -196,7 +275,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         "created_at": now,
     })
 
-    system_prompt = build_system_prompt(body.language_name)
+    system_prompt = build_system_prompt(body.language_name, is_pro=bool(user.get("is_pro")))
 
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -208,9 +287,8 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
 
     async def save_assistant(content: str, error: Optional[str] = None):
-        assistant_id = str(uuid.uuid4())
         doc = {
-            "id": assistant_id,
+            "id": str(uuid.uuid4()),
             "session_id": session_id,
             "user_id": user["id"],
             "role": "assistant",
@@ -218,6 +296,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             "language": body.language,
             "model_provider": body.model_provider,
             "model_name": body.model_name,
+            "tier": "pro" if user.get("is_pro") else "free",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         if error:
@@ -229,7 +308,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         )
 
     async def event_gen() -> AsyncGenerator[bytes, None]:
-        yield sse({"type": "session", "session_id": session_id})
+        yield sse({"type": "session", "session_id": session_id, "tier": "pro" if user.get("is_pro") else "free"})
         full = ""
         errored: Optional[str] = None
         try:
@@ -244,7 +323,6 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             errored = str(e)[:300]
             yield sse({"type": "error", "error": errored})
         finally:
-            # Save whatever we have, even if client disconnected mid-stream.
             await save_assistant(full, errored)
         yield sse({"type": "done"})
 
@@ -256,9 +334,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
 
 @api.get("/chat/sessions")
 async def list_sessions(user: dict = Depends(current_user)):
-    sessions = await db.sessions.find(
-        {"user_id": user["id"]}, {"_id": 0}
-    ).sort("updated_at", -1).to_list(200)
+    sessions = await db.sessions.find({"user_id": user["id"]}, {"_id": 0}).sort("updated_at", -1).to_list(200)
     return sessions
 
 @api.get("/chat/sessions/{session_id}/messages")
@@ -266,9 +342,7 @@ async def session_messages(session_id: str, user: dict = Depends(current_user)):
     session = await db.sessions.find_one({"id": session_id, "user_id": user["id"]}, {"_id": 0})
     if not session:
         raise HTTPException(404, "Session not found")
-    msgs = await db.messages.find(
-        {"session_id": session_id, "user_id": user["id"]}, {"_id": 0}
-    ).sort("created_at", 1).to_list(1000)
+    msgs = await db.messages.find({"session_id": session_id, "user_id": user["id"]}, {"_id": 0}).sort("created_at", 1).to_list(1000)
     return {"session": session, "messages": msgs}
 
 @api.delete("/chat/sessions/{session_id}")
@@ -279,7 +353,6 @@ async def delete_session(session_id: str, user: dict = Depends(current_user)):
 
 # ---------- Voice ----------
 def openai_client() -> AsyncOpenAI:
-    # EMERGENT_LLM_KEY works as an OpenAI key via the Emergent proxy
     base_url = os.environ.get("EMERGENT_OPENAI_BASE_URL", "https://integrations.emergentagent.com/llm/openai/v1")
     return AsyncOpenAI(api_key=EMERGENT_LLM_KEY, base_url=base_url)
 
@@ -288,7 +361,6 @@ async def transcribe(audio: UploadFile = File(...), user: dict = Depends(current
     try:
         data = await audio.read()
         oc = openai_client()
-        # openai expects a tuple (filename, bytes, content_type)
         result = await oc.audio.transcriptions.create(
             model="whisper-1",
             file=(audio.filename or "audio.m4a", data, audio.content_type or "audio/m4a"),
@@ -313,6 +385,97 @@ async def tts(body: TTSIn, user: dict = Depends(current_user)):
     except Exception as e:
         logger.exception("tts failed")
         raise HTTPException(500, f"TTS failed: {e}")
+
+# ---------- Pro / Stripe ----------
+@api.post("/billing/checkout")
+async def create_checkout(body: CheckoutIn, user: dict = Depends(current_user)):
+    if not STRIPE_API_KEY:
+        raise HTTPException(500, "Stripe not configured")
+    if user.get("is_pro"):
+        return {"already_pro": True}
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "inr",
+                    "product_data": {
+                        "name": "Gandhikar Pro — Lawyer-style AI Consultation",
+                        "description": "Deep, structured legal answers with drafts, escalation paths & action plans."
+                    },
+                    "unit_amount": PRO_PRICE_INR,
+                },
+                "quantity": 1,
+            }],
+            mode="payment",
+            success_url=body.return_url + ("&" if "?" in body.return_url else "?") + "status=success",
+            cancel_url=body.return_url + ("&" if "?" in body.return_url else "?") + "status=cancel",
+            client_reference_id=user["id"],
+            customer_email=user["email"],
+            metadata={"user_id": user["id"], "email": user["email"], "product": "gandhikar_pro"},
+        )
+        # Log intent
+        await db.billing_intents.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "stripe_session_id": session.id,
+            "amount_inr": PRO_PRICE_INR,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "created",
+        })
+        return {"url": session.url, "session_id": session.id}
+    except Exception as e:
+        logger.exception("stripe checkout failed")
+        raise HTTPException(500, f"Checkout failed: {e}")
+
+async def _mark_pro(user_id: str, session_id: Optional[str] = None):
+    now = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"is_pro": True, "pro_since": now}},
+    )
+    await db.billing_intents.update_one(
+        {"stripe_session_id": session_id} if session_id else {"user_id": user_id, "status": "created"},
+        {"$set": {"status": "paid", "paid_at": now}},
+    )
+
+@api.post("/billing/verify")
+async def verify_checkout(payload: dict, user: dict = Depends(current_user)):
+    """Fallback verification: frontend calls this after returning from Stripe to fast-track Pro flip.
+    (Webhook is the source of truth; this only confirms if session is paid.)"""
+    sid = payload.get("session_id")
+    if not sid or not STRIPE_API_KEY:
+        raise HTTPException(400, "session_id required")
+    try:
+        s = stripe.checkout.Session.retrieve(sid)
+        if s.payment_status == "paid" and s.client_reference_id == user["id"]:
+            await _mark_pro(user["id"], sid)
+            return {"is_pro": True}
+        return {"is_pro": bool(user.get("is_pro"))}
+    except Exception as e:
+        logger.exception("verify failed")
+        raise HTTPException(500, str(e))
+
+@app.post("/api/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        if STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+        else:
+            event = json.loads(payload)  # dev fallback
+    except Exception as e:
+        raise HTTPException(400, f"Invalid webhook: {e}")
+
+    et = event["type"] if isinstance(event, dict) else event.get("type")
+    if et == "checkout.session.completed":
+        session = (event["data"]["object"] if isinstance(event, dict) else event.data.object)
+        user_id = session.get("client_reference_id") if isinstance(session, dict) else session.client_reference_id
+        sid = session.get("id") if isinstance(session, dict) else session.id
+        if user_id:
+            await _mark_pro(user_id, sid)
+    return {"ok": True}
 
 # ---------- Reference data ----------
 LANGUAGES = [
@@ -348,126 +511,14 @@ MODELS = [
 ]
 
 TOPICS = [
-    {
-        "id": "police-stop",
-        "icon": "shield",
-        "title": "Rights During a Police Stop",
-        "summary": "What police can and cannot do when they stop or question you.",
-        "law": "Article 22 of the Constitution; Section 35 BNSS; D.K. Basu vs State of West Bengal (1997)",
-        "points": [
-            "You have the RIGHT to know the officer's name and badge number (D.K. Basu guidelines).",
-            "You have the RIGHT to know the reason for detention — police must inform you (Article 22(1)).",
-            "You have the RIGHT to consult a lawyer of your choice (Article 22(1)).",
-            "You have the RIGHT to inform a family member or friend of your arrest.",
-            "Police CANNOT torture, slap, or verbally abuse you — this violates Article 21.",
-            "Police MUST produce you before a magistrate within 24 hours (Article 22(2)).",
-        ],
-    },
-    {
-        "id": "arrest",
-        "icon": "handcuffs",
-        "title": "Rights When Arrested",
-        "summary": "Non-negotiable rights every citizen has upon arrest.",
-        "law": "Articles 20, 21, 22; Sections 35-46 BNSS; Arnesh Kumar Guidelines (2014)",
-        "points": [
-            "Arrest memo must be signed by a witness and countersigned by you (D.K. Basu).",
-            "You must be medically examined within 48 hours by a govt doctor.",
-            "You cannot be forced to be a witness against yourself (Article 20(3)).",
-            "For offences with punishment under 7 years, arrest is NOT automatic — police must justify (Arnesh Kumar).",
-            "Women can only be arrested between 6 AM and 6 PM, and by a woman officer (Section 43 BNSS).",
-            "You have a right to bail for bailable offences — police MUST inform you (Section 478 BNSS).",
-        ],
-    },
-    {
-        "id": "fir",
-        "icon": "file-text",
-        "title": "How to File an FIR",
-        "summary": "Step-by-step process to file a First Information Report.",
-        "law": "Section 173 BNSS (formerly Section 154 CrPC); Lalita Kumari vs State of UP (2013)",
-        "points": [
-            "Go to the police station having jurisdiction over the crime location.",
-            "If police refuse to file FIR, they are committing an OFFENCE (Section 199 BNS).",
-            "For cognizable offences, FIR registration is MANDATORY (Lalita Kumari judgment).",
-            "You have the RIGHT to a FREE copy of the FIR (Section 173(2) BNSS).",
-            "If refused, approach the SP in writing, then the Magistrate under Section 175(3) BNSS.",
-            "You can also file 'Zero FIR' at ANY police station — it will be transferred.",
-        ],
-    },
-    {
-        "id": "women-safety",
-        "icon": "heart",
-        "title": "Women's Safety Rights",
-        "summary": "Key legal protections for women in India.",
-        "law": "BNS Sections 63-79, 85-86; Domestic Violence Act 2005; Sexual Harassment Act 2013",
-        "points": [
-            "A woman CANNOT be called to a police station for questioning — police must come to her home (Section 179 BNSS).",
-            "Statement of a rape survivor must be recorded by a woman officer (Section 176 BNSS).",
-            "Free legal aid is guaranteed under Article 39A.",
-            "One Stop Centres (Sakhi) provide integrated support — call 181.",
-            "Domestic violence includes physical, emotional, sexual, and economic abuse.",
-            "POSH Act mandates Internal Committee at every workplace with 10+ employees.",
-        ],
-    },
-    {
-        "id": "traffic",
-        "icon": "car",
-        "title": "Traffic Stop & Vehicle Rights",
-        "summary": "Rules for interactions with traffic police.",
-        "law": "Motor Vehicles Act 1988 (amended 2019); Section 132 MV Act",
-        "points": [
-            "Only officers of Assistant Sub-Inspector rank & above can issue challans.",
-            "You have the right to see the officer's ID before handing over documents.",
-            "A traffic constable CANNOT seize your license — only a magistrate can.",
-            "You can pay fines via mParivahan app — no cash bribes are legal.",
-            "Documents in DigiLocker are legally valid — physical originals not required.",
-            "You have the right to contest a challan in Lok Adalat / Traffic Court.",
-        ],
-    },
-    {
-        "id": "rti",
-        "icon": "info",
-        "title": "Right to Information (RTI)",
-        "summary": "How to demand information from any public authority.",
-        "law": "Right to Information Act, 2005; Article 19(1)(a) of the Constitution",
-        "points": [
-            "Any citizen can file an RTI — no reason required.",
-            "Fee is ₹10 (may be free for BPL). Reply must come within 30 days.",
-            "For life & liberty issues, reply must come within 48 hours.",
-            "If denied, first appeal within 30 days; second appeal to CIC/SIC.",
-            "Public Information Officer (PIO) can be fined ₹250/day for delays.",
-            "Info about corruption, human rights violations, security matters have special rules.",
-        ],
-    },
-    {
-        "id": "consumer",
-        "icon": "shopping-bag",
-        "title": "Consumer Rights",
-        "summary": "Protection against fraud, defective goods, and poor service.",
-        "law": "Consumer Protection Act, 2019",
-        "points": [
-            "6 rights: safety, information, choice, be heard, seek redressal, consumer education.",
-            "File complaints online at consumerhelpline.gov.in or call 1915.",
-            "District Commission handles claims up to ₹1 crore.",
-            "E-commerce platforms are strictly liable for defective goods (2020 Rules).",
-            "Misleading ads are punishable — up to ₹10 lakh fine, 2 years jail.",
-            "Product liability makes manufacturers liable for defects causing harm.",
-        ],
-    },
-    {
-        "id": "domestic-violence",
-        "icon": "home",
-        "title": "Domestic Violence Protection",
-        "summary": "Legal shield for women facing domestic abuse.",
-        "law": "Protection of Women from Domestic Violence Act, 2005",
-        "points": [
-            "Covers physical, sexual, verbal, emotional, and economic abuse.",
-            "Right to reside in shared household — CANNOT be thrown out.",
-            "Protection Order, Residence Order, Monetary Relief, Custody Order, Compensation Order available.",
-            "Free legal aid, medical treatment, shelter home access.",
-            "Protection Officer in every district assists filing.",
-            "Helpline: 181 (Women); 1091 (Police Women Helpline).",
-        ],
-    },
+    {"id": "police-stop", "icon": "shield", "title": "Rights During a Police Stop", "summary": "What police can and cannot do when they stop or question you.", "law": "Article 22; Section 35 BNSS; D.K. Basu vs State of WB (1997)", "points": ["Right to know officer name & badge number (D.K. Basu).", "Right to know reason for detention (Article 22(1)).", "Right to consult lawyer of choice (Article 22(1)).", "Right to inform family of arrest.", "Police cannot torture, slap or abuse — violates Article 21.", "Must be produced before magistrate in 24 hours (Article 22(2))."]},
+    {"id": "arrest", "icon": "handcuffs", "title": "Rights When Arrested", "summary": "Non-negotiable rights every citizen has on arrest.", "law": "Articles 20, 21, 22; Sec 35-46 BNSS; Arnesh Kumar (2014)", "points": ["Arrest memo must be witnessed & countersigned (D.K. Basu).", "Medical examination within 48 hours by govt doctor.", "Cannot be forced to be witness against self (Art 20(3)).", "For offences <7yrs, arrest not automatic (Arnesh Kumar).", "Women arrested only between 6AM-6PM by a woman officer (Sec 43 BNSS).", "Right to bail for bailable offences (Sec 478 BNSS)."]},
+    {"id": "fir", "icon": "file-text", "title": "How to File an FIR", "summary": "Step-by-step process for a First Information Report.", "law": "Sec 173 BNSS; Lalita Kumari vs State of UP (2013)", "points": ["Go to police station of jurisdiction.", "If police refuse FIR they commit an offence (Sec 199 BNS).", "FIR mandatory for cognizable offences (Lalita Kumari).", "Right to free copy of FIR (Sec 173(2) BNSS).", "If refused: SP in writing → Magistrate under Sec 175(3) BNSS.", "Zero FIR can be filed at ANY police station."]},
+    {"id": "women-safety", "icon": "heart", "title": "Women's Safety Rights", "summary": "Key legal protections for women in India.", "law": "BNS Sec 63-79, 85-86; DV Act 2005; POSH Act 2013", "points": ["Woman cannot be called to police station (Sec 179 BNSS).", "Rape statement must be recorded by woman officer (Sec 176).", "Free legal aid guaranteed (Article 39A).", "One-Stop Centres (Sakhi) — call 181.", "DV includes physical, emotional, sexual, economic abuse.", "POSH: IC mandatory at every workplace with 10+ employees."]},
+    {"id": "traffic", "icon": "car", "title": "Traffic Stop & Vehicle Rights", "summary": "Rules for traffic-police interactions.", "law": "Motor Vehicles Act 1988 (amended 2019); Sec 132", "points": ["Only ASI+ officers can issue challans.", "Right to see officer ID before handing over documents.", "Constable cannot seize licence — only magistrate can.", "Pay fines via mParivahan — no cash bribes are legal.", "DigiLocker documents are legally valid.", "Right to contest challan in Lok Adalat / traffic court."]},
+    {"id": "rti", "icon": "info", "title": "Right to Information (RTI)", "summary": "Demand information from any public authority.", "law": "RTI Act 2005; Art 19(1)(a)", "points": ["Any citizen can file RTI — no reason required.", "Fee ₹10 (free for BPL). Reply in 30 days.", "Life & liberty issues: reply in 48 hours.", "Denied → first appeal in 30 days; second appeal to CIC/SIC.", "PIO fined ₹250/day for delays.", "Special rules for corruption / human rights / security."]},
+    {"id": "consumer", "icon": "shopping-bag", "title": "Consumer Rights", "summary": "Protection against fraud, defective goods, and poor service.", "law": "Consumer Protection Act, 2019", "points": ["6 rights: safety, information, choice, be heard, redressal, education.", "File complaints at consumerhelpline.gov.in or call 1915.", "District Commission handles claims up to ₹1 crore.", "E-commerce platforms strictly liable for defective goods.", "Misleading ads: fine up to ₹10 lakh, jail up to 2 years.", "Product liability makes manufacturers liable for defects."]},
+    {"id": "domestic-violence", "icon": "home", "title": "Domestic Violence Protection", "summary": "Legal shield for women facing domestic abuse.", "law": "Protection of Women from Domestic Violence Act 2005", "points": ["Covers physical, sexual, verbal, emotional, economic abuse.", "Right to reside in shared household — cannot be thrown out.", "Protection / Residence / Monetary / Custody / Compensation Orders.", "Free legal aid, medical treatment, shelter home access.", "Protection Officer in every district.", "Helplines: 181 (Women); 1091 (Police Women)."]},
 ]
 
 @api.get("/reference/languages")
@@ -489,9 +540,43 @@ async def get_topic(topic_id: str):
             return t
     raise HTTPException(404, "Topic not found")
 
+# ---------- Legal / meta ----------
+@api.get("/legal/terms")
+async def get_terms():
+    return {
+        "version": TERMS_VERSION,
+        "text": TERMS_AND_CONDITIONS,
+        "disclaimer_short": DISCLAIMER_SHORT,
+        "copyright": "© Callistus Moses",
+        "company": "Msafe",
+    }
+
+@api.get("/billing/pricing")
+async def pricing():
+    return {
+        "pro_price_inr_paise": PRO_PRICE_INR,
+        "pro_price_label": PRO_PRICE_LABEL,
+        "currency": "INR",
+        "billing_type": "one_time",
+        "features": [
+            "Lawyer-consultation-style deep answers",
+            "Ready-to-use draft complaint / RTI / notice paragraphs",
+            "Step-by-step action plans with jurisdiction & authority names",
+            "Counter-arguments & pitfalls analysis",
+            "Escalation paths (SP, DM, HRC, NALSA, Consumer Commission)",
+            "Priority AI models (Claude Sonnet 4.5)",
+        ],
+    }
+
 @api.get("/health")
 async def health():
-    return {"status": "ok", "app": "Gandhikar", "copyright": "© Callistus Moses", "company": "Msafe"}
+    return {
+        "status": "ok",
+        "app": "Gandhikar",
+        "copyright": "© Callistus Moses",
+        "company": "Msafe",
+        "terms_version": TERMS_VERSION,
+    }
 
 @api.get("/")
 async def root():
@@ -501,7 +586,6 @@ async def root():
         "company": "Msafe",
     }
 
-# Mount router
 app.include_router(api)
 
 app.add_middleware(

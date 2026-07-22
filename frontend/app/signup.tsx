@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, TextInput, Pressable, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
-import { useAuth } from '@/src/auth';
+import { Ionicons } from '@expo/vector-icons';
+import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 
 export default function Signup() {
@@ -10,16 +11,31 @@ export default function Signup() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [terms, setTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showTerms, setShowTerms] = useState(false);
+  const [termsText, setTermsText] = useState('');
+  const [termsVersion, setTermsVersion] = useState('1.0');
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/legal/terms`).then(r => r.json()).then(d => {
+      setTermsText(d.text);
+      setTermsVersion(d.version);
+    }).catch(() => {});
+  }, []);
 
   const onSubmit = async () => {
     setError(null);
+    if (!name.trim()) { setError('Please enter your name'); return; }
+    if (!phone.trim() || phone.replace(/\D/g, '').length < 6) { setError('Please enter a valid phone number'); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    if (!terms) { setError('You must accept the Terms & Conditions to continue'); return; }
     setLoading(true);
     try {
-      await register(email.trim(), password, name.trim());
+      await register(email.trim(), password, name.trim(), phone.trim(), true, termsVersion);
       router.replace('/(tabs)');
     } catch (e: any) {
       setError(e?.message || 'Registration failed');
@@ -39,14 +55,28 @@ export default function Signup() {
             <Text style={styles.heading}>Create your account</Text>
             <Text style={styles.sub}>Free forever. No fear, just facts.</Text>
 
-            <Text style={styles.label}>Name</Text>
+            <Text style={styles.label}>Full name</Text>
             <TextInput testID="signup-name-input" style={styles.input} value={name} onChangeText={setName} placeholder="Your name" placeholderTextColor={theme.colors.onSurfaceTertiary} />
 
             <Text style={styles.label}>Email</Text>
             <TextInput testID="signup-email-input" style={styles.input} value={email} onChangeText={setEmail} placeholder="you@example.com" placeholderTextColor={theme.colors.onSurfaceTertiary} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" />
 
+            <Text style={styles.label}>Phone number</Text>
+            <TextInput testID="signup-phone-input" style={styles.input} value={phone} onChangeText={setPhone} placeholder="+91 98xxxxxxxx" placeholderTextColor={theme.colors.onSurfaceTertiary} keyboardType="phone-pad" />
+
             <Text style={styles.label}>Password</Text>
             <TextInput testID="signup-password-input" style={styles.input} value={password} onChangeText={setPassword} placeholder="At least 6 characters" placeholderTextColor={theme.colors.onSurfaceTertiary} secureTextEntry />
+
+            <Pressable testID="terms-checkbox" style={styles.termsRow} onPress={() => setTerms(t => !t)}>
+              <View style={[styles.checkbox, terms && styles.checkboxOn]}>
+                {terms && <Ionicons name="checkmark" size={16} color={theme.colors.onBrandPrimary} />}
+              </View>
+              <Text style={styles.termsText}>
+                I have read, understood, and accept the{' '}
+                <Text testID="open-terms-link" style={styles.termsLink} onPress={(e) => { e.stopPropagation?.(); setShowTerms(true); }}>Terms & Conditions</Text>
+                {' '}including the legal disclaimer and data collection notice. I understand Gandhikar is NOT a lawyer and provides legal information only.
+              </Text>
+            </Pressable>
 
             {error && <Text style={styles.error} testID="signup-error">{error}</Text>}
 
@@ -64,6 +94,25 @@ export default function Signup() {
           <Text testID="signup-copyright" style={styles.copyright}>© {new Date().getFullYear()} Callistus Moses · An Msafe product</Text>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={showTerms} animationType="slide" onRequestClose={() => setShowTerms(false)} testID="terms-modal">
+        <SafeAreaView style={styles.termsSafe} edges={['top', 'bottom']}>
+          <View style={styles.termsHeader}>
+            <Text style={styles.termsHeaderTitle}>Terms & Conditions</Text>
+            <Pressable testID="close-terms" onPress={() => setShowTerms(false)} hitSlop={10}>
+              <Ionicons name="close" size={28} color={theme.colors.onBrandPrimary} />
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
+            <Text style={styles.termsBody}>{termsText}</Text>
+          </ScrollView>
+          <View style={styles.termsFooter}>
+            <Pressable testID="accept-terms-in-modal" style={styles.btn} onPress={() => { setTerms(true); setShowTerms(false); }}>
+              <Text style={styles.btnText}>I Agree & Continue</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -78,10 +127,20 @@ const styles = StyleSheet.create({
   sub: { color: theme.colors.onSurfaceSecondary, marginTop: 4 },
   label: { color: theme.colors.onSurfaceSecondary, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm, fontWeight: '600' },
   input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 16, color: theme.colors.onSurface, backgroundColor: theme.colors.surfaceSecondary },
+  termsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.sm, marginTop: theme.spacing.lg, padding: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border },
+  checkbox: { width: 22, height: 22, borderRadius: 4, borderWidth: 2, borderColor: theme.colors.brand, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  checkboxOn: { backgroundColor: theme.colors.brand },
+  termsText: { flex: 1, color: theme.colors.onSurface, fontSize: 12, lineHeight: 18 },
+  termsLink: { color: theme.colors.brandSecondary, fontWeight: '700', textDecorationLine: 'underline' },
   btn: { backgroundColor: theme.colors.brand, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: 'center', marginTop: theme.spacing.xl, minHeight: 52 },
   btnText: { color: theme.colors.onBrandPrimary, fontWeight: '700', fontSize: 16 },
   row: { flexDirection: 'row', justifyContent: 'center', marginTop: theme.spacing.lg },
   link: { color: theme.colors.brandSecondary, fontWeight: '700' },
   error: { color: theme.colors.error, marginTop: theme.spacing.md },
   copyright: { textAlign: 'center', color: '#8A93A6', marginTop: theme.spacing.xl, fontSize: 11, letterSpacing: 0.5 },
+  termsSafe: { flex: 1, backgroundColor: theme.colors.surface },
+  termsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: theme.spacing.lg, backgroundColor: theme.colors.brand },
+  termsHeaderTitle: { color: theme.colors.onBrandPrimary, fontFamily: theme.fonts.display, fontSize: 20, fontWeight: '700' },
+  termsBody: { color: theme.colors.onSurface, fontSize: 13, lineHeight: 20 },
+  termsFooter: { padding: theme.spacing.lg, borderTopWidth: 1, borderTopColor: theme.colors.divider },
 });
