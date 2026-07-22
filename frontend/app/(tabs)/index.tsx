@@ -183,7 +183,7 @@ export default function ChatScreen() {
       <View style={styles.header}>
         <View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={styles.title}>Gandhikar</Text>
+            <Text style={styles.title}>Dhara</Text>
             {user?.is_pro && (
               <View testID="pro-badge" style={styles.proBadge}>
                 <Ionicons name="star" size={11} color={theme.colors.onBrandSecondary} />
@@ -237,7 +237,7 @@ export default function ChatScreen() {
               <View key={m.id} style={[styles.msg, m.role === 'user' ? styles.userMsg : styles.aiMsg]}>
                 <View style={styles.msgHeader}>
                   <Text style={[styles.msgRole, m.role === 'user' ? styles.userRole : styles.aiRole]}>
-                    {m.role === 'user' ? 'You' : 'Gandhikar'}
+                    {m.role === 'user' ? 'You' : 'Dhara'}
                   </Text>
                   {m.role === 'assistant' && m.content.length > 0 && (
                     <Pressable testID={`speak-${m.id}`} onPress={() => speak(m.id, m.content)} hitSlop={10}>

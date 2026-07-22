@@ -78,7 +78,7 @@ export default function Rights() {
                     onPress={() => router.push('/(tabs)')}
                   >
                     <Ionicons name="chatbubbles" size={16} color={theme.colors.onBrandPrimary} />
-                    <Text style={styles.askText}>Ask Gandhikar more</Text>
+                    <Text style={styles.askText}>Ask Dhara more</Text>
                   </Pressable>
                 </View>
               )}

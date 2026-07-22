@@ -1,4 +1,4 @@
-"""Gandhikar - AI Legal Empowerment Bot Backend."""
+"""Dhara - AI Legal Empowerment Bot Backend."""
 import os
 import io
 import json
@@ -43,7 +43,7 @@ if STRIPE_API_KEY:
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-app = FastAPI(title="Gandhikar API")
+app = FastAPI(title="Dhara API")
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -131,7 +131,7 @@ def build_system_prompt(language_name: str, is_pro: bool = False) -> str:
     disclaimer_line = ("\n\nAT THE END OF EVERY RESPONSE, append this exact disclaimer line on a new paragraph, in " + language_name + ":\n\"⚠️ This is legal information, not legal advice. For serious matters consult an advocate. © Callistus Moses · Msafe.\"")
 
     if is_pro:
-        return f"""You are Gandhikar Pro — a senior-lawyer-style AI legal advisor to an Indian citizen. You give the depth and structure a paying client would receive in a consultation.
+        return f"""You are Dhara Pro — a senior-lawyer-style AI legal advisor to an Indian citizen. You give the depth and structure a paying client would receive in a consultation.
 
 RESPONSE STYLE FOR PRO:
 - Reply in {language_name}. Simple, dignified, plain language.
@@ -155,9 +155,9 @@ LEGAL SCOPE:
 
 TONE: सत्य • अहिंसा • अधिकार. Empower, never threaten.{disclaimer_line}"""
 
-    return f"""You are Gandhikar — a free AI legal information tool for Indian citizens.
+    return f"""You are Dhara — a free AI legal information tool for Indian citizens.
 
-CORE MISSION: Make every Indian citizen aware of their rights. Empower — never threaten. Named after Mahatma Gandhi.
+CORE MISSION: Make every Indian citizen aware of their rights. Empower — never threaten. "Dhara" (धारा) means a section of law in Hindi.
 
 EXPERTISE: BNS 2023, BNSS 2023, BSA 2023, Constitution of India, Motor Vehicles Act, Consumer Protection Act, RTI, Domestic Violence Act, IT Act, and landmark judgments.
 
@@ -400,7 +400,7 @@ async def create_checkout(body: CheckoutIn, user: dict = Depends(current_user)):
                 "price_data": {
                     "currency": "inr",
                     "product_data": {
-                        "name": "Gandhikar Pro — Lawyer-style AI Consultation",
+                        "name": "Dhara Pro — Lawyer-style AI Consultation",
                         "description": "Deep, structured legal answers with drafts, escalation paths & action plans."
                     },
                     "unit_amount": PRO_PRICE_INR,
@@ -572,7 +572,7 @@ async def pricing():
 async def health():
     return {
         "status": "ok",
-        "app": "Gandhikar",
+        "app": "Dhara",
         "copyright": "© Callistus Moses",
         "company": "Msafe",
         "terms_version": TERMS_VERSION,
@@ -581,7 +581,7 @@ async def health():
 @api.get("/")
 async def root():
     return {
-        "message": "Gandhikar API - Empowering every Indian citizen with knowledge of their rights.",
+        "message": "Dhara API - Empowering every Indian citizen with knowledge of their rights.",
         "copyright": "© Callistus Moses",
         "company": "Msafe",
     }

@@ -62,7 +62,7 @@ export default function SessionView() {
             <View key={m.id} style={[styles.msg, m.role === 'user' ? styles.userMsg : styles.aiMsg]}>
               <View style={styles.msgHeader}>
                 <Text style={[styles.msgRole, m.role === 'user' ? styles.userRole : styles.aiRole]}>
-                  {m.role === 'user' ? 'You' : 'Gandhikar'}
+                  {m.role === 'user' ? 'You' : 'Dhara'}
                 </Text>
                 {m.role === 'assistant' && (
                   <Pressable onPress={() => speak(m.id, m.content)} hitSlop={10} testID={`speak-${m.id}`}>

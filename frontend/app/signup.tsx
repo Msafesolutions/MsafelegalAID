@@ -48,7 +48,7 @@ export default function Signup() {
     <SafeAreaView style={styles.safe} testID="signup-screen">
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <Text style={styles.brand}>Gandhikar</Text>
+          <Text style={styles.brand}>Dhara</Text>
           <Text style={styles.tag}>Empowerment through knowledge</Text>
 
           <View style={styles.card}>
@@ -74,7 +74,7 @@ export default function Signup() {
               <Text style={styles.termsText}>
                 I have read, understood, and accept the{' '}
                 <Text testID="open-terms-link" style={styles.termsLink} onPress={(e) => { e.stopPropagation?.(); setShowTerms(true); }}>Terms & Conditions</Text>
-                {' '}including the legal disclaimer and data collection notice. I understand Gandhikar is NOT a lawyer and provides legal information only.
+                {' '}including the legal disclaimer and data collection notice. I understand Dhara is NOT a lawyer and provides legal information only.
               </Text>
             </Pressable>
 

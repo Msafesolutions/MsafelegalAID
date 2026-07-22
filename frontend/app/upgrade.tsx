@@ -82,7 +82,7 @@ export default function Upgrade() {
         <Pressable onPress={() => router.back()} testID="upgrade-back" hitSlop={10}>
           <Ionicons name="arrow-back" size={26} color={theme.colors.onBrandPrimary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Gandhikar Pro</Text>
+        <Text style={styles.headerTitle}>Dhara Pro</Text>
         <View style={{ width: 26 }} />
       </View>
 

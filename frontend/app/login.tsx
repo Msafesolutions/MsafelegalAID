@@ -30,7 +30,7 @@ export default function Login() {
     <SafeAreaView style={styles.safe} testID="login-screen">
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <Text style={styles.brand}>Gandhikar</Text>
+          <Text style={styles.brand}>Dhara</Text>
           <Text style={styles.tag}>Know your rights. Speak them.</Text>
 
           <View style={styles.card}>

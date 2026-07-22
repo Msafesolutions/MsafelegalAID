@@ -26,7 +26,7 @@ export default function Settings() {
   const confirmLogout = () => {
     if (Platform.OS === 'web') {
       // eslint-disable-next-line no-alert
-      if (typeof window !== 'undefined' && window.confirm('Sign out of Gandhikar?')) {
+      if (typeof window !== 'undefined' && window.confirm('Sign out of Dhara?')) {
         logout();
       }
       return;
@@ -41,7 +41,7 @@ export default function Settings() {
     <SafeAreaView style={styles.safe} edges={['top']} testID="settings-screen">
       <View style={styles.header}>
         <Text style={styles.h1}>Settings</Text>
-        <Text style={styles.h2}>Personalize your Gandhikar</Text>
+        <Text style={styles.h2}>Personalize your Dhara</Text>
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.profile}>
@@ -68,7 +68,7 @@ export default function Settings() {
         >
           <Ionicons name="star" size={22} color={theme.colors.onBrandPrimary} />
           <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
-            <Text style={styles.upsellTitle}>{user?.is_pro ? 'Gandhikar Pro · Active' : 'Upgrade to Gandhikar Pro'}</Text>
+            <Text style={styles.upsellTitle}>{user?.is_pro ? 'Dhara Pro · Active' : 'Upgrade to Dhara Pro'}</Text>
             <Text style={styles.upsellSub}>{user?.is_pro ? 'Lawyer-consultation-style answers unlocked' : 'Lawyer-style depth · Drafts · Escalation paths'}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={theme.colors.onBrandPrimary} />
@@ -116,9 +116,9 @@ export default function Settings() {
         <Text style={styles.section}>About</Text>
         <View style={styles.aboutCard}>
           <Text style={styles.aboutText}>
-            Gandhikar is a free civic empowerment tool. Named after Mahatma Gandhi, it exists to make every Indian citizen aware of their rights under the Bharatiya Nyaya Sanhita (BNS), the Constitution of India, and other laws.
+            Dhara is a free civic empowerment tool. "Dhara" (धारा) means a section of law in Hindi — for every Indian citizen to know the exact section of the Bharatiya Nyaya Sanhita (BNS), the Constitution of India, and other laws that protects them.
             {'\n\n'}सत्य • अहिंसा • अधिकार{'\n\n'}
-            Note: Gandhikar provides legal information — not legal advice. For serious matters, consult a lawyer or contact NALSA (15100) for free legal aid.
+            Note: Dhara provides legal information — not legal advice. For serious matters, consult a lawyer or contact NALSA (15100) for free legal aid.
           </Text>
         </View>
 

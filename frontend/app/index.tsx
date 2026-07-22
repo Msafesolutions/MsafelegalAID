@@ -16,7 +16,7 @@ export default function Index() {
 
   return (
     <View style={styles.c} testID="splash-screen">
-      <Text style={styles.brand}>Gandhikar</Text>
+      <Text style={styles.brand}>Dhara</Text>
       <Text style={styles.tag}>आपके अधिकार, आपकी शक्ति</Text>
       <ActivityIndicator color={theme.colors.brandSecondary} style={{ marginTop: 24 }} />
     </View>
