@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "Dhara",
-    "slug": "gandhikar",
+    "name": "MSafe Legal Aid",
+    "slug": "msafe-legal-aid",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "gandhikar",
+    "scheme": "msafelegalaid",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.gandhikar",
+      "bundleIdentifier": "com.msafesolutions.legalaid",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Speak your legal questions in your language"
       }
@@ -21,7 +21,7 @@
         "backgroundColor": "#0A1C3A"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.gandhikar",
+      "package": "com.msafesolutions.legalaid",
       "permissions": [
         "RECORD_AUDIO"
       ]
