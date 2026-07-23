@@ -3,10 +3,16 @@ import os
 import io
 import json
 import uuid
+import hmac
+import hashlib
 import logging
 import bcrypt
 import jwt
 import stripe
+try:
+    import razorpay
+except Exception:
+    razorpay = None
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Optional, AsyncGenerator
@@ -32,13 +38,27 @@ EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 JWT_SECRET = os.environ["JWT_SECRET"]
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-PRO_PRICE_INR = int(os.environ.get("PRO_PRICE_INR", "99900"))  # paise
-PRO_PRICE_LABEL = os.environ.get("PRO_PRICE_LABEL", "₹999")
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
+RAZORPAY_ME_HANDLE = os.environ.get("RAZORPAY_ME_HANDLE", "calviltech")
+RAZORPAY_ME_URL = os.environ.get("RAZORPAY_ME_URL", "https://razorpay.me/@calviltech")
+PRO_PRICE_INR = int(os.environ.get("PRO_PRICE_INR", "5000"))  # paise
+PRO_PRICE_LABEL = os.environ.get("PRO_PRICE_LABEL", "₹50")
+PRO_PRICE_USD = int(os.environ.get("PRO_PRICE_USD", "500"))  # cents
+PRO_PRICE_USD_LABEL = os.environ.get("PRO_PRICE_USD_LABEL", "$5")
 JWT_ALG = "HS256"
 JWT_EXP_DAYS = 30
 
 if STRIPE_API_KEY:
     stripe.api_key = STRIPE_API_KEY
+
+razor_client = None
+if razorpay and RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
+    try:
+        razor_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+    except Exception:
+        razor_client = None
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -398,12 +418,12 @@ async def create_checkout(body: CheckoutIn, user: dict = Depends(current_user)):
             payment_method_types=["card"],
             line_items=[{
                 "price_data": {
-                    "currency": "inr",
+                    "currency": "usd",
                     "product_data": {
                         "name": "Dhara Pro — Lawyer-style AI Consultation",
                         "description": "Deep, structured legal answers with drafts, escalation paths & action plans."
                     },
-                    "unit_amount": PRO_PRICE_INR,
+                    "unit_amount": PRO_PRICE_USD,
                 },
                 "quantity": 1,
             }],
@@ -412,14 +432,15 @@ async def create_checkout(body: CheckoutIn, user: dict = Depends(current_user)):
             cancel_url=body.return_url + ("&" if "?" in body.return_url else "?") + "status=cancel",
             client_reference_id=user["id"],
             customer_email=user["email"],
-            metadata={"user_id": user["id"], "email": user["email"], "product": "gandhikar_pro"},
+            metadata={"user_id": user["id"], "email": user["email"], "product": "dhara_pro"},
         )
         # Log intent
         await db.billing_intents.insert_one({
             "id": str(uuid.uuid4()),
             "user_id": user["id"],
+            "provider": "stripe",
             "stripe_session_id": session.id,
-            "amount_inr": PRO_PRICE_INR,
+            "amount_usd_cents": PRO_PRICE_USD,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "created",
         })
@@ -428,15 +449,22 @@ async def create_checkout(body: CheckoutIn, user: dict = Depends(current_user)):
         logger.exception("stripe checkout failed")
         raise HTTPException(500, f"Checkout failed: {e}")
 
-async def _mark_pro(user_id: str, session_id: Optional[str] = None):
+async def _mark_pro(user_id: str, session_id: Optional[str] = None, provider: str = "stripe", payment_ref: Optional[str] = None):
     now = datetime.now(timezone.utc).isoformat()
     await db.users.update_one(
         {"id": user_id},
-        {"$set": {"is_pro": True, "pro_since": now}},
+        {"$set": {"is_pro": True, "pro_since": now, "pro_provider": provider, "pro_payment_ref": payment_ref}},
     )
+    filter_q: dict
+    if provider == "stripe" and session_id:
+        filter_q = {"stripe_session_id": session_id}
+    elif provider == "razorpay" and payment_ref:
+        filter_q = {"razorpay_payment_id": payment_ref}
+    else:
+        filter_q = {"user_id": user_id, "status": "created"}
     await db.billing_intents.update_one(
-        {"stripe_session_id": session_id} if session_id else {"user_id": user_id, "status": "created"},
-        {"$set": {"status": "paid", "paid_at": now}},
+        filter_q,
+        {"$set": {"status": "paid", "paid_at": now, "provider": provider}},
     )
 
 @api.post("/billing/verify")
@@ -449,7 +477,7 @@ async def verify_checkout(payload: dict, user: dict = Depends(current_user)):
     try:
         s = stripe.checkout.Session.retrieve(sid)
         if s.payment_status == "paid" and s.client_reference_id == user["id"]:
-            await _mark_pro(user["id"], sid)
+            await _mark_pro(user["id"], session_id=sid, provider="stripe")
             return {"is_pro": True}
         return {"is_pro": bool(user.get("is_pro"))}
     except Exception as e:
@@ -474,7 +502,151 @@ async def stripe_webhook(request: Request):
         user_id = session.get("client_reference_id") if isinstance(session, dict) else session.client_reference_id
         sid = session.get("id") if isinstance(session, dict) else session.id
         if user_id:
-            await _mark_pro(user_id, sid)
+            await _mark_pro(user_id, session_id=sid, provider="stripe")
+    return {"ok": True}
+
+# ---------- Razorpay ----------
+class RazorpayVerifyIn(BaseModel):
+    payment_id: str = Field(min_length=4, max_length=64)
+
+@api.get("/billing/razorpay/config")
+async def razorpay_config():
+    return {
+        "enabled": True,
+        "handle": RAZORPAY_ME_HANDLE,
+        "link_url": RAZORPAY_ME_URL,
+        "key_id_public": RAZORPAY_KEY_ID or None,
+        "server_verify": bool(razor_client),
+        "webhook_enabled": bool(RAZORPAY_WEBHOOK_SECRET),
+        "amount_paise": PRO_PRICE_INR,
+        "amount_label": PRO_PRICE_LABEL,
+        "currency": "INR",
+    }
+
+@api.post("/billing/razorpay/submit-payment-id")
+async def razorpay_submit_payment(body: RazorpayVerifyIn, user: dict = Depends(current_user)):
+    """User pastes the Razorpay Payment ID (pay_xxx) received from Razorpay after paying
+    on the razorpay.me hosted page. If server credentials are configured we verify
+    the payment status & amount via Razorpay API; otherwise we log & optimistically
+    grant Pro (trust-based fallback for the razorpay.me link flow)."""
+    if user.get("is_pro"):
+        return {"is_pro": True, "already_pro": True}
+
+    pid = body.payment_id.strip()
+    if not pid.startswith("pay_"):
+        raise HTTPException(400, "Payment ID must start with pay_")
+
+    now = datetime.now(timezone.utc).isoformat()
+    intent_doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "email": user["email"],
+        "provider": "razorpay",
+        "razorpay_payment_id": pid,
+        "amount_paise": PRO_PRICE_INR,
+        "status": "submitted",
+        "created_at": now,
+    }
+
+    verified = False
+    verify_error: Optional[str] = None
+
+    if razor_client:
+        try:
+            payment = razor_client.payment.fetch(pid)
+            intent_doc["razorpay_payment"] = {
+                "status": payment.get("status"),
+                "amount": payment.get("amount"),
+                "currency": payment.get("currency"),
+                "email": payment.get("email"),
+                "contact": payment.get("contact"),
+                "method": payment.get("method"),
+            }
+            status = payment.get("status")
+            amount = int(payment.get("amount") or 0)
+            if status in ("captured", "authorized") and amount >= PRO_PRICE_INR:
+                verified = True
+            else:
+                verify_error = f"Payment status={status}, amount={amount} paise (required {PRO_PRICE_INR})"
+        except Exception as e:
+            logger.exception("razorpay fetch failed")
+            verify_error = str(e)[:200]
+
+    # Duplicate protection: a payment_id should only unlock Pro once
+    existing = await db.billing_intents.find_one({"razorpay_payment_id": pid, "status": "paid"})
+    if existing and existing.get("user_id") != user["id"]:
+        raise HTTPException(400, "This payment has already been used by another account.")
+
+    if verified or not razor_client:
+        # Grant Pro (verified OR trust-based fallback when no server keys)
+        intent_doc["status"] = "paid" if verified else "trust_paid"
+        intent_doc["paid_at"] = now
+        if verify_error:
+            intent_doc["verify_error"] = verify_error
+        await db.billing_intents.insert_one(intent_doc)
+        await _mark_pro(user["id"], provider="razorpay", payment_ref=pid)
+        return {"is_pro": True, "verified": verified, "trust_based": (not razor_client)}
+    else:
+        intent_doc["status"] = "verify_failed"
+        intent_doc["verify_error"] = verify_error
+        await db.billing_intents.insert_one(intent_doc)
+        raise HTTPException(400, f"Could not verify payment: {verify_error}")
+
+@app.post("/api/webhooks/razorpay")
+async def razorpay_webhook(request: Request):
+    """Configure this URL in Razorpay Dashboard → Settings → Webhooks.
+    Event: payment.captured. Set the webhook secret and put it in RAZORPAY_WEBHOOK_SECRET."""
+    payload = await request.body()
+    sig = request.headers.get("x-razorpay-signature", "")
+
+    if RAZORPAY_WEBHOOK_SECRET:
+        expected = hmac.new(
+            RAZORPAY_WEBHOOK_SECRET.encode(),
+            payload,
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            raise HTTPException(400, "Invalid signature")
+
+    try:
+        event = json.loads(payload)
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+
+    et = event.get("event")
+    if et in ("payment.captured", "payment.authorized"):
+        payment = (event.get("payload") or {}).get("payment", {}).get("entity", {})
+        pid = payment.get("id")
+        email = (payment.get("email") or "").lower()
+        contact = payment.get("contact") or ""
+        amount = int(payment.get("amount") or 0)
+        # Find user by email or phone (razorpay.me collects both)
+        user = None
+        if email:
+            user = await db.users.find_one({"email": email})
+        if not user and contact:
+            # try last 10 digits of phone
+            digits = "".join(ch for ch in contact if ch.isdigit())[-10:]
+            if digits:
+                user = await db.users.find_one({"phone": {"$regex": digits + "$"}})
+        if user and amount >= PRO_PRICE_INR:
+            # Record intent if missing
+            existing = await db.billing_intents.find_one({"razorpay_payment_id": pid})
+            if not existing:
+                await db.billing_intents.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "user_id": user["id"],
+                    "email": user["email"],
+                    "provider": "razorpay",
+                    "razorpay_payment_id": pid,
+                    "amount_paise": amount,
+                    "status": "paid_via_webhook",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "paid_at": datetime.now(timezone.utc).isoformat(),
+                    "razorpay_payment": payment,
+                })
+            await _mark_pro(user["id"], provider="razorpay", payment_ref=pid)
+            logger.info(f"razorpay webhook: marked user {user['email']} pro via {pid}")
     return {"ok": True}
 
 # ---------- Reference data ----------
@@ -556,8 +728,27 @@ async def pricing():
     return {
         "pro_price_inr_paise": PRO_PRICE_INR,
         "pro_price_label": PRO_PRICE_LABEL,
+        "pro_price_usd_cents": PRO_PRICE_USD,
+        "pro_price_usd_label": PRO_PRICE_USD_LABEL,
         "currency": "INR",
+        "currency_intl": "USD",
         "billing_type": "one_time",
+        "providers": {
+            "stripe": {
+                "enabled": bool(STRIPE_API_KEY),
+                "currency": "USD",
+                "amount_label": PRO_PRICE_USD_LABEL,
+                "regions": ["Canada", "International"],
+            },
+            "razorpay": {
+                "enabled": True,
+                "currency": "INR",
+                "amount_label": PRO_PRICE_LABEL,
+                "regions": ["India"],
+                "link_url": RAZORPAY_ME_URL,
+                "handle": RAZORPAY_ME_HANDLE,
+            },
+        },
         "features": [
             "Lawyer-consultation-style deep answers",
             "Ready-to-use draft complaint / RTI / notice paragraphs",

@@ -5,7 +5,7 @@ import time
 import pytest
 import requests
 
-BASE_URL = os.environ["EXPO_PUBLIC_BACKEND_URL"].rstrip("/") if "EXPO_PUBLIC_BACKEND_URL" in os.environ else "https://bns-know-your-rights.preview.emergentagent.com"
+BASE_URL = os.environ["EXPO_PUBLIC_BACKEND_URL"].rstrip("/") if "EXPO_PUBLIC_BACKEND_URL" in os.environ else "https://dhara-constitution.preview.emergentagent.com"
 API = f"{BASE_URL}/api"
 
 # fresh email per session
