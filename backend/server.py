@@ -47,6 +47,7 @@ PRO_PRICE_INR = int(os.environ.get("PRO_PRICE_INR", "5000"))  # paise
 PRO_PRICE_LABEL = os.environ.get("PRO_PRICE_LABEL", "₹50")
 PRO_PRICE_USD = int(os.environ.get("PRO_PRICE_USD", "500"))  # cents
 PRO_PRICE_USD_LABEL = os.environ.get("PRO_PRICE_USD_LABEL", "$5")
+PRO_FREE_SAMPLES = int(os.environ.get("PRO_FREE_SAMPLES", "5"))
 JWT_ALG = "HS256"
 JWT_EXP_DAYS = 30
 
@@ -93,6 +94,7 @@ class ChatIn(BaseModel):
     language_name: str = "English"
     model_provider: str = "anthropic"
     model_name: str = "claude-sonnet-4-5-20250929"
+    mode: str = "basic"  # "basic" | "pro"
 
 class TTSIn(BaseModel):
     text: str
@@ -128,6 +130,9 @@ def public_user(u: dict) -> dict:
         "language": u.get("language", "en"),
         "is_pro": u.get("is_pro", False),
         "pro_since": u.get("pro_since"),
+        "pro_samples_used": int(u.get("pro_samples_used", 0)),
+        "pro_samples_limit": PRO_FREE_SAMPLES,
+        "pro_samples_remaining": max(0, PRO_FREE_SAMPLES - int(u.get("pro_samples_used", 0))),
         "terms_accepted": u.get("terms_accepted", False),
         "terms_version": u.get("terms_version"),
         "terms_accepted_at": u.get("terms_accepted_at"),
@@ -211,6 +216,7 @@ async def register(body: RegisterIn):
         "language": "en",
         "is_pro": False,
         "pro_since": None,
+        "pro_samples_used": 0,
         "terms_accepted": True,
         "terms_version": body.terms_version,
         "terms_accepted_at": now,
@@ -272,6 +278,38 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     session_id = body.session_id or str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
+    # -------- Paywall enforcement for Pro-mode capabilities --------
+    # Basic mode → always allowed, unlimited.
+    # Pro mode + is_pro → allowed, no counter.
+    # Pro mode + not is_pro + samples_used < N → allowed as SAMPLE (increment counter).
+    # Pro mode + not is_pro + samples_used >= N → HTTP 402 with paywall payload.
+    mode = (body.mode or "basic").lower()
+    is_pro_user = bool(user.get("is_pro"))
+    samples_used = int(user.get("pro_samples_used", 0))
+    is_sample_consumption = False
+
+    if mode == "pro" and not is_pro_user:
+        if samples_used >= PRO_FREE_SAMPLES:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "paywall": True,
+                    "reason": "pro_samples_exhausted",
+                    "samples_used": samples_used,
+                    "samples_limit": PRO_FREE_SAMPLES,
+                    "pro_price_inr_paise": PRO_PRICE_INR,
+                    "pro_price_label": PRO_PRICE_LABEL,
+                    "pro_price_usd_cents": PRO_PRICE_USD,
+                    "pro_price_usd_label": PRO_PRICE_USD_LABEL,
+                    "message": (
+                        f"You've used all {PRO_FREE_SAMPLES} free Pro-quality samples. "
+                        "Upgrade to Pro to unlock unlimited lawyer-style deep answers, drafts, "
+                        "action plans and escalation paths."
+                    ),
+                },
+            )
+        is_sample_consumption = True
+
     session = await db.sessions.find_one({"id": session_id, "user_id": user["id"]})
     if not session:
         title = body.message[:60]
@@ -280,7 +318,8 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             "user_id": user["id"],
             "title": title,
             "language": body.language,
-            "tier": "pro" if user.get("is_pro") else "free",
+            "mode": mode,
+            "tier": "pro" if is_pro_user else "free",
             "created_at": now,
             "updated_at": now,
         })
@@ -292,10 +331,13 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         "role": "user",
         "content": body.message,
         "language": body.language,
+        "mode": mode,
         "created_at": now,
     })
 
-    system_prompt = build_system_prompt(body.language_name, is_pro=bool(user.get("is_pro")))
+    # Pro-quality prompt if user is Pro OR consuming a free sample; else basic prompt.
+    use_pro_prompt = is_pro_user or is_sample_consumption
+    system_prompt = build_system_prompt(body.language_name, is_pro=use_pro_prompt)
 
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -314,9 +356,11 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             "role": "assistant",
             "content": content,
             "language": body.language,
+            "mode": mode,
             "model_provider": body.model_provider,
             "model_name": body.model_name,
-            "tier": "pro" if user.get("is_pro") else "free",
+            "tier": "pro" if is_pro_user else "free",
+            "sample_consumed": is_sample_consumption,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         if error:
@@ -326,9 +370,22 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             {"id": session_id},
             {"$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
         )
+        # Only debit a sample if the assistant actually returned real content (not empty error).
+        if is_sample_consumption and content and not error:
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$inc": {"pro_samples_used": 1}},
+            )
 
     async def event_gen() -> AsyncGenerator[bytes, None]:
-        yield sse({"type": "session", "session_id": session_id, "tier": "pro" if user.get("is_pro") else "free"})
+        yield sse({
+            "type": "session",
+            "session_id": session_id,
+            "tier": "pro" if is_pro_user else "free",
+            "mode": mode,
+            "sample_consumed": is_sample_consumption,
+            "samples_remaining_after": max(0, PRO_FREE_SAMPLES - samples_used - (1 if is_sample_consumption else 0)),
+        })
         full = ""
         errored: Optional[str] = None
         try:
