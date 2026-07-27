@@ -29,18 +29,18 @@ import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 
 type Msg = { id: string; role: 'user' | 'assistant'; content: string; mode?: 'basic' | 'pro' };
 
-const BASIC_SUGGESTIONS = [
-  'What are my rights during a police stop?',
-  'How do I file an FIR?',
-  'Can police arrest me without warrant?',
-  'What is Article 21 of the Constitution?',
+const BASIC_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+  { text: 'What are my rights during a police stop?', icon: 'shield-checkmark-outline' },
+  { text: 'How do I file an FIR?', icon: 'document-text-outline' },
+  { text: 'Can police arrest me without warrant?', icon: 'alert-circle-outline' },
+  { text: 'What is Article 21 of the Constitution?', icon: 'library-outline' },
 ];
 
-const PRO_SUGGESTIONS = [
-  'Draft a complaint letter to the SP against wrongful detention',
-  'Give me a step-by-step action plan to file a consumer complaint',
-  'Draft an RTI application asking for FIR copy',
-  'Full escalation path for a domestic violence case',
+const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+  { text: 'Draft a complaint letter to the SP against wrongful detention', icon: 'create-outline' },
+  { text: 'Give me a step-by-step action plan to file a consumer complaint', icon: 'list-outline' },
+  { text: 'Draft an RTI application asking for FIR copy', icon: 'file-tray-outline' },
+  { text: 'Full escalation path for a domestic violence case', icon: 'trending-up-outline' },
 ];
 
 export default function ChatScreen() {
@@ -128,63 +128,136 @@ export default function ChatScreen() {
             pro_price_usd_label: pw.pro_price_usd_label,
             message: pw.message,
           });
-          // remove the placeholder assistant bubble
           setMessages((prev) => prev.filter((m) => m.id !== assistantId && m.id !== userId));
           return;
         }
 
-        if (!res.ok || !res.body) {
-          const err = await res.text();
+        if (!res.ok) {
+          // Never render raw response bodies. Show a sanitized human message.
           setMessages((prev) =>
-            prev.map((m) => (m.id === assistantId ? { ...m, content: `Error: ${err}` } : m))
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: 'Something went wrong. Please try again.' }
+                : m
+            )
           );
           return;
         }
 
-        const reader = (res.body as any).getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let acc = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split('\n\n');
-          buffer = parts.pop() || '';
+        /**
+         * Parse SSE frames. Returns the accumulated assistant text.
+         * Only frames of type "delta" are shown to the user. Session / control /
+         * error frames are handled internally and NEVER rendered as text.
+         */
+        const parseSseBuffer = (buf: string, prevAcc: string): { acc: string; rest: string; hadError: boolean } => {
+          let acc = prevAcc;
+          let hadError = false;
+          const parts = buf.split('\n\n');
+          const rest = parts.pop() || '';
           for (const part of parts) {
-            const line = part.trim();
-            if (!line.startsWith('data:')) continue;
+            const trimmed = part.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const jsonStr = trimmed.slice(5).trim();
+            if (!jsonStr) continue;
+            let payload: any;
             try {
-              const payload = JSON.parse(line.slice(5).trim());
-              if (payload.type === 'session') {
-                setSessionId(payload.session_id);
+              payload = JSON.parse(jsonStr);
+            } catch {
+              continue; // silently skip malformed frame — never render it
+            }
+            if (!payload || typeof payload !== 'object' || !('type' in payload)) continue;
+            switch (payload.type) {
+              case 'session':
+                if (payload.session_id) setSessionId(payload.session_id);
                 if (typeof payload.samples_remaining_after === 'number') {
                   setSamplesRemaining(payload.samples_remaining_after);
                 }
-              } else if (payload.type === 'delta') {
-                acc += payload.content;
-                setMessages((prev) =>
-                  prev.map((m) => (m.id === assistantId ? { ...m, content: acc } : m))
-                );
-                scrollRef.current?.scrollToEnd({ animated: true });
-              } else if (payload.type === 'error') {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId ? { ...m, content: `⚠️ ${payload.error}` } : m
-                  )
-                );
-              }
-            } catch {}
+                break;
+              case 'delta':
+                if (typeof payload.content === 'string') acc += payload.content;
+                break;
+              case 'error':
+                hadError = true;
+                break;
+              // Any unknown frame type is silently ignored — never rendered.
+              default:
+                break;
+            }
           }
+          return { acc, rest, hadError };
+        };
+
+        // Native React Native fetch returns res.body === null (no streaming).
+        // Web fetch returns a ReadableStream. Handle both.
+        const canStream = !!(res.body && typeof (res.body as any).getReader === 'function');
+
+        let acc = '';
+        let hadError = false;
+
+        try {
+          if (canStream) {
+            const reader = (res.body as any).getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const parsed = parseSseBuffer(buffer, acc);
+              acc = parsed.acc;
+              buffer = parsed.rest;
+              if (parsed.hadError) hadError = true;
+              // Live update as chunks arrive
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, content: acc } : m))
+              );
+              scrollRef.current?.scrollToEnd({ animated: true });
+            }
+            // Flush anything remaining in buffer
+            if (buffer.trim()) {
+              const parsed = parseSseBuffer(buffer + '\n\n', acc);
+              acc = parsed.acc;
+              if (parsed.hadError) hadError = true;
+            }
+          } else {
+            // React Native path: read the full response and parse all frames at once.
+            const fullText = await res.text();
+            const parsed = parseSseBuffer(fullText + '\n\n', '');
+            acc = parsed.acc;
+            hadError = parsed.hadError;
+          }
+        } catch {
+          // Never leak raw stream data to UI.
+          hadError = true;
         }
+
+        // Final render — ONLY the accumulated delta text (or a sanitized fallback).
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: acc.trim().length
+                    ? acc
+                    : (hadError
+                        ? 'Something went wrong. Please try again.'
+                        : 'No response received. Please try again.'),
+                }
+              : m
+          )
+        );
+
         // sync counter from server
         try {
           await refreshUser();
         } catch {}
-      } catch (e: any) {
+      } catch {
+        // Never render raw errors, stream contents, or JSON to the user.
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, content: `Error: ${e?.message || 'stream failed'}` } : m
+            m.id === assistantId
+              ? { ...m, content: 'Network error. Please check your connection and try again.' }
+              : m
           )
         );
       } finally {
@@ -326,7 +399,7 @@ export default function ChatScreen() {
             )}
           </View>
           <Text style={styles.subtitle}>
-            {language.native} · {model.label}
+            {language.native}
           </Text>
         </View>
         <View style={styles.badge}>
@@ -408,10 +481,10 @@ export default function ChatScreen() {
                     key={i}
                     testID={`suggestion-${i}`}
                     style={styles.suggestion}
-                    onPress={() => send(s)}
+                    onPress={() => send(s.text)}
                   >
-                    <Ionicons name="sparkles-outline" size={16} color={theme.colors.brand} />
-                    <Text style={styles.suggestionText}>{s}</Text>
+                    <Ionicons name={s.icon} size={20} color={theme.colors.brand} />
+                    <Text style={styles.suggestionText}>{s.text}</Text>
                   </Pressable>
                 ))}
               </View>
