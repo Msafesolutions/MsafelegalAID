@@ -79,6 +79,13 @@ export default function ChatScreen() {
   }>(null);
   const [samplesRemaining, setSamplesRemaining] = useState<number | null>(null);
   const [sttProviderLabel, setSttProviderLabel] = useState<string>('');
+  // WhatsApp-style voice UX state
+  const [transcriptPreview, setTranscriptPreview] = useState<string>('');
+  const [showTranscriptModal, setShowTranscriptModal] = useState<boolean>(false);
+  const [holdElapsed, setHoldElapsed] = useState<number>(0);
+  // TTS playback speed — cycles 1x → 1.5x → 2x → back
+  const [speechRate, setSpeechRate] = useState<number>(1.0);
+  const holdTimerRef = useRef<any>(null);
   const scrollRef = useRef<ScrollView>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const nativeSTTHandleRef = useRef<{ stop: () => Promise<any> } | null>(null);
@@ -394,12 +401,13 @@ export default function ChatScreen() {
         language: language.tts,
         voice: voiceId,
         volume: 1.0,
+        rate: speechRate,
         onDone: () => setSpeakingId(null),
         onStopped: () => setSpeakingId(null),
         onError: () => setSpeakingId(null),
       });
     },
-    [speakingId, language],
+    [speakingId, language, speechRate],
   );
   // Keep the forward-declared ref up to date whenever `speak` changes.
   speakRef.current = speak;
@@ -444,7 +452,14 @@ export default function ChatScreen() {
   }, [recorder, token, language]);
 
   const stopRecording = useCallback(async () => {
-    // If native STT was running, finish it
+    // Stop the elapsed-time ticker
+    if (holdTimerRef.current) {
+      clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    setHoldElapsed(0);
+
+    // If native STT was running, finish it → show transcript confirmation modal
     if (nativeSTTHandleRef.current) {
       try {
         setTranscribing(true);
@@ -452,8 +467,10 @@ export default function ChatScreen() {
         const result = await nativeSTTHandleRef.current.stop();
         nativeSTTHandleRef.current = null;
         setTranscribing(false);
-        if (result?.text) {
-          send(result.text);
+        const heardText = (result?.text || '').trim();
+        if (heardText) {
+          setTranscriptPreview(heardText);
+          setShowTranscriptModal(true);
         }
       } catch (e: any) {
         setTranscribing(false);
@@ -462,7 +479,7 @@ export default function ChatScreen() {
       return;
     }
 
-    // Whisper fallback path — stop audio recorder + POST to backend
+    // Whisper fallback path — stop audio recorder + POST to backend → show modal
     try {
       setRecording(false);
       setTranscribing(true);
@@ -483,13 +500,69 @@ export default function ChatScreen() {
       }
       const text = await whisperTranscribeFile(API_BASE, token, uri);
       setTranscribing(false);
-      if (text) send(text);
-      else Alert.alert('Could not transcribe', 'Please try again.');
+      const heardText = (text || '').trim();
+      if (heardText) {
+        setTranscriptPreview(heardText);
+        setShowTranscriptModal(true);
+      } else {
+        Alert.alert('Could not transcribe', 'Please try again.');
+      }
     } catch (e: any) {
       setTranscribing(false);
       Alert.alert('Transcription failed', e?.message || 'Try again');
     }
-  }, [recorder, token, send]);
+  }, [recorder, token]);
+
+  // WhatsApp-style hold-to-talk handlers
+  const onMicPressIn = useCallback(() => {
+    // Start hold timer + kick off recording
+    setHoldElapsed(0);
+    holdTimerRef.current = setInterval(() => {
+      setHoldElapsed((prev) => prev + 1);
+    }, 1000);
+    startRecording();
+  }, [startRecording]);
+
+  const onMicPressOut = useCallback(() => {
+    // Release → stop recording (only if we were actually recording)
+    if (recording || nativeSTTHandleRef.current) {
+      stopRecording();
+    } else {
+      // Recording never actually started (e.g. permission dialog) — reset timer
+      if (holdTimerRef.current) {
+        clearInterval(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
+    }
+  }, [recording, stopRecording]);
+
+  const cancelTranscript = useCallback(() => {
+    setShowTranscriptModal(false);
+    setTranscriptPreview('');
+  }, []);
+
+  const sendTranscript = useCallback(() => {
+    const t = transcriptPreview.trim();
+    setShowTranscriptModal(false);
+    setTranscriptPreview('');
+    if (t) send(t);
+  }, [transcriptPreview, send]);
+
+  const editTranscriptInComposer = useCallback(() => {
+    // Push transcript into the text input so the user can edit before sending
+    setInput(transcriptPreview);
+    setShowTranscriptModal(false);
+    setTranscriptPreview('');
+  }, [transcriptPreview]);
+
+  const cycleSpeechRate = useCallback(() => {
+    // 1.0 → 1.5 → 2.0 → 1.0
+    setSpeechRate((prev) => {
+      if (prev < 1.25) return 1.5;
+      if (prev < 1.75) return 2.0;
+      return 1.0;
+    });
+  }, []);
 
   const activeSuggestions = proMode ? PRO_SUGGESTIONS : BASIC_SUGGESTIONS;
 
@@ -620,13 +693,26 @@ export default function ChatScreen() {
                     )}
                   </View>
                   {m.role === 'assistant' && m.content.length > 0 && (
-                    <Pressable testID={`speak-${m.id}`} onPress={() => speak(m.id, m.content)} hitSlop={10}>
-                      <Ionicons
-                        name={speakingId === m.id ? 'stop-circle' : 'volume-high-outline'}
-                        size={22}
-                        color={theme.colors.brand}
-                      />
-                    </Pressable>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {/* Playback speed toggle — cycles 1x → 1.5x → 2x */}
+                      <Pressable
+                        testID={`speed-${m.id}`}
+                        onPress={cycleSpeechRate}
+                        hitSlop={8}
+                        style={styles.speedChip}
+                      >
+                        <Text style={styles.speedChipText}>
+                          {speechRate === 1.0 ? '1x' : speechRate === 1.5 ? '1.5x' : '2x'}
+                        </Text>
+                      </Pressable>
+                      <Pressable testID={`speak-${m.id}`} onPress={() => speak(m.id, m.content)} hitSlop={10}>
+                        <Ionicons
+                          name={speakingId === m.id ? 'stop-circle' : 'volume-high-outline'}
+                          size={24}
+                          color={theme.colors.brand}
+                        />
+                      </Pressable>
+                    </View>
                   )}
                 </View>
                 <Text
@@ -671,11 +757,16 @@ export default function ChatScreen() {
           {streaming && <ActivityIndicator style={{ marginTop: 12 }} color={theme.colors.brand} />}
         </ScrollView>
 
-        {recording && sttProviderLabel !== '' && (
-          <View style={styles.sttHint} testID="stt-hint">
-            <Ionicons name="mic" size={12} color={theme.colors.brand} />
-            <Text style={styles.sttHintText}>
-              Listening · {sttProviderLabel}
+        {recording && (
+          <View style={styles.recHud} testID="rec-hud">
+            <View style={styles.recDot} />
+            <Text style={styles.recTimeText}>
+              {String(Math.floor(holdElapsed / 60)).padStart(2, '0')}:
+              {String(holdElapsed % 60).padStart(2, '0')}
+            </Text>
+            <Text style={styles.recHintText}>
+              Hold to talk · release to send
+              {sttProviderLabel ? ` · ${sttProviderLabel}` : ''}
             </Text>
           </View>
         )}
@@ -694,7 +785,8 @@ export default function ChatScreen() {
           {input.trim().length === 0 ? (
             <Pressable
               testID="mic-button"
-              onPress={recording ? stopRecording : startRecording}
+              onPressIn={onMicPressIn}
+              onPressOut={onMicPressOut}
               disabled={transcribing}
               style={[styles.mic, recording && styles.micActive]}
             >
@@ -702,7 +794,7 @@ export default function ChatScreen() {
                 <ActivityIndicator color={theme.colors.onBrandPrimary} />
               ) : (
                 <Ionicons
-                  name={recording ? 'stop' : 'mic'}
+                  name={recording ? 'radio' : 'mic'}
                   size={26}
                   color={theme.colors.onBrandPrimary}
                 />
@@ -720,6 +812,54 @@ export default function ChatScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
+
+      {/* Transcript confirmation modal — shown after voice input is transcribed */}
+      <Modal
+        visible={showTranscriptModal}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelTranscript}
+      >
+        <View style={styles.pwOverlay}>
+          <View style={styles.tcCard} testID="transcript-modal">
+            <View style={styles.tcHeader}>
+              <Ionicons name="mic-circle" size={26} color={theme.colors.brand} />
+              <Text style={styles.tcTitle}>We heard</Text>
+            </View>
+            <Text style={styles.tcText} testID="transcript-text">
+              {`\u201C${transcriptPreview}\u201D`}
+            </Text>
+
+            <Pressable
+              testID="transcript-send-btn"
+              style={styles.tcSendBtn}
+              onPress={sendTranscript}
+            >
+              <Ionicons name="send" size={16} color={theme.colors.onBrandPrimary} />
+              <Text style={styles.tcSendText}>Correct — send</Text>
+            </Pressable>
+
+            <View style={styles.tcRow}>
+              <Pressable
+                testID="transcript-edit-btn"
+                style={styles.tcSecondaryBtn}
+                onPress={editTranscriptInComposer}
+              >
+                <Ionicons name="pencil" size={14} color={theme.colors.brand} />
+                <Text style={styles.tcSecondaryText}>Edit</Text>
+              </Pressable>
+              <Pressable
+                testID="transcript-cancel-btn"
+                style={styles.tcSecondaryBtn}
+                onPress={cancelTranscript}
+              >
+                <Ionicons name="mic-off" size={14} color={theme.colors.brand} />
+                <Text style={styles.tcSecondaryText}>Re-record</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Paywall Modal — shown when Pro-mode samples exhausted */}
       <Modal
@@ -981,6 +1121,96 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   sttHintText: { color: theme.colors.brand, fontSize: 11, fontWeight: '600' },
+  // WhatsApp-style recording HUD
+  recHud: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'center',
+    backgroundColor: theme.colors.brand,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: theme.radius.pill,
+    marginBottom: 8,
+  },
+  recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.colors.error },
+  recTimeText: {
+    color: theme.colors.onBrandPrimary,
+    fontVariant: ['tabular-nums'],
+    fontWeight: '700',
+    fontSize: 13,
+    minWidth: 40,
+  },
+  recHintText: { color: theme.colors.onBrandPrimary, fontSize: 11, opacity: 0.9 },
+  // Playback speed chip
+  speedChip: {
+    backgroundColor: theme.colors.surfaceTertiary,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  speedChipText: {
+    color: theme.colors.brand,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  // Transcript confirmation modal
+  tcCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.xl,
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: theme.colors.brandSecondary,
+  },
+  tcHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: theme.spacing.md,
+  },
+  tcTitle: {
+    fontFamily: theme.fonts.display,
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.colors.brand,
+  },
+  tcText: {
+    color: theme.colors.onSurface,
+    fontSize: 16,
+    lineHeight: 22,
+    fontStyle: 'italic',
+    marginBottom: theme.spacing.lg,
+  },
+  tcSendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: theme.colors.brand,
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+  },
+  tcSendText: { color: theme.colors.onBrandPrimary, fontWeight: '800', fontSize: 15 },
+  tcRow: { flexDirection: 'row', gap: theme.spacing.md },
+  tcSecondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceSecondary,
+  },
+  tcSecondaryText: { color: theme.colors.brand, fontWeight: '700', fontSize: 13 },
   pwOverlay: {
     flex: 1,
     backgroundColor: 'rgba(10,28,58,0.85)',

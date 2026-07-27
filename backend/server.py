@@ -93,6 +93,14 @@ class LoginIn(BaseModel):
     email: EmailStr
     password: str
 
+class ForgotPasswordIn(BaseModel):
+    """Identity-verification-based reset — no email/SMS delivery required.
+    User must prove they own the account by matching BOTH email AND registered phone.
+    Rate-limited via in-memory throttle to defeat brute force."""
+    email: EmailStr
+    phone: str = Field(min_length=6, max_length=20)
+    new_password: str = Field(min_length=6)
+
 class AuthOut(BaseModel):
     token: str
     user: dict
@@ -266,6 +274,66 @@ async def login(body: LoginIn):
     if not user or not check_pw(body.password, user["password_hash"]):
         raise HTTPException(401, "Invalid credentials")
     return {"token": make_token(user["id"]), "user": public_user(user)}
+
+# ---- Password reset via identity verification ----
+# Rate-limit table keyed by email — max 5 failed attempts per hour to defeat brute force
+_FORGOT_ATTEMPTS: dict[str, list[datetime]] = {}
+_FORGOT_MAX = 5
+_FORGOT_WINDOW = timedelta(hours=1)
+
+def _prune_attempts(email: str):
+    cutoff = datetime.now(timezone.utc) - _FORGOT_WINDOW
+    _FORGOT_ATTEMPTS[email] = [t for t in _FORGOT_ATTEMPTS.get(email, []) if t > cutoff]
+
+def _normalise_phone(p: str) -> str:
+    """Strip non-digits so '+91 98765 43210' matches '9876543210'."""
+    import re
+    return re.sub(r"\D", "", p or "")
+
+@api.post("/auth/forgot-password", response_model=AuthOut)
+async def forgot_password(body: ForgotPasswordIn):
+    """Reset password by proving ownership via email + registered phone match.
+    No email/SMS delivery needed — works offline and at zero cost."""
+    email = body.email.lower()
+    _prune_attempts(email)
+    attempts = _FORGOT_ATTEMPTS.get(email, [])
+    if len(attempts) >= _FORGOT_MAX:
+        raise HTTPException(
+            429,
+            "Too many reset attempts. Please try again in an hour.",
+        )
+
+    user = await db.users.find_one({"email": email})
+    stored_phone = _normalise_phone(user.get("phone", "")) if user else ""
+    submitted_phone = _normalise_phone(body.phone)
+    phone_match = (
+        bool(stored_phone) and bool(submitted_phone) and (
+            stored_phone == submitted_phone
+            or stored_phone.endswith(submitted_phone[-10:]) if len(submitted_phone) >= 10 else False
+            or submitted_phone.endswith(stored_phone[-10:]) if len(stored_phone) >= 10 else False
+        )
+    )
+    if not user or not phone_match:
+        # Log a failed attempt (defeats phone enumeration too — always same error)
+        _FORGOT_ATTEMPTS.setdefault(email, []).append(datetime.now(timezone.utc))
+        raise HTTPException(
+            401,
+            "Email and phone number do not match any account. Please check and try again.",
+        )
+
+    # Success — reset password and clear attempts
+    new_hash = hash_pw(body.new_password)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "password_hash": new_hash,
+            "password_reset_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    _FORGOT_ATTEMPTS.pop(email, None)
+    # Auto-login the user with the new password
+    updated = await db.users.find_one({"id": user["id"]})
+    return {"token": make_token(user["id"]), "user": public_user(updated)}
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(current_user)):

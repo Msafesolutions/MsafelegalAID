@@ -67,6 +67,12 @@ export default function Login() {
               {loading ? <ActivityIndicator color={theme.colors.onBrandPrimary} /> : <Text style={styles.btnText}>Sign In</Text>}
             </Pressable>
 
+            <Link href="/forgot-password" asChild>
+              <Pressable testID="go-to-forgot-password" style={styles.forgotWrap}>
+                <Text style={styles.forgotLink}>Forgot password?</Text>
+              </Pressable>
+            </Link>
+
             <View style={styles.row}>
               <Text style={styles.sub}>New here? </Text>
               <Link href="/signup" asChild>
@@ -97,6 +103,8 @@ const styles = StyleSheet.create({
   btnText: { color: theme.colors.onBrandPrimary, fontWeight: '700', fontSize: 16 },
   row: { flexDirection: 'row', justifyContent: 'center', marginTop: theme.spacing.lg },
   link: { color: theme.colors.brandSecondary, fontWeight: '700' },
+  forgotWrap: { alignItems: 'center', marginTop: theme.spacing.md, padding: 6 },
+  forgotLink: { color: theme.colors.brand, fontWeight: '600', fontSize: 14, textDecorationLine: 'underline' },
   error: { color: theme.colors.error, marginTop: theme.spacing.md },
   footer: { textAlign: 'center', color: theme.colors.brandSecondary, marginTop: theme.spacing.xxl, letterSpacing: 2 },
   copyright: { textAlign: 'center', color: '#8A93A6', marginTop: theme.spacing.md, fontSize: 11, letterSpacing: 0.5 },

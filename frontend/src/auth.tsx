@@ -26,6 +26,7 @@ type AuthCtx = {
   register: (email: string, password: string, name: string, phone: string, terms_accepted: boolean, terms_version: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  hydrateSession: (token: string, user: User) => Promise<void>;
 };
 
 const DEFAULT_LANG: Language = { code: 'en', name: 'English', native: 'English', tts: 'en-IN' };
@@ -122,7 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, login, register, logout, refreshUser }}>
+    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, login, register, logout, refreshUser, hydrateSession: persist }}>
       {children}
     </Ctx.Provider>
   );
