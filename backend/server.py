@@ -834,6 +834,27 @@ async def root():
         "company": "Msafe",
     }
 
+# ---------- Static downloads (App summary docs) ----------
+from fastapi.responses import FileResponse
+
+DOWNLOADS_DIR = Path("/app/downloads")
+
+@api.get("/downloads/{filename}")
+async def get_download(filename: str):
+    # Allow only .pdf/.docx from the downloads dir, no traversal
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(400, "Invalid filename")
+    if not (filename.endswith(".pdf") or filename.endswith(".docx")):
+        raise HTTPException(400, "Only .pdf and .docx are downloadable")
+    fp = DOWNLOADS_DIR / filename
+    if not fp.exists():
+        raise HTTPException(404, "File not found")
+    media_type = (
+        "application/pdf" if filename.endswith(".pdf")
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    return FileResponse(str(fp), media_type=media_type, filename=filename)
+
 app.include_router(api)
 
 app.add_middleware(
