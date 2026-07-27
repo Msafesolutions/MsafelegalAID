@@ -280,6 +280,188 @@ CORPUS = [
             "death penalty murder", "life imprisonment murder", "mob lynching",
         ],
     },
+    # -------------------- Protection of Women from Domestic Violence Act 2005 --------------------
+    {
+        "key": "pwdva_3",
+        "citation": "Protection of Women from Domestic Violence Act 2005, Section 3 — Definition of domestic violence",
+        "short_label": "PWDVA 3",
+        "act": "PWDVA",
+        "official_text": (
+            "For the purposes of this Act, any act, omission or commission or conduct of the "
+            "respondent shall constitute domestic violence in case it— (a) harms or injures or "
+            "endangers the health, safety, life, limb or well-being, whether mental or physical, "
+            "of the aggrieved person or tends to do so and includes causing physical abuse, "
+            "sexual abuse, verbal and emotional abuse and economic abuse; or (b) harasses, harms, "
+            "injures or endangers the aggrieved person with a view to coerce her or any other "
+            "person related to her to meet any unlawful demand for any dowry or other property or "
+            "valuable security; or (c) has the effect of threatening the aggrieved person or any "
+            "person related to her by any conduct mentioned in clause (a) or clause (b); or "
+            "(d) otherwise injures or causes harm, whether physical or mental, to the aggrieved person."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/2031",
+        "verified_at": "2026-01-15",
+        "scope_note": (
+            "This law defines domestic violence broadly — it covers physical, sexual, verbal, "
+            "emotional AND economic abuse, plus dowry-related harassment. Only women can file "
+            "under this Act; the respondent is usually the husband or a male relative."
+        ),
+        "keywords": [
+            "pwdva 3", "domestic violence", "wife beating", "husband abuse", "dowry harassment",
+            "emotional abuse", "economic abuse", "verbal abuse", "physical abuse home",
+            "in-laws harassment", "marital abuse", "domestic abuse",
+            "husband beats", "husband hits", "husband harass", "husband abusive",
+            "beats me", "hits me", "abusive husband", "abuse from husband",
+        ],
+    },
+    {
+        "key": "pwdva_12",
+        "citation": "Protection of Women from Domestic Violence Act 2005, Section 12 — Application to Magistrate",
+        "short_label": "PWDVA 12",
+        "act": "PWDVA",
+        "official_text": (
+            "(1) An aggrieved person or a Protection Officer or any other person on behalf of the "
+            "aggrieved person may present an application to the Magistrate seeking one or more "
+            "reliefs under this Act: Provided that before passing any order on such application, "
+            "the Magistrate shall take into consideration any domestic incident report received by "
+            "him from the Protection Officer or the service provider.\n"
+            "(4) The Magistrate shall fix the first date of hearing, which shall not ordinarily be "
+            "beyond three days from the date of receipt of the application by the court.\n"
+            "(5) The Magistrate shall endeavour to dispose of every application made under sub-section "
+            "(1) within a period of sixty days from the date of its first hearing."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/2031",
+        "verified_at": "2026-01-15",
+        "scope_note": (
+            "You (or a Protection Officer, or anyone acting for you) can apply to the Magistrate "
+            "for protection. First hearing is usually within 3 days, and the case should ideally be "
+            "decided within 60 days."
+        ),
+        "keywords": [
+            "pwdva 12", "domestic violence complaint", "how to file domestic violence",
+            "protection officer", "domestic incident report", "magistrate application dv",
+            "file complaint against husband",
+        ],
+    },
+    {
+        "key": "pwdva_17",
+        "citation": "Protection of Women from Domestic Violence Act 2005, Section 17 — Right to reside in a shared household",
+        "short_label": "PWDVA 17",
+        "act": "PWDVA",
+        "official_text": (
+            "(1) Notwithstanding anything contained in any other law for the time being in force, "
+            "every woman in a domestic relationship shall have the right to reside in the shared "
+            "household, whether or not she has any right, title or beneficial interest in the same.\n"
+            "(2) The aggrieved person shall not be evicted or excluded from the shared household or "
+            "any part of it by the respondent save in accordance with the procedure established by law."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/2031",
+        "verified_at": "2026-01-15",
+        "scope_note": (
+            "A woman in a domestic relationship CANNOT be thrown out of the shared home, even if "
+            "the home is not in her name. She can only be removed by a proper court order."
+        ),
+        "keywords": [
+            "pwdva 17", "shared household", "right to reside", "thrown out of house",
+            "husband threw me out", "in-laws evicted me", "residence right woman",
+            "right to matrimonial home",
+        ],
+    },
+    {
+        "key": "pwdva_18",
+        "citation": "Protection of Women from Domestic Violence Act 2005, Section 18 — Protection orders",
+        "short_label": "PWDVA 18",
+        "act": "PWDVA",
+        "official_text": (
+            "The Magistrate may, after giving the aggrieved person and the respondent an "
+            "opportunity of being heard and on being prima facie satisfied that domestic violence "
+            "has taken place or is likely to take place, pass a protection order in favour of the "
+            "aggrieved person and prohibit the respondent from— (a) committing any act of domestic "
+            "violence; (b) aiding or abetting in the commission of acts of domestic violence; "
+            "(c) entering the place of employment of the aggrieved person or, if the person "
+            "aggrieved is a child, its school or any other place frequented by the aggrieved person; "
+            "(d) attempting to communicate in any form, whatsoever, with the aggrieved person, "
+            "including personal, oral or written or electronic or telephonic contact; (e) alienating "
+            "any assets, operating bank lockers or bank accounts used or held or enjoyed by both "
+            "the parties, jointly by the aggrieved person and the respondent or singly by the "
+            "respondent, including her stridhan or any other property held either jointly by the "
+            "parties or separately by them without the leave of the Magistrate; (f) causing violence "
+            "to the dependants, other relatives or any person who give the aggrieved person "
+            "assistance from domestic violence; (g) committing any other act as specified in the "
+            "protection order."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/2031",
+        "verified_at": "2026-01-15",
+        "scope_note": (
+            "The Magistrate can order the respondent to stop all violence, stop contacting you, "
+            "stay away from your workplace or child's school, and stop selling shared assets or "
+            "operating your accounts. This is called a Protection Order."
+        ),
+        "keywords": [
+            "pwdva 18", "protection order", "restraining order", "stop contacting me",
+            "protection from husband", "no contact order", "keep away husband",
+        ],
+    },
+    {
+        "key": "pwdva_20",
+        "citation": "Protection of Women from Domestic Violence Act 2005, Section 20 — Monetary reliefs",
+        "short_label": "PWDVA 20",
+        "act": "PWDVA",
+        "official_text": (
+            "(1) While disposing of an application under sub-section (1) of section 12, the "
+            "Magistrate may direct the respondent to pay monetary relief to meet the expenses "
+            "incurred and losses suffered by the aggrieved person and any child of the aggrieved "
+            "person as a result of the domestic violence and such relief may include, but is not "
+            "limited to— (a) the loss of earnings; (b) the medical expenses; (c) the loss caused "
+            "due to the destruction, damage or removal of any property from the control of the "
+            "aggrieved person; and (d) the maintenance for the aggrieved person as well as her "
+            "children, if any, including an order under or in addition to an order of maintenance "
+            "under section 125 of the Code of Criminal Procedure, 1973 (2 of 1974) or any other "
+            "law for the time being in force.\n"
+            "(2) The monetary relief granted under this section shall be adequate, fair and "
+            "reasonable and consistent with the standard of living to which the aggrieved person "
+            "is accustomed."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/2031",
+        "verified_at": "2026-01-15",
+        "scope_note": (
+            "The court can order the respondent to pay you money for lost earnings, medical bills, "
+            "damaged property, and maintenance for you and your children. The amount must match "
+            "the standard of living you were used to."
+        ),
+        "keywords": [
+            "pwdva 20", "monetary relief domestic violence", "maintenance domestic violence",
+            "compensation abuse", "medical expenses husband", "child maintenance dv",
+        ],
+    },
+    {
+        "key": "pwdva_23",
+        "citation": "Protection of Women from Domestic Violence Act 2005, Section 23 — Power to grant interim and ex parte orders",
+        "short_label": "PWDVA 23",
+        "act": "PWDVA",
+        "official_text": (
+            "(1) In any proceeding before him under this Act, the Magistrate may pass such interim "
+            "order as he deems just and proper.\n"
+            "(2) If the Magistrate is satisfied that an application prima facie discloses that the "
+            "respondent is committing, or has committed an act of domestic violence or that there "
+            "is a likelihood that the respondent may commit an act of domestic violence, he may "
+            "grant an ex parte order on the basis of the affidavit in such form, as may be "
+            "prescribed, of the aggrieved person under section 18, section 19, section 20, section "
+            "21 or, as the case may be, section 22 against the respondent."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/2031",
+        "verified_at": "2026-01-15",
+        "scope_note": (
+            "The Magistrate can pass an EMERGENCY order — even without hearing the respondent — "
+            "if your affidavit shows abuse is happening or likely to happen. This is called an "
+            "ex parte order and is used when you need urgent protection."
+        ),
+        "keywords": [
+            "pwdva 23", "emergency protection order", "ex parte order",
+            "urgent protection domestic violence", "immediate order husband",
+            "emergency abuse", "urgent protection abuse", "protection from abuse",
+            "emergency safety", "help urgent abuse",
+        ],
+    },
 ]
 
 # Non-Indian jurisdictions — trap-question refusal helper
@@ -356,8 +538,8 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
         if score > 0:
             scored.append((score, item))
     # Require a minimum score threshold so single-word noise doesn't match.
-    # A short_label hit (5) OR a phrase hit (3) OR 3+ token overlaps all pass.
-    scored = [(s, it) for s, it in scored if s >= 3]
+    # A short_label hit (5), phrase hit (3), or 2+ token overlaps pass.
+    scored = [(s, it) for s, it in scored if s >= 2]
     scored.sort(key=lambda x: x[0], reverse=True)
     return [item for _, item in scored[:limit]]
 
@@ -410,14 +592,15 @@ _CITATION_LEAK_PATTERNS = [
     # "Section 35 BNSS", "Section 43(5) of BNSS", "Sec. 43(5) BNSS", "BNSS Section 35"
     (_re.compile(r"\b(?:[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\s+(?:of\s+)?(?:BNS|BNSS|BSA|IPC|CrPC))\b"), "the law"),
     (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC)\s+[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\b"), "the law"),
-    # Bare "BNSS 43(5)" style
-    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC)\s+\d+[A-Z]?(?:\(\d+\))?\b"), "the law"),
+    # Bare "BNSS 43(5)" or "PWDVA 12" style
+    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC|PWDVA|DV Act)\s+\d+[A-Z]?(?:\(\d+\))?\b"), "the law"),
     # Just "Section 35" alone
     (_re.compile(r"\b[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\b"), "the law"),
     # Long forms of the statutes
     (_re.compile(r"\bBharatiya\s+(?:Nyaya|Nagarik|Sakshya)\s+(?:Sanhita|Suraksha|Adhiniyam)(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\bIndian\s+Penal\s+Code(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\bCode\s+of\s+Criminal\s+Procedure(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\b(?:Protection\s+of\s+Women\s+from\s+Domestic\s+Violence\s+Act|PWDVA)(?:,?\s*\d{4})?\b"), "the law"),
 ]
 
 
