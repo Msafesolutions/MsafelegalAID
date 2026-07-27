@@ -97,6 +97,12 @@ CORPUS = [
             "article 22", "art 22", "arrest rights", "grounds of arrest", "24 hours magistrate",
             "twenty-four hours", "right to lawyer on arrest", "produced before magistrate",
             "informed of arrest", "consult legal practitioner",
+            # Conversational phrasings used by real users
+            "my rights arrest", "rights when arrested", "rights during arrest",
+            "rights if arrested", "police rights", "rights police",
+            "right to remain silent", "remain silent police", "silent police",
+            "lawyer during arrest", "lawyer after arrest", "call lawyer arrest",
+            "detained police", "custody rights", "held by police",
         ],
     },
     # -------------------- BNSS 2023 (procedure) --------------------
@@ -134,6 +140,46 @@ CORPUS = [
             "bnss 35", "section 35 bnss", "arrest without warrant", "warrantless arrest",
             "cognizable offence", "police arrest me", "arrested by police", "arrest procedure",
             "reasons in writing", "arnesh kumar",
+            # Conversational phrasings — critical for real user queries
+            "police stop", "police stopped me", "stopped by police", "police stop me",
+            "police check", "police checkpoint", "police detained me", "police detain",
+            "warrant needed", "need warrant", "arrest me warrant", "without warrant",
+            "police powers arrest", "rights during police stop", "rights police stop",
+        ],
+    },
+    {
+        "key": "bnss_173",
+        "citation": "Bharatiya Nagarik Suraksha Sanhita 2023, Section 173 — Information as to cognizable cases (FIR)",
+        "short_label": "BNSS 173",
+        "act": "BNSS",
+        "official_text": (
+            "(1) Every information relating to the commission of a cognizable offence, "
+            "irrespective of the area where the offence is committed, may be given orally or "
+            "by electronic communication to an officer in charge of a police station, and if "
+            "given—\n"
+            "(i) orally, it shall be reduced to writing by him or under his direction, and be "
+            "read over to the informant; and every such information, whether given in writing "
+            "or reduced to writing as aforesaid, shall be signed by the person giving it, and "
+            "the substance thereof shall be entered in a book to be kept by such officer in "
+            "such form as the State Government may by rules prescribe;\n"
+            "(ii) by electronic communication, it shall be taken on record by him on being "
+            "signed within three days by the person giving it.\n"
+            "(2) A copy of the information as recorded under sub-section (1) shall be given "
+            "forthwith, free of cost, to the informant."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/20099",
+        "verified_at": "2026-01-15",
+        "scope_note": (
+            "BNSS 173 governs the FIR (First Information Report). For any cognizable offence, "
+            "the police station MUST record your complaint — orally or electronically — and "
+            "give you a free copy immediately. Refusal to register an FIR is itself illegal."
+        ),
+        "keywords": [
+            "bnss 173", "section 173 bnss", "fir", "file fir", "filing fir", "how to file fir",
+            "how file fir", "lodge fir", "register fir", "first information report",
+            "police complaint", "police station complaint", "report crime", "report to police",
+            "refuse fir", "fir refused", "police refused fir", "zero fir", "online fir",
+            "copy of fir", "free copy fir", "fir procedure", "fir cognizable",
         ],
     },
     {
@@ -538,8 +584,13 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
         if score > 0:
             scored.append((score, item))
     # Require a minimum score threshold so single-word noise doesn't match.
-    # A short_label hit (5), phrase hit (3), or 2+ token overlaps pass.
-    scored = [(s, it) for s, it in scored if s >= 2]
+    # A short_label hit (5), phrase hit (3), or ANY meaningful token overlap passes.
+    # Note: stop-words are already stripped from q_tokens, so an overlap of 1 already
+    # means a real content word matched. Threshold=2 was too strict for casual queries
+    # like "What are my rights during a police stop?" — dropping to 1 restores natural
+    # phrasing while the LLM system prompt + sanitize_model_output() still contain any
+    # tangential retrievals.
+    scored = [(s, it) for s, it in scored if s >= 1]
     scored.sort(key=lambda x: x[0], reverse=True)
     return [item for _, item in scored[:limit]]
 
