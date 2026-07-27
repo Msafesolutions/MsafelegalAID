@@ -27,7 +27,23 @@ import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 
-type Msg = { id: string; role: 'user' | 'assistant'; content: string; mode?: 'basic' | 'pro' };
+type Citation = {
+  key: string;
+  citation: string;
+  short_label: string;
+  act: string;
+  official_text: string;
+  source_url: string;
+  verified_at: string;
+};
+
+type Msg = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  mode?: 'basic' | 'pro';
+  citations?: Citation[];
+};
 
 const BASIC_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
   { text: 'What are my rights during a police stop?', icon: 'shield-checkmark-outline' },
@@ -44,7 +60,7 @@ const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicon
 ];
 
 export default function ChatScreen() {
-  const { token, user, language, model, refreshUser } = useAuth();
+  const { token, user, language, model, autoSpeak, refreshUser } = useAuth();
   const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -66,6 +82,9 @@ export default function ChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const nativeSTTHandleRef = useRef<{ stop: () => Promise<any> } | null>(null);
+  // Forward-declared ref to `speak` so auto-speak logic inside `send` can call it
+  // without a circular dependency (speak is defined AFTER send in this file).
+  const speakRef = useRef<((msgId: string, text: string) => void) | null>(null);
 
   const isPro = !!user?.is_pro;
   const remaining =
@@ -145,12 +164,25 @@ export default function ChatScreen() {
         }
 
         /**
-         * Parse SSE frames. Returns the accumulated assistant text.
-         * Only frames of type "delta" are shown to the user. Session / control /
-         * error frames are handled internally and NEVER rendered as text.
+         * Parse SSE frames. Handles: session (control), citation (verified source),
+         * delta (streaming text), final (sanitized full text — overwrites), error.
+         * Only text-bearing frames update the UI. Metadata frames are handled internally.
          */
-        const parseSseBuffer = (buf: string, prevAcc: string): { acc: string; rest: string; hadError: boolean } => {
+        const parseSseBuffer = (
+          buf: string,
+          prevAcc: string,
+          prevFinal: string | null,
+          prevCitations: Citation[],
+        ): {
+          acc: string;
+          final: string | null;
+          citations: Citation[];
+          rest: string;
+          hadError: boolean;
+        } => {
           let acc = prevAcc;
+          let finalText = prevFinal;
+          let citations = [...prevCitations];
           let hadError = false;
           const parts = buf.split('\n\n');
           const rest = parts.pop() || '';
@@ -163,7 +195,7 @@ export default function ChatScreen() {
             try {
               payload = JSON.parse(jsonStr);
             } catch {
-              continue; // silently skip malformed frame — never render it
+              continue;
             }
             if (!payload || typeof payload !== 'object' || !('type' in payload)) continue;
             switch (payload.type) {
@@ -173,18 +205,26 @@ export default function ChatScreen() {
                   setSamplesRemaining(payload.samples_remaining_after);
                 }
                 break;
+              case 'citation':
+                if (payload.citation && typeof payload.citation === 'object') {
+                  citations.push(payload.citation as Citation);
+                }
+                break;
               case 'delta':
                 if (typeof payload.content === 'string') acc += payload.content;
+                break;
+              case 'final':
+                // Sanitized full text — overwrites any accumulated delta output.
+                if (typeof payload.content === 'string') finalText = payload.content;
                 break;
               case 'error':
                 hadError = true;
                 break;
-              // Any unknown frame type is silently ignored — never rendered.
               default:
                 break;
             }
           }
-          return { acc, rest, hadError };
+          return { acc, final: finalText, citations, rest, hadError };
         };
 
         // Native React Native fetch returns res.body === null (no streaming).
@@ -192,6 +232,8 @@ export default function ChatScreen() {
         const canStream = !!(res.body && typeof (res.body as any).getReader === 'function');
 
         let acc = '';
+        let finalText: string | null = null;
+        let citations: Citation[] = [];
         let hadError = false;
 
         try {
@@ -203,51 +245,66 @@ export default function ChatScreen() {
               const { done, value } = await reader.read();
               if (done) break;
               buffer += decoder.decode(value, { stream: true });
-              const parsed = parseSseBuffer(buffer, acc);
+              const parsed = parseSseBuffer(buffer, acc, finalText, citations);
               acc = parsed.acc;
+              finalText = parsed.final;
+              citations = parsed.citations;
               buffer = parsed.rest;
               if (parsed.hadError) hadError = true;
-              // Live update as chunks arrive
+              const displayText = finalText !== null ? finalText : acc;
               setMessages((prev) =>
-                prev.map((m) => (m.id === assistantId ? { ...m, content: acc } : m))
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: displayText, citations } : m,
+                ),
               );
               scrollRef.current?.scrollToEnd({ animated: true });
             }
-            // Flush anything remaining in buffer
             if (buffer.trim()) {
-              const parsed = parseSseBuffer(buffer + '\n\n', acc);
+              const parsed = parseSseBuffer(buffer + '\n\n', acc, finalText, citations);
               acc = parsed.acc;
+              finalText = parsed.final;
+              citations = parsed.citations;
               if (parsed.hadError) hadError = true;
             }
           } else {
             // React Native path: read the full response and parse all frames at once.
             const fullText = await res.text();
-            const parsed = parseSseBuffer(fullText + '\n\n', '');
+            const parsed = parseSseBuffer(fullText + '\n\n', '', null, []);
             acc = parsed.acc;
+            finalText = parsed.final;
+            citations = parsed.citations;
             hadError = parsed.hadError;
           }
         } catch {
-          // Never leak raw stream data to UI.
           hadError = true;
         }
 
-        // Final render — ONLY the accumulated delta text (or a sanitized fallback).
+        const displayText = finalText !== null ? finalText : acc;
+
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
               ? {
                   ...m,
-                  content: acc.trim().length
-                    ? acc
+                  content: displayText.trim().length
+                    ? displayText
                     : (hadError
                         ? 'Something went wrong. Please try again.'
                         : 'No response received. Please try again.'),
+                  citations,
                 }
-              : m
-          )
+              : m,
+          ),
         );
 
-        // sync counter from server
+        // Auto-speak the reply if the user has that setting on and we got real text
+        if (autoSpeak && displayText.trim().length && !hadError) {
+          // slight delay so the message renders before speech starts
+          setTimeout(() => {
+            speakRef.current?.(assistantId, displayText);
+          }, 250);
+        }
+
         try {
           await refreshUser();
         } catch {}
@@ -264,7 +321,7 @@ export default function ChatScreen() {
         setStreaming(false);
       }
     },
-    [streaming, token, sessionId, language, model, proMode, refreshUser]
+    [streaming, token, sessionId, language, model, proMode, refreshUser, autoSpeak]
   );
 
   const speak = useCallback(
@@ -284,17 +341,68 @@ export default function ChatScreen() {
           });
         }
       } catch {}
+
+      // Enumerate installed voices and pick the best match for the selected language.
+      // This is what makes TTS actually SPEAK in the selected language instead of
+      // silently falling back to English (the default browser/OS behavior when the
+      // requested locale has no installed voice).
+      let voiceId: string | undefined = undefined;
+      let voiceUnavailable = false;
+      const targetFull = (language.tts || 'en-IN').toLowerCase();
+      const targetShort = targetFull.split('-')[0];
+      try {
+        const voices = await Speech.getAvailableVoicesAsync();
+        if (voices && voices.length > 0) {
+          // Prefer exact locale match, then language-family match, else nothing.
+          const exact = voices.find((v: any) => (v.language || '').toLowerCase() === targetFull);
+          const fam = voices.find(
+            (v: any) => (v.language || '').toLowerCase().split('-')[0] === targetShort,
+          );
+          const chosen = exact || fam;
+          if (chosen) {
+            voiceId = (chosen as any).identifier;
+          } else if (targetShort !== 'en') {
+            voiceUnavailable = true;
+          }
+        }
+      } catch {
+        // Voice enumeration not supported (some web browsers) — fall through and
+        // let Speech.speak try its best with the language tag alone.
+      }
+
+      if (voiceUnavailable) {
+        Alert.alert(
+          'Voice not installed',
+          `${language.name} voice is not installed on this device.\n\n` +
+            `To enable ${language.name} speech:\n` +
+            (Platform.OS === 'android'
+              ? '• Open Settings → General management → Text-to-speech\n• Tap the gear icon → Install voice data → download ' +
+                language.name
+              : Platform.OS === 'ios'
+              ? '• Open Settings → Accessibility → Spoken Content → Voices → download ' +
+                language.name
+              : '• Install a browser or OS voice pack for ' + language.name),
+        );
+        // Do NOT play English silently for a language the user asked for — that would
+        // create the "only English" bug we are fixing. Stop here.
+        setSpeakingId(null);
+        return;
+      }
+
       setSpeakingId(msgId);
       Speech.speak(text, {
         language: language.tts,
+        voice: voiceId,
         volume: 1.0,
         onDone: () => setSpeakingId(null),
         onStopped: () => setSpeakingId(null),
         onError: () => setSpeakingId(null),
       });
     },
-    [speakingId, language]
+    [speakingId, language],
   );
+  // Keep the forward-declared ref up to date whenever `speak` changes.
+  speakRef.current = speak;
 
   /** Start listening — uses the configured STT provider (native by default). */
   const startRecording = useCallback(async () => {
@@ -529,6 +637,34 @@ export default function ChatScreen() {
                 >
                   {m.content || (streaming && m.role === 'assistant' ? '…' : '')}
                 </Text>
+                {m.role === 'assistant' && m.citations && m.citations.length > 0 && (
+                  <View style={styles.citationsWrap} testID={`citations-${m.id}`}>
+                    <Text style={styles.citationsHeader}>📚 Verified sources</Text>
+                    {m.citations.map((c) => (
+                      <View key={c.key} style={styles.citationCard}>
+                        <View style={styles.citationHead}>
+                          <View style={styles.citationChip}>
+                            <Text style={styles.citationChipText}>{c.short_label}</Text>
+                          </View>
+                          <Text style={styles.citationVerified}>Verified {c.verified_at}</Text>
+                        </View>
+                        <Text style={styles.citationTitle}>{c.citation}</Text>
+                        <Text style={styles.citationText} numberOfLines={8}>
+                          {c.official_text}
+                        </Text>
+                        <Text
+                          style={styles.citationSource}
+                          numberOfLines={1}
+                          onPress={() => {
+                            import('expo-linking').then((L) => L.openURL(c.source_url));
+                          }}
+                        >
+                          Source: indiacode.nic.in ↗
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
             ))
           )}
@@ -719,6 +855,52 @@ const styles = StyleSheet.create({
   msgText: { fontSize: 15, lineHeight: 22 },
   userText: { color: theme.colors.onBrandPrimary },
   aiText: { color: theme.colors.onSurface },
+  citationsWrap: {
+    marginTop: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  citationsHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: theme.colors.brand,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  citationCard: {
+    borderWidth: 1,
+    borderColor: theme.colors.brandSecondary,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    backgroundColor: '#FFFBEC',
+    gap: 6,
+  },
+  citationHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  citationChip: {
+    backgroundColor: theme.colors.brand,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radius.pill,
+  },
+  citationChipText: {
+    color: theme.colors.onBrandPrimary,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  citationVerified: { fontSize: 10, color: theme.colors.onSurfaceTertiary },
+  citationTitle: { fontSize: 12, fontWeight: '700', color: theme.colors.brand },
+  citationText: { fontSize: 12, color: theme.colors.onSurface, lineHeight: 17, fontStyle: 'italic' },
+  citationSource: {
+    fontSize: 11,
+    color: theme.colors.brand,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+    marginTop: 4,
+  },
   proTag: {
     backgroundColor: theme.colors.brandSecondary,
     paddingHorizontal: 6,

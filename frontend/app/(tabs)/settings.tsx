@@ -1,24 +1,21 @@
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useAuth, API_BASE, Language, ModelChoice } from '@/src/auth';
+import { useAuth, API_BASE, Language } from '@/src/auth';
 import { theme } from '@/src/theme';
 
 export default function Settings() {
-  const { user, logout, language, setLanguage, model, setModel, refreshUser } = useAuth();
+  const { user, logout, language, setLanguage, autoSpeak, setAutoSpeak, refreshUser } = useAuth();
   const router = useRouter();
   const [langs, setLangs] = useState<Language[]>([]);
-  const [models, setModels] = useState<ModelChoice[]>([]);
   const [showLang, setShowLang] = useState(false);
-  const [showModel, setShowModel] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [termsText, setTermsText] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/reference/languages`).then(r => r.json()).then(setLangs);
-    fetch(`${API_BASE}/api/reference/models`).then(r => r.json()).then(setModels);
     fetch(`${API_BASE}/api/legal/terms`).then(r => r.json()).then(d => setTermsText(d.text)).catch(() => {});
     refreshUser();
   }, [refreshUser]);
@@ -85,14 +82,22 @@ export default function Settings() {
           <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
         </Pressable>
 
-        <Pressable testID="pick-model" style={styles.row} onPress={() => setShowModel(true)}>
-          <Ionicons name="sparkles-outline" size={22} color={theme.colors.brand} />
+        <View style={styles.row} testID="row-auto-speak">
+          <Ionicons name="volume-high-outline" size={22} color={theme.colors.brand} />
           <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
-            <Text style={styles.rowTitle}>AI Model</Text>
-            <Text style={styles.rowValue}>{model.label}</Text>
+            <Text style={styles.rowTitle}>Answers spoken aloud automatically</Text>
+            <Text style={styles.rowValue}>
+              {autoSpeak ? 'On · replies read aloud after they finish' : 'Off · tap the speaker to hear a reply'}
+            </Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
-        </Pressable>
+          <Switch
+            testID="auto-speak-switch"
+            value={autoSpeak}
+            onValueChange={setAutoSpeak}
+            trackColor={{ true: theme.colors.brandSecondary, false: theme.colors.borderStrong }}
+            thumbColor={theme.colors.surface}
+          />
+        </View>
 
         <Text style={styles.section}>Emergency Helplines</Text>
         <View style={styles.helpCard}>
@@ -141,15 +146,6 @@ export default function Settings() {
         items={langs.map(l => ({ id: l.code, label: `${l.native} · ${l.name}`, data: l }))}
         selectedId={language.code}
         onSelect={(item) => { setLanguage(item.data); setShowLang(false); }}
-      />
-      <PickerModal
-        testID="model-modal"
-        visible={showModel}
-        title="Choose AI model"
-        onClose={() => setShowModel(false)}
-        items={models.map(m => ({ id: `${m.provider}-${m.name}`, label: m.recommended ? `${m.label} · Recommended` : m.label, data: m }))}
-        selectedId={`${model.provider}-${model.name}`}
-        onSelect={(item) => { setModel(item.data); setShowModel(false); }}
       />
 
       <Modal visible={showTerms} animationType="slide" onRequestClose={() => setShowTerms(false)} testID="settings-terms-modal">

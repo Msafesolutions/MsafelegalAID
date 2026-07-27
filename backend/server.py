@@ -28,6 +28,16 @@ from openai import AsyncOpenAI
 from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
 
 from legal import TERMS_AND_CONDITIONS, TERMS_VERSION, DISCLAIMER_SHORT
+from corpus import (
+    retrieve as corpus_retrieve,
+    is_non_indian_jurisdiction,
+    is_non_legal_advice,
+    public_citation,
+    sanitize_model_output,
+    REFUSAL_NO_CORPUS,
+    REFUSAL_NON_INDIAN,
+    REFUSAL_NOT_LEGAL,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -152,50 +162,64 @@ async def current_user(authorization: Optional[str] = Header(None)) -> dict:
     return user
 
 # ---------- System prompts ----------
-def build_system_prompt(language_name: str, is_pro: bool = False) -> str:
-    disclaimer_line = ("\n\nAT THE END OF EVERY RESPONSE, append this exact disclaimer line on a new paragraph, in " + language_name + ":\n\"⚠️ This is legal information, not legal advice. For serious matters consult an advocate. © Callistus Moses · Msafe.\"")
+def build_system_prompt(language_name: str, is_pro: bool = False, corpus_context: str = "") -> str:
+    """
+    Grade-6 answer prompt with strict citation-integrity rule.
+
+    CITATION-INTEGRITY (see corpus.py):
+    - Model output MUST NEVER contain section numbers, article numbers, or verbatim
+      statutory text. The UI renders citations from `citations` SSE frames served
+      from the verified corpus, not from the model.
+    - When corpus_context is provided, base the answer on that verified text.
+    - When corpus_context is empty, decline politely with the refusal line and stop.
+    """
+    disclaimer_line = (
+        "\n\nAt the end of your reply, add exactly this line in " + language_name + ":\n"
+        '"⚠️ Legal information, not legal advice. Consult an advocate. © Callistus Moses · MSafe Solutions."'
+    )
+
+    verified_block = ""
+    if corpus_context:
+        verified_block = (
+            "\n\nVERIFIED SOURCES (already shown to the user by the UI — DO NOT repeat verbatim, "
+            "DO NOT quote, DO NOT emit section/article numbers). Use these to shape your plain-language "
+            "explanation ONLY:\n" + corpus_context + "\n"
+        )
+
+    base_rules = f"""You are Dhara — an AI legal information assistant for Indian citizens.
+
+REPLY LANGUAGE: {language_name}. Simple, dignified, Grade 6 reading level. Talk to the person as "you".
+
+HARD RULES (do not break — the app will strip your reply if you break them):
+1. NEVER write section numbers, article numbers, or clause numbers in your reply. Do NOT write "Article 21", "Section 35", "BNS", "BNSS", "BNSS 43(5)", "Section", "Article" etc. anywhere in your reply text. The user sees the exact citations in a separate box below your reply.
+2. NEVER quote statutory text verbatim. Do NOT copy the words of the law. Only explain in your own plain words.
+3. NEVER use markdown headers (# or ##). No bold with **. No emoji.
+4. NEVER use Latin phrases or unexplained legal jargon.
+5. If the law has an exception (except, unless, provided that, save in), your reply MUST mention the exception plainly. Never state a right as absolute if the law qualifies it.
+6. If your VERIFIED SOURCES block is empty or missing, reply exactly: "{REFUSAL_NO_CORPUS}" and STOP.
+7. If the question is about non-Indian law, or asks for personal/moral advice (should I forgive, should I marry, etc.), reply exactly: "{REFUSAL_NOT_LEGAL}" and STOP.
+
+FORMAT — respond in exactly this two-part shape and nothing else:
+
+Answer: <the direct answer in AT MOST TWO sentences, each under 15 words. First sentence must be the answer.>
+
+What you can do:
+- <one short bullet, plain action>
+- <one short bullet, plain action>
+- <one short bullet, plain action>
+- <optional 4th bullet>
+- <optional 5th bullet>
+
+Then a blank line, then the disclaimer line.{verified_block}{disclaimer_line}
+"""
 
     if is_pro:
-        return f"""You are Dhara Pro — a senior-lawyer-style AI legal advisor to an Indian citizen. You give the depth and structure a paying client would receive in a consultation.
-
-RESPONSE STYLE FOR PRO:
-- Reply in {language_name}. Simple, dignified, plain language.
-- Structure every substantive answer using ALL these sections (only skip a section if truly not applicable):
-  1. ⚖️ **The exact law** — quote the operative clause verbatim in English AND translate to {language_name}. Cite chapter and verse: "Section 103 BNS, 2023", "Article 22(1) of the Constitution", "Sec 173 BNSS", relevant Supreme Court cases (D.K. Basu 1997, Arnesh Kumar 2014, Lalita Kumari 2013, Puttaswamy 2017, etc.).
-  2. 🧭 **How this applies to your situation** — analyse the facts the user gave, note gaps, list assumptions.
-  3. 🛡️ **Your rights, right now**  — a bullet checklist of what officials CAN and CANNOT do.
-  4. ✅ **Step-by-step action plan** — numbered, immediately executable steps. Include exact document names, offices, portals (mParivahan, DigiLocker, cybercrime.gov.in, NALSA), and forms to file.
-  5. 🧾 **Draft language** — if a written complaint, RTI, notice, application, or FIR body would help, draft a ready-to-use paragraph the user can copy verbatim.
-  6. ⚠️ **Pitfalls & counter-arguments** — what the other side may claim, common police/officer tactics, and how the citizen should respond calmly.
-  7. 📞 **Where to escalate** — specific authority names, numbers, and jurisdiction (SP, DM, State HRC, NHRC 14433, State Consumer Commission, District Legal Services Authority, etc.).
-- If the user's question is genuinely simple ("What is Article 21?") give a full but shorter answer using the same structure.
-- Be a wise, calm village elder plus a sharp litigator. Never fear-monger. Never break the law.
-- If asked to help evade law, refuse gently and redirect.
-
-LEGAL SCOPE:
-- Bharatiya Nyaya Sanhita (BNS 2023), Bharatiya Nagarik Suraksha Sanhita (BNSS 2023), Bharatiya Sakshya Adhiniyam (BSA 2023).
-- Constitution of India — Fundamental Rights, Directive Principles, all articles.
-- Landmark judgments and current statutes.
-- Motor Vehicles Act, Consumer Protection Act 2019, Domestic Violence Act 2005, RTI 2005, POCSO, Dowry Act, IT Act 2000, Bharatiya Sakshya.
-
-TONE: सत्य • अहिंसा • अधिकार. Empower, never threaten.{disclaimer_line}"""
-
-    return f"""You are Dhara — a free AI legal information tool for Indian citizens.
-
-CORE MISSION: Make every Indian citizen aware of their rights. Empower — never threaten. "Dhara" (धारा) means a section of law in Hindi.
-
-EXPERTISE: BNS 2023, BNSS 2023, BSA 2023, Constitution of India, Motor Vehicles Act, Consumer Protection Act, RTI, Domestic Violence Act, IT Act, and landmark judgments.
-
-RESPONSE STYLE:
-1. Answer in {language_name}. Simple, clear words a common person understands.
-2. ALWAYS cite the exact provision — e.g., "Article 22(1) of the Constitution", "Section 35 BNSS", "Section 103 BNS".
-3. Quote the relevant clause verbatim in English first, then translate/explain in {language_name}.
-4. Structure longer answers with clear sections: ⚖️ What the law says · 🛡️ Your rights · ✅ What to do · ⚠️ What officials cannot do · 📞 Where to complain.
-5. Empower, don't fearmonger. Dignified, calm, wise.
-6. Refuse politely if asked to help evade law.
-7. In emergencies (arrest, harassment, violence): give the fastest actionable rights first, in short bullets.
-
-REMEMBER: You are a shield of knowledge. Truth, dignity, ahimsa.{disclaimer_line}"""
+        return base_rules + (
+            "\n\nPRO MODE: after the standard reply above, add another section titled 'For your situation:' "
+            "with 3–4 more bullets giving a step-by-step action plan (offices to visit, forms, escalation contacts). "
+            "Same rules — no section numbers, no verbatim law, no markdown headers."
+        )
+    return base_rules
 
 # ---------- Auth ----------
 @api.post("/auth/register", response_model=AuthOut)
@@ -335,9 +359,36 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         "created_at": now,
     })
 
+    # -------- Retrieval + citation integrity (P1) --------
+    # (a) Non-legal / non-Indian jurisdiction → hard refusal, no LLM call
+    early_refusal: Optional[str] = None
+    if is_non_indian_jurisdiction(body.message):
+        early_refusal = REFUSAL_NON_INDIAN
+    elif is_non_legal_advice(body.message):
+        early_refusal = REFUSAL_NOT_LEGAL
+
+    # (b) Corpus retrieval — deterministic keyword match against verified statutes
+    retrieved = [] if early_refusal else corpus_retrieve(body.message, limit=3)
+
+    # (c) If no retrieval hit AND no early refusal, we still refuse (no verified source)
+    if not early_refusal and not retrieved:
+        early_refusal = REFUSAL_NO_CORPUS
+
+    # Build the verified-source context for the prompt (used ONLY when we have hits)
+    corpus_context = ""
+    if retrieved:
+        corpus_context = "\n---\n".join([
+            f"Scope: {it['scope_note']}"
+            for it in retrieved
+        ])
+
     # Pro-quality prompt if user is Pro OR consuming a free sample; else basic prompt.
     use_pro_prompt = is_pro_user or is_sample_consumption
-    system_prompt = build_system_prompt(body.language_name, is_pro=use_pro_prompt)
+    system_prompt = build_system_prompt(
+        body.language_name,
+        is_pro=use_pro_prompt,
+        corpus_context=corpus_context,
+    )
 
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -386,6 +437,21 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             "sample_consumed": is_sample_consumption,
             "samples_remaining_after": max(0, PRO_FREE_SAMPLES - samples_used - (1 if is_sample_consumption else 0)),
         })
+        # Emit verified citations FIRST — the UI shows these in a separate boxed panel.
+        # The model is instructed NEVER to include section numbers/statutory text in its
+        # own reply; the source of truth is here (from corpus.py).
+        for it in retrieved:
+            yield sse({"type": "citation", "citation": public_citation(it)})
+
+        # Refusal path — do not call the LLM. Send the refusal as a delta so the frontend
+        # shows it in the normal chat bubble.
+        if early_refusal:
+            refusal_text = early_refusal
+            yield sse({"type": "delta", "content": refusal_text})
+            await save_assistant(refusal_text, error=None)
+            yield sse({"type": "done"})
+            return
+
         full = ""
         errored: Optional[str] = None
         try:
@@ -400,7 +466,14 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             errored = str(e)[:300]
             yield sse({"type": "error", "error": errored})
         finally:
-            await save_assistant(full, errored)
+            # Citation-integrity post-processing: strip any leaked section/article/statute
+            # names from the model's output. The verified citations are shown by the UI
+            # from the `citation` frames — the model MUST NOT emit them itself.
+            sanitized = sanitize_model_output(full) if full else full
+            if sanitized != full:
+                # Overwrite the accumulated text on the client with the sanitized version.
+                yield sse({"type": "final", "content": sanitized})
+            await save_assistant(sanitized or full, errored)
         yield sse({"type": "done"})
 
     return StreamingResponse(

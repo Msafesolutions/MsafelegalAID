@@ -6,6 +6,7 @@ const TOKEN_KEY = 'gk_token';
 const USER_KEY = 'gk_user';
 const LANG_KEY = 'gk_lang';
 const MODEL_KEY = 'gk_model';
+const AUTO_SPEAK_KEY = 'dhara_auto_speak';
 
 export type User = { id: string; email: string; name: string; phone?: string; language: string; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
 export type Language = { code: string; name: string; native: string; tts: string };
@@ -19,6 +20,8 @@ type AuthCtx = {
   setLanguage: (l: Language) => Promise<void>;
   model: ModelChoice;
   setModel: (m: ModelChoice) => Promise<void>;
+  autoSpeak: boolean;
+  setAutoSpeak: (v: boolean) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, phone: string, terms_accepted: boolean, terms_version: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -36,19 +39,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANG);
   const [model, setModelState] = useState<ModelChoice>(DEFAULT_MODEL);
+  const [autoSpeak, setAutoSpeakState] = useState<boolean>(true);
 
   useEffect(() => {
     (async () => {
-      const [t, u, l, m] = await Promise.all([
+      const [t, u, l, m, a] = await Promise.all([
         AsyncStorage.getItem(TOKEN_KEY),
         AsyncStorage.getItem(USER_KEY),
         AsyncStorage.getItem(LANG_KEY),
         AsyncStorage.getItem(MODEL_KEY),
+        AsyncStorage.getItem(AUTO_SPEAK_KEY),
       ]);
       if (t) setToken(t);
       if (u) setUser(JSON.parse(u));
       if (l) setLanguageState(JSON.parse(l));
       if (m) setModelState(JSON.parse(m));
+      if (a !== null) setAutoSpeakState(a === '1');
       setLoading(false);
     })();
   }, []);
@@ -110,8 +116,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(MODEL_KEY, JSON.stringify(m));
   }, []);
 
+  const setAutoSpeak = useCallback(async (v: boolean) => {
+    setAutoSpeakState(v);
+    await AsyncStorage.setItem(AUTO_SPEAK_KEY, v ? '1' : '0');
+  }, []);
+
   return (
-    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, login, register, logout, refreshUser }}>
+    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, login, register, logout, refreshUser }}>
       {children}
     </Ctx.Provider>
   );
