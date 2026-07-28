@@ -25,7 +25,7 @@ import {
 } from 'expo-audio';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
-import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
+import { getConfiguredSTT, whisperTranscribeFile, pickSupportedLocale } from '@/src/voice/stt';
 
 type Citation = {
   key: string;
@@ -78,7 +78,7 @@ export default function ChatScreen() {
     message: string;
   }>(null);
   const [samplesRemaining, setSamplesRemaining] = useState<number | null>(null);
-  const [sttProviderLabel, setSttProviderLabel] = useState<string>('');
+  const [, setSttProviderLabel] = useState<string>('');
   // WhatsApp-style voice UX state
   const [transcriptPreview, setTranscriptPreview] = useState<string>('');
   const [showTranscriptModal, setShowTranscriptModal] = useState<boolean>(false);
@@ -468,15 +468,79 @@ export default function ChatScreen() {
       setSttProviderLabel(fellBack ? `${provider.displayName} (fallback)` : provider.displayName);
 
       if (providerId === 'native') {
-        // Real on-device STT — best case
+        // Pre-flight: check whether the device's speech recognizer supports the
+        // user's selected language BEFORE starting. This is the fix for "voice
+        // not recording" on Hindi / other Indian languages on some Android
+        // devices — previously the recognizer started with an unsupported
+        // locale and silently returned no result.
+        const pick = await pickSupportedLocale(language.tts);
+
+        if (pick.chosen === null) {
+          Alert.alert(
+            'Voice input not available',
+            `${language.name} voice input is not installed on this device.\n\n` +
+              `To enable it:\n` +
+              (Platform.OS === 'android'
+                ? '• Install "Speech Services by Google" from the Play Store\n' +
+                  '• Open Settings → System → Languages → Add ' + language.name + '\n' +
+                  '• Restart the app'
+                : '• Open Settings → General → Keyboard → Dictation → enable ' + language.name),
+            [{ text: 'OK' }],
+          );
+          return;
+        }
+
+        // If we had to fall back to another language, tell the user before we
+        // start listening so they know we're not speaking their language.
+        const startNative = async (lang: string) => {
+          try {
+            const handle = await provider.start({
+              languageTag: lang,
+              onPartial: (r) => setInput(r.text),
+              onError: (m) => {
+                // Surface the actual OS error rather than a generic message so
+                // the user knows what to do (install pack, grant permission, etc.).
+                Alert.alert(
+                  'Voice error',
+                  `${m}\n\nTip: make sure "Speech Services by Google" is set as ` +
+                    `your default speech engine in Settings → System → Text-to-speech.`,
+                );
+              },
+            });
+            nativeSTTHandleRef.current = handle;
+            setRecording(true);
+          } catch (e: any) {
+            throw e;
+          }
+        };
+
+        if (pick.usedFallback && pick.fallbackReason === 'english') {
+          // Warn user we're using English because their language isn't supported.
+          Alert.alert(
+            `${language.name} voice not installed`,
+            `Your device doesn't have ${language.name} speech recognition. ` +
+              `You can either:\n\n• Speak in English, and I'll still answer in ${language.name}\n` +
+              `• Or type your question in ${language.name}\n\n` +
+              `To install ${language.name} voice input: Settings → System → Languages → Add ${language.name}.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Speak in English',
+                onPress: async () => {
+                  try {
+                    await startNative(pick.chosen!);
+                  } catch (e: any) {
+                    console.warn('native STT fallback failed', e?.message);
+                  }
+                },
+              },
+            ],
+          );
+          return;
+        }
+
         try {
-          const handle = await provider.start({
-            languageTag: language.tts,
-            onPartial: (r) => setInput(r.text),
-            onError: (m) => Alert.alert('Voice error', m),
-          });
-          nativeSTTHandleRef.current = handle;
-          setRecording(true);
+          await startNative(pick.chosen!);
           return;
         } catch (e: any) {
           // fall through to whisper-cloud audio recorder as final fallback
@@ -813,8 +877,7 @@ export default function ChatScreen() {
               {String(holdElapsed % 60).padStart(2, '0')}
             </Text>
             <Text style={styles.recHintText}>
-              Hold to talk · release to send
-              {sttProviderLabel ? ` · ${sttProviderLabel}` : ''}
+              Listening in {language.name} · release to send
             </Text>
           </View>
         )}

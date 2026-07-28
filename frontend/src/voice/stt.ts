@@ -100,6 +100,67 @@ async function loadNativeMod() {
   return nativeMod;
 }
 
+/**
+ * Returns the list of BCP-47 locales the current device's speech recognizer supports.
+ * On older Android or devices without Google App / offline recognition data installed,
+ * this may return only English variants. Returns empty array on error / web.
+ */
+export async function getSupportedSTTLocales(): Promise<string[]> {
+  if (Platform.OS === 'web') return [];
+  const mod = await loadNativeMod();
+  if (!mod) return [];
+  try {
+    // Newer API (expo-speech-recognition >= 1.0)
+    const res = await mod.ExpoSpeechRecognitionModule.getSupportedLocales?.({
+      onDevice: false, // include cloud-backed locales too (Google's recognizer)
+    });
+    if (Array.isArray(res)) return res.map((r: any) => String(r));
+    if (res && Array.isArray(res.locales)) return res.locales.map((r: any) => String(r));
+  } catch {}
+  try {
+    // Older API name
+    const res = await mod.ExpoSpeechRecognitionModule.getSupportedLocalesAsync?.();
+    if (Array.isArray(res)) return res.map((r: any) => String(r));
+    if (res && Array.isArray(res.locales)) return res.locales.map((r: any) => String(r));
+  } catch {}
+  return [];
+}
+
+/**
+ * Given a preferred BCP-47 tag (e.g. "hi-IN"), returns the best available locale
+ * from the device's supported list. Falls back to family match (any hi-*) then
+ * to English (en-* — prefers en-IN → en-US → any en-*). Returns null if nothing
+ * usable is found.
+ */
+export async function pickSupportedLocale(preferred: string): Promise<{
+  chosen: string | null;
+  supported: string[];
+  usedFallback: boolean;
+  fallbackReason: 'exact' | 'family' | 'english' | 'unavailable';
+}> {
+  const supported = await getSupportedSTTLocales();
+  if (supported.length === 0) {
+    // API may not be available on this device — try the preferred locale as-is.
+    return { chosen: preferred, supported, usedFallback: false, fallbackReason: 'exact' };
+  }
+  const p = preferred.toLowerCase();
+  const pShort = p.split('-')[0];
+  // Exact locale match
+  const exact = supported.find((s) => s.toLowerCase() === p);
+  if (exact) return { chosen: exact, supported, usedFallback: false, fallbackReason: 'exact' };
+  // Language-family match (e.g. hi-IN → any hi-*)
+  const fam = supported.find((s) => s.toLowerCase().split('-')[0] === pShort);
+  if (fam) return { chosen: fam, supported, usedFallback: true, fallbackReason: 'family' };
+  // English fallback
+  const enIN = supported.find((s) => s.toLowerCase() === 'en-in');
+  if (enIN) return { chosen: enIN, supported, usedFallback: true, fallbackReason: 'english' };
+  const enUS = supported.find((s) => s.toLowerCase() === 'en-us');
+  if (enUS) return { chosen: enUS, supported, usedFallback: true, fallbackReason: 'english' };
+  const anyEn = supported.find((s) => s.toLowerCase().startsWith('en'));
+  if (anyEn) return { chosen: anyEn, supported, usedFallback: true, fallbackReason: 'english' };
+  return { chosen: null, supported, usedFallback: false, fallbackReason: 'unavailable' };
+}
+
 class NativeSTT implements STTProvider {
   readonly id = 'native' as const;
   readonly requiresInternet = false;
@@ -175,7 +236,11 @@ class NativeSTT implements STTProvider {
         interimResults: true,
         continuous: false,
         requiresOnDeviceRecognition: false, // OS decides; false gives broader lang coverage
-        addsPunctuation: true,
+        // NOTE: `addsPunctuation` was previously true, but that option silently
+        // fails on many older Android devices (and some Xiaomi/OnePlus ROMs),
+        // which was one cause of "voice not recording" on Hindi & other locales.
+        // Punctuation is nice-to-have, not required — keep it off for reliability.
+        addsPunctuation: false,
       });
     } catch (e: any) {
       onError?.(e?.message || 'Failed to start recognition');

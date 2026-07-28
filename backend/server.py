@@ -382,6 +382,23 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
 
     if mode == "pro" and not is_pro_user:
         if samples_used >= PRO_FREE_SAMPLES:
+            # Log the blocked attempt so the operator sees who's hitting the paywall
+            # and what they were trying to ask. Otherwise the query vanishes from the DB.
+            try:
+                await db.messages.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "session_id": session_id,
+                    "user_id": user["id"],
+                    "role": "user",
+                    "content": body.message,
+                    "language": body.language,
+                    "mode": mode,
+                    "status": "blocked_paywall",
+                    "created_at": now,
+                    "timestamp": now,
+                })
+            except Exception:
+                logger.exception("Failed to log paywall-blocked query")
             raise HTTPException(
                 status_code=402,
                 detail={
@@ -424,7 +441,9 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         "content": body.message,
         "language": body.language,
         "mode": mode,
+        "status": "ok",  # updated below if refusal fires
         "created_at": now,
+        "timestamp": now,  # explicit alias for CSV clarity
     })
 
     # -------- Retrieval + citation integrity (P1) --------
@@ -493,6 +512,18 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
 
     async def save_assistant(content: str, error: Optional[str] = None):
+        now_ts = datetime.now(timezone.utc).isoformat()
+        # Infer status for CSV exports & analytics
+        if error:
+            status = "error"
+        elif early_refusal == REFUSAL_NO_CORPUS:
+            status = "refused_no_corpus"
+        elif early_refusal == REFUSAL_NON_INDIAN:
+            status = "refused_non_indian"
+        elif early_refusal == REFUSAL_NOT_LEGAL:
+            status = "refused_not_legal"
+        else:
+            status = "ok"
         doc = {
             "id": str(uuid.uuid4()),
             "session_id": session_id,
@@ -505,10 +536,19 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             "model_name": body.model_name,
             "tier": "pro" if is_pro_user else "free",
             "sample_consumed": is_sample_consumption,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": status,
+            "created_at": now_ts,
+            "timestamp": now_ts,
         }
         if error:
             doc["error"] = error
+        # Also attach the citations that the user was shown, so the CSV export
+        # can show what verified statutes accompanied each answer.
+        if retrieved:
+            doc["citations"] = [
+                {"short_label": it.get("short_label", ""), "citation": it.get("citation", "")}
+                for it in retrieved
+            ]
         await db.messages.insert_one(doc)
         await db.sessions.update_one(
             {"id": session_id},
@@ -1064,9 +1104,9 @@ async def export_messages_csv(key: str = ""):
     writer = csv.writer(buffer)
     writer.writerow([
         "timestamp", "user_email", "user_name", "user_phone", "role",
-        "content", "citations", "session_id",
+        "status", "content", "citations", "session_id",
     ])
-    async for m in db.messages.find({}).sort("timestamp", -1):
+    async for m in db.messages.find({}).sort("created_at", -1):
         sid = m.get("session_id", "")
         uid = session_index.get(sid, "")
         u = user_index.get(uid, {})
@@ -1075,12 +1115,24 @@ async def export_messages_csv(key: str = ""):
         cit_labels = " | ".join(
             (c.get("short_label", "") if isinstance(c, dict) else str(c)) for c in citations
         )
+        # Derive status: prefer explicit field, else infer from error / content
+        status = m.get("status")
+        if not status:
+            if m.get("error"):
+                status = "error"
+            elif m.get("role") == "assistant" and m.get("content", "").startswith(
+                ("I don't have a verified source", "I only cover Indian law", "I can only help")
+            ):
+                status = "refused"
+            else:
+                status = "ok"
         writer.writerow([
-            m.get("timestamp", ""),
+            m.get("timestamp") or m.get("created_at", ""),
             u.get("email", ""),
             u.get("name", ""),
             u.get("phone", ""),
             m.get("role", ""),
+            status,
             (m.get("content") or "").replace("\r", " ").replace("\n", " ")[:2000],
             cit_labels,
             sid,
