@@ -992,6 +992,120 @@ async def health():
         "terms_version": TERMS_VERSION,
     }
 
+# ---------- Admin CSV export ----------
+# Simple key-protected read-only export for the app operator. Two endpoints:
+#   GET /api/admin/export/users.csv?key=<ADMIN_KEY>    → user roster
+#   GET /api/admin/export/messages.csv?key=<ADMIN_KEY> → all chat queries with user email
+# Password hashes are NEVER exported. Rows are streamed so this handles large tables.
+
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
+
+def _check_admin_key(key: str):
+    if not ADMIN_KEY:
+        raise HTTPException(503, "Admin export is not configured on this server.")
+    if not key or key != ADMIN_KEY:
+        raise HTTPException(401, "Invalid admin key.")
+
+@api.get("/admin/export/users.csv")
+async def export_users_csv(key: str = ""):
+    _check_admin_key(key)
+    import csv, io
+    from fastapi.responses import StreamingResponse
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "id", "email", "name", "phone", "language", "is_pro", "pro_since",
+        "pro_samples_used", "auto_speak", "terms_version", "terms_accepted_at",
+        "created_at", "password_reset_at",
+    ])
+    async for u in db.users.find({}).sort("created_at", -1):
+        writer.writerow([
+            u.get("id", ""),
+            u.get("email", ""),
+            u.get("name", ""),
+            u.get("phone", ""),
+            u.get("language", ""),
+            "yes" if u.get("is_pro") else "no",
+            u.get("pro_since", ""),
+            u.get("pro_samples_used", 0),
+            "yes" if u.get("auto_speak") else "no",
+            u.get("terms_version", ""),
+            u.get("terms_accepted_at", ""),
+            u.get("created_at", ""),
+            u.get("password_reset_at", ""),
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        io.BytesIO(buffer.read().encode("utf-8")),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="dhara_users_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv"',
+        },
+    )
+
+@api.get("/admin/export/messages.csv")
+async def export_messages_csv(key: str = ""):
+    _check_admin_key(key)
+    import csv, io
+    from fastapi.responses import StreamingResponse
+
+    # Cache users for O(1) email lookups
+    user_index: dict = {}
+    async for u in db.users.find({}, projection={"id": 1, "email": 1, "name": 1, "phone": 1}):
+        user_index[u["id"]] = u
+
+    # Cache sessions for user linkage
+    session_index: dict = {}
+    async for s in db.sessions.find({}, projection={"id": 1, "user_id": 1}):
+        session_index[s["id"]] = s.get("user_id", "")
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([
+        "timestamp", "user_email", "user_name", "user_phone", "role",
+        "content", "citations", "session_id",
+    ])
+    async for m in db.messages.find({}).sort("timestamp", -1):
+        sid = m.get("session_id", "")
+        uid = session_index.get(sid, "")
+        u = user_index.get(uid, {})
+        citations = m.get("citations") or []
+        # Flatten citation labels for CSV
+        cit_labels = " | ".join(
+            (c.get("short_label", "") if isinstance(c, dict) else str(c)) for c in citations
+        )
+        writer.writerow([
+            m.get("timestamp", ""),
+            u.get("email", ""),
+            u.get("name", ""),
+            u.get("phone", ""),
+            m.get("role", ""),
+            (m.get("content") or "").replace("\r", " ").replace("\n", " ")[:2000],
+            cit_labels,
+            sid,
+        ])
+    buffer.seek(0)
+    return StreamingResponse(
+        io.BytesIO(buffer.read().encode("utf-8")),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="dhara_messages_{datetime.now(timezone.utc).strftime("%Y%m%d")}.csv"',
+        },
+    )
+
+@api.get("/admin/stats")
+async def admin_stats(key: str = ""):
+    """Quick JSON overview — total users, pro users, session/message counts."""
+    _check_admin_key(key)
+    return {
+        "users_total": await db.users.count_documents({}),
+        "users_pro": await db.users.count_documents({"is_pro": True}),
+        "sessions_total": await db.sessions.count_documents({}),
+        "messages_total": await db.messages.count_documents({}),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
 @api.get("/")
 async def root():
     return {
