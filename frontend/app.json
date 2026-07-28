@@ -22,6 +22,7 @@
         "backgroundColor": "#0A1C3A"
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "package": "com.msafesolutions.legalaid",
       "permissions": [
         "RECORD_AUDIO",
