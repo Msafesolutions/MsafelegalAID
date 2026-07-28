@@ -22,13 +22,12 @@ export default function Settings() {
 
   const confirmLogout = () => {
     if (Platform.OS === 'web') {
-      // eslint-disable-next-line no-alert
       if (typeof window !== 'undefined' && window.confirm('Sign out of Dhara?')) {
         logout();
       }
       return;
     }
-    Alert.alert('Sign out?', '', [
+    Alert.alert('Sign out?', 'You will need to sign in again to continue.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: () => logout() },
     ]);
@@ -121,7 +120,7 @@ export default function Settings() {
         <Text style={styles.section}>About</Text>
         <View style={styles.aboutCard}>
           <Text style={styles.aboutText}>
-            Dhara is a free civic empowerment tool. "Dhara" (धारा) means a section of law in Hindi — for every Indian citizen to know the exact section of the Bharatiya Nyaya Sanhita (BNS), the Constitution of India, and other laws that protects them.
+            {'Dhara is a free civic empowerment tool. \u201CDhara\u201D (धारा) means a section of law in Hindi — for every Indian citizen to know the exact section of the Bharatiya Nyaya Sanhita (BNS), the Constitution of India, and other laws that protects them.'}
             {'\n\n'}सत्य • अहिंसा • अधिकार{'\n\n'}
             Note: Dhara provides legal information — not legal advice. For serious matters, consult a lawyer or contact NALSA (15100) for free legal aid.
           </Text>

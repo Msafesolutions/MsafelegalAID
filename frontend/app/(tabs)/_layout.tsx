@@ -1,14 +1,35 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View } from 'react-native';
+import { useEffect } from 'react';
 import { theme } from '@/src/theme';
 import { DisclaimerBanner } from '@/src/components/DisclaimerBanner';
+import { useAuth } from '@/src/auth';
 
 /**
  * Tab layout with a non-dismissible global legal disclaimer banner
  * pinned just above the tab bar. It appears on ALL tabs.
+ *
+ * Also owns the auth guard: whenever `token` becomes null (e.g. user tapped
+ * Sign Out on Settings), we force-redirect to /login. Without this guard the
+ * tabs stay mounted after logout and the user appears stuck on the settings
+ * page — which was the root cause of the reported "Sign out doesn't work" bug.
  */
 export default function TabsLayout() {
+  const { token, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!token) {
+      router.replace('/login');
+    }
+  }, [token, loading, router]);
+
+  // Don't render tabs at all while unauthenticated — prevents a flash of the
+  // settings screen after logout while the redirect is in flight.
+  if (!token) return null;
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
       <View style={{ flex: 1 }}>

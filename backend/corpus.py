@@ -660,12 +660,23 @@ def sanitize_model_output(text: str) -> str:
     Defense-in-depth. Even with prompt instructions, models sometimes leak
     section/article identifiers. Strip them here BEFORE showing to the user.
     Citations are rendered separately from the verified corpus.
+
+    Also strips markdown syntax (**bold**, __underline__, `code`, #headers) since
+    the UI renders plain text — otherwise users see literal `**Answer:**` in the
+    bubble instead of a formatted heading. Per P3 style spec: no markdown.
     """
     if not text:
         return text
     out = text
     for pat, repl in _CITATION_LEAK_PATTERNS:
         out = pat.sub(repl, out)
-    # collapse double spaces from replacements
+    # Strip markdown formatting the model occasionally emits despite the prompt.
+    out = _re.sub(r"\*\*(.+?)\*\*", r"\1", out)        # **bold** → bold
+    out = _re.sub(r"(?<!\*)\*(?!\*)([^*\n]+?)\*(?!\*)", r"\1", out)  # *italic* → italic
+    out = _re.sub(r"__([^_\n]+?)__", r"\1", out)       # __underline__ → underline
+    out = _re.sub(r"`([^`\n]+?)`", r"\1", out)         # `code` → code
+    out = _re.sub(r"^#{1,6}\s+", "", out, flags=_re.MULTILINE)  # # heading → heading
+    # collapse double spaces + trailing whitespace on lines
     out = _re.sub(r"[ \t]{2,}", " ", out)
+    out = _re.sub(r"[ \t]+\n", "\n", out)
     return out

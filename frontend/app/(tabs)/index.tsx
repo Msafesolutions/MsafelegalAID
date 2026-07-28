@@ -475,14 +475,17 @@ export default function ChatScreen() {
         // locale and silently returned no result.
         const pick = await pickSupportedLocale(language.tts);
 
-        if (pick.chosen === null) {
+        if (pick.chosen === null || (pick.usedFallback && pick.fallbackReason === 'english')) {
+          // Strict language policy: if the user selected Tamil/Hindi/etc. and that
+          // language is not installed on this device, refuse cleanly rather than
+          // silently switching to English. This is what the user asked for.
           Alert.alert(
-            'Voice input not available',
-            `${language.name} voice input is not installed on this device.\n\n` +
+            `${language.name} voice not installed`,
+            `Voice input for ${language.name} is not installed on this device.\n\n` +
               `To enable it:\n` +
               (Platform.OS === 'android'
-                ? '• Install "Speech Services by Google" from the Play Store\n' +
-                  '• Open Settings → System → Languages → Add ' + language.name + '\n' +
+                ? '• Open Settings → System → Languages → Add ' + language.name + '\n' +
+                  '• Install "Speech Services by Google" from the Play Store\n' +
                   '• Restart the app'
                 : '• Open Settings → General → Keyboard → Dictation → enable ' + language.name),
             [{ text: 'OK' }],
@@ -515,27 +518,7 @@ export default function ChatScreen() {
         };
 
         if (pick.usedFallback && pick.fallbackReason === 'english') {
-          // Warn user we're using English because their language isn't supported.
-          Alert.alert(
-            `${language.name} voice not installed`,
-            `Your device doesn't have ${language.name} speech recognition. ` +
-              `You can either:\n\n• Speak in English, and I'll still answer in ${language.name}\n` +
-              `• Or type your question in ${language.name}\n\n` +
-              `To install ${language.name} voice input: Settings → System → Languages → Add ${language.name}.`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Speak in English',
-                onPress: async () => {
-                  try {
-                    await startNative(pick.chosen!);
-                  } catch (e: any) {
-                    console.warn('native STT fallback failed', e?.message);
-                  }
-                },
-              },
-            ],
-          );
+          // Already handled above (strict-language policy refuses this path).
           return;
         }
 
@@ -768,7 +751,7 @@ export default function ChatScreen() {
               <Text style={styles.emptySub}>
                 Bharatiya Nyaya Sanhita · Constitution · Supreme Court judgments — quoted exactly.
               </Text>
-              <View style={{ marginTop: theme.spacing.xl, gap: theme.spacing.sm }}>
+              <View style={{ marginTop: theme.spacing.xl, gap: theme.spacing.sm, alignSelf: 'stretch', width: '100%' }}>
                 {activeSuggestions.map((s, i) => (
                   <Pressable
                     key={i}
@@ -777,7 +760,7 @@ export default function ChatScreen() {
                     onPress={() => send(s.text)}
                   >
                     <Ionicons name={s.icon} size={20} color={theme.colors.brand} />
-                    <Text style={styles.suggestionText}>{s.text}</Text>
+                    <Text style={styles.suggestionText} numberOfLines={2}>{s.text}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -1076,14 +1059,16 @@ const styles = StyleSheet.create({
   suggestion: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     padding: theme.spacing.lg,
     backgroundColor: theme.colors.surfaceSecondary,
     borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    width: '100%',
+    minHeight: 56,
   },
-  suggestionText: { color: theme.colors.onSurface, flex: 1 },
+  suggestionText: { color: theme.colors.onSurface, flex: 1, fontSize: 15, flexShrink: 1 },
   msg: { marginBottom: theme.spacing.lg, borderRadius: theme.radius.lg, padding: theme.spacing.lg },
   userMsg: {
     backgroundColor: theme.colors.brand,
