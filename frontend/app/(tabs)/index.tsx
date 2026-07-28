@@ -354,20 +354,53 @@ export default function ChatScreen() {
       // silently falling back to English (the default browser/OS behavior when the
       // requested locale has no installed voice).
       let voiceId: string | undefined = undefined;
+      let voiceLangTag: string = language.tts || 'en-IN';
       let voiceUnavailable = false;
+      let fallbackNoticeLang: string | null = null; // set if we substitute a related-family voice
       const targetFull = (language.tts || 'en-IN').toLowerCase();
       const targetShort = targetFull.split('-')[0];
+
+      // Script-family fallbacks for the 8 rare Indian languages whose voices are
+      // rarely pre-installed on Android/iOS. When the user's exact voice is missing,
+      // we substitute the closest phonetically-related language so the app still
+      // SPEAKS. We disclose this to the user with a small alert so they know.
+      const SCRIPT_FALLBACKS: Record<string, string[]> = {
+        // Devanagari-script minor languages → Hindi voice
+        kok: ['mr', 'hi'], mai: ['hi'], doi: ['hi'], brx: ['hi'],
+        sa: ['hi'], ne: ['hi'],
+        // Perso-Arabic + Devanagari mix → Urdu or Hindi
+        ks: ['ur', 'hi'], sd: ['ur', 'hi'],
+        // Bengali script for Manipuri; Ol Chiki (Santali) uses Bengali as closest fallback
+        mni: ['bn'], sat: ['bn', 'hi'],
+      };
+
       try {
         const voices = await Speech.getAvailableVoicesAsync();
         if (voices && voices.length > 0) {
-          // Prefer exact locale match, then language-family match, else nothing.
+          // 1) Exact locale match (e.g. hi-IN → hi-IN)
           const exact = voices.find((v: any) => (v.language || '').toLowerCase() === targetFull);
+          // 2) Language-family match (e.g. hi-IN → any hi-*)
           const fam = voices.find(
             (v: any) => (v.language || '').toLowerCase().split('-')[0] === targetShort,
           );
-          const chosen = exact || fam;
-          if (chosen) {
-            voiceId = (chosen as any).identifier;
+          const primary = exact || fam;
+          if (primary) {
+            voiceId = (primary as any).identifier;
+            voiceLangTag = (primary as any).language || voiceLangTag;
+          } else if (SCRIPT_FALLBACKS[targetShort]) {
+            // 3) Script-family fallback (Konkani → Marathi/Hindi, etc.)
+            for (const alt of SCRIPT_FALLBACKS[targetShort]) {
+              const altVoice = voices.find(
+                (v: any) => (v.language || '').toLowerCase().split('-')[0] === alt,
+              );
+              if (altVoice) {
+                voiceId = (altVoice as any).identifier;
+                voiceLangTag = (altVoice as any).language || alt;
+                fallbackNoticeLang = alt;
+                break;
+              }
+            }
+            if (!voiceId) voiceUnavailable = true;
           } else if (targetShort !== 'en') {
             voiceUnavailable = true;
           }
@@ -396,9 +429,24 @@ export default function ChatScreen() {
         return;
       }
 
+      // Disclose to the user that we're using a related-family voice, so they aren't
+      // confused when the pronunciation sounds like Hindi/Marathi/Urdu/Bengali.
+      if (fallbackNoticeLang) {
+        const FALLBACK_NAMES: Record<string, string> = {
+          hi: 'Hindi', mr: 'Marathi', ur: 'Urdu', bn: 'Bengali',
+        };
+        // Fire and forget — do not block playback
+        setTimeout(() => {
+          Alert.alert(
+            'Using related voice',
+            `${language.name} voice is not installed. Speaking with the ${FALLBACK_NAMES[fallbackNoticeLang!] || fallbackNoticeLang} voice (closest available). Install ${language.name} in device settings for native pronunciation.`,
+          );
+        }, 0);
+      }
+
       setSpeakingId(msgId);
       Speech.speak(text, {
-        language: language.tts,
+        language: voiceLangTag,
         voice: voiceId,
         volume: 1.0,
         rate: speechRate,

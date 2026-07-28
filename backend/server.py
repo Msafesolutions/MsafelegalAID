@@ -438,6 +438,31 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     # (b) Corpus retrieval — deterministic keyword match against verified statutes
     retrieved = [] if early_refusal else corpus_retrieve(body.message, limit=3)
 
+    # (b1) Citation integrity: if the user's query explicitly names a section/article
+    # identifier (e.g. "BNS Section 999", "Article 350", "BNSS 220") and NONE of the
+    # retrieved entries actually match that identifier, void the retrieval. Otherwise
+    # unrelated but keyword-adjacent chips would appear alongside a refusal, which is
+    # dangerous and contradicts the P1 accuracy rule.
+    if retrieved and not early_refusal:
+        import re as _re_id
+        def _norm_short(s: str) -> str:
+            return _re_id.sub(r"[^a-z0-9()]+", " ", (s or "").lower()).strip()
+        query_ids: list[str] = []
+        # "Article 21", "Article 21A"
+        for m in _re_id.finditer(r"\b[Aa]rticle\s+(\d+[A-Za-z]?)\b", body.message):
+            query_ids.append(f"article {m.group(1).lower()}")
+        # "BNS Section 999", "BNSS Section 43(5)", "Sec. 43 BNSS", "BNSS 43(5)"
+        for m in _re_id.finditer(
+            r"\b(BNS|BNSS|BSA|IPC|CrPC|PWDVA)\b[^\w]*(?:Sec(?:tion|\.)?\s*)?(\d+[A-Za-z]?(?:\(\d+\))?)\b",
+            body.message, _re_id.IGNORECASE,
+        ):
+            query_ids.append(f"{m.group(1).lower()} {m.group(2).lower()}")
+        if query_ids:
+            hit_labels = { _norm_short(it["short_label"]) for it in retrieved }
+            if not any(qid in hit_labels or any(qid in hl for hl in hit_labels) for qid in query_ids):
+                # Query names an identifier we don't cover → void retrieval so user sees refusal only
+                retrieved = []
+
     # (c) If no retrieval hit AND no early refusal, we still refuse (no verified source)
     if not early_refusal and not retrieved:
         early_refusal = REFUSAL_NO_CORPUS
