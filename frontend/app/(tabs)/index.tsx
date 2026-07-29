@@ -47,9 +47,9 @@ type Msg = {
 
 const BASIC_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
   { text: 'What are my rights during a police stop?', icon: 'shield-checkmark-outline' },
-  { text: 'How do I file an FIR?', icon: 'document-text-outline' },
-  { text: 'Can police arrest me without warrant?', icon: 'alert-circle-outline' },
-  { text: 'What is Article 21 of the Constitution?', icon: 'library-outline' },
+  { text: 'How do I file an RTI application?', icon: 'document-text-outline' },
+  { text: 'How to file a consumer complaint online?', icon: 'cart-outline' },
+  { text: 'What are the rules for a road accident?', icon: 'car-outline' },
 ];
 
 const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [

@@ -470,9 +470,10 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         # "Article 21", "Article 21A"
         for m in _re_id.finditer(r"\b[Aa]rticle\s+(\d+[A-Za-z]?)\b", body.message):
             query_ids.append(f"article {m.group(1).lower()}")
-        # "BNS Section 999", "BNSS Section 43(5)", "Sec. 43 BNSS", "BNSS 43(5)"
+        # "BNS Section 999", "BNSS Section 43(5)", "Sec. 43 BNSS", "BNSS 43(5)",
+        # "RTI Section 6", "CPA 34", "MV 185", "Motor Vehicles Section 185"
         for m in _re_id.finditer(
-            r"\b(BNS|BNSS|BSA|IPC|CrPC|PWDVA)\b[^\w]*(?:Sec(?:tion|\.)?\s*)?(\d+[A-Za-z]?(?:\(\d+\))?)\b",
+            r"\b(BNS|BNSS|BSA|IPC|CrPC|PWDVA|RTI|CPA|MV|MVA)\b[^\w]*(?:Sec(?:tion|\.)?\s*)?(\d+[A-Za-z]?(?:\(\d+\))?)\b",
             body.message, _re_id.IGNORECASE,
         ):
             query_ids.append(f"{m.group(1).lower()} {m.group(2).lower()}")

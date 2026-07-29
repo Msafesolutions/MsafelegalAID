@@ -508,6 +508,457 @@ CORPUS = [
             "emergency safety", "help urgent abuse",
         ],
     },
+    # -------------------- Right to Information Act 2005 --------------------
+    {
+        "key": "rti_6",
+        "citation": "Right to Information Act 2005, Section 6 — Request for obtaining information",
+        "short_label": "RTI 6",
+        "act": "RTI",
+        "official_text": (
+            "(1) A person, who desires to obtain any information under this Act, shall make a "
+            "request in writing or through electronic means in English or Hindi or in the official "
+            "language of the area in which the application is being made, accompanying such fee "
+            "as may be prescribed, to—\n"
+            "(a) the Central Public Information Officer or State Public Information Officer, as "
+            "the case may be, of the concerned public authority;\n"
+            "(b) the Central Assistant Public Information Officer or State Assistant Public "
+            "Information Officer, as the case may be, specifying the particulars of the information "
+            "sought by him or her:\n"
+            "Provided that where such request cannot be made in writing, the Central Public "
+            "Information Officer or State Public Information Officer, as the case may be, shall "
+            "render all reasonable assistance to the person making the request orally to reduce the "
+            "same in writing.\n"
+            "(2) An applicant making request for information shall not be required to give any "
+            "reason for requesting the information or any other personal details except those that "
+            "may be necessary for contacting him."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1362",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "RTI Section 6 lets you ask any public authority for information in writing (or "
+            "electronically) in English, Hindi, or the local language. You DO NOT need to give a "
+            "reason. If you cannot write, the PIO must help you put your request in writing."
+        ),
+        "keywords": [
+            "rti 6", "section 6 rti", "file rti", "filing rti", "how to file rti",
+            "rti application", "rti request", "apply rti", "rti procedure",
+            "public information officer", "pio", "spio", "cpio",
+            "rti online", "rti fee", "rti in hindi", "rti local language",
+            "right to information", "government information",
+        ],
+    },
+    {
+        "key": "rti_7",
+        "citation": "Right to Information Act 2005, Section 7 — Disposal of request",
+        "short_label": "RTI 7",
+        "act": "RTI",
+        "official_text": (
+            "(1) Subject to the proviso to sub-section (2) of section 5 or the proviso to "
+            "sub-section (3) of section 6, the Central Public Information Officer or State Public "
+            "Information Officer, as the case may be, on receipt of a request under section 6 "
+            "shall, as expeditiously as possible, and in any case within thirty days of the "
+            "receipt of the request, either provide the information on payment of such fee as may "
+            "be prescribed or reject the request for any of the reasons specified in sections 8 and 9:\n"
+            "Provided that where the information sought for concerns the life or liberty of a "
+            "person, the same shall be provided within forty-eight hours of the receipt of the "
+            "request.\n"
+            "(2) If the Central Public Information Officer or State Public Information Officer, "
+            "as the case may be, fails to give decision on the request for information within the "
+            "period specified under sub-section (1), the Central Public Information Officer or "
+            "State Public Information Officer, as the case may be, shall be deemed to have refused "
+            "the request.\n"
+            "(6) Notwithstanding anything contained in sub-section (5), the person making request "
+            "for the information shall be provided the information free of charge where a public "
+            "authority fails to comply with the time limits specified in sub-section (1)."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1362",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "RTI Section 7 gives the government 30 days to reply to your RTI (48 hours if it "
+            "concerns life or liberty). If they miss the deadline, you get the information FREE "
+            "and it counts as a deemed refusal you can appeal."
+        ),
+        "keywords": [
+            "rti 7", "section 7 rti", "rti 30 days", "rti timeline", "rti deadline",
+            "rti reply time", "rti response time", "deemed refusal", "rti free",
+            "rti not answered", "rti no reply", "rti delay", "48 hours rti",
+            "life and liberty rti", "rti time limit",
+        ],
+    },
+    {
+        "key": "rti_19",
+        "citation": "Right to Information Act 2005, Section 19 — Appeal",
+        "short_label": "RTI 19",
+        "act": "RTI",
+        "official_text": (
+            "(1) Any person who does not receive a decision within the time specified in "
+            "sub-section (1) or clause (a) of sub-section (3) of section 7, or is aggrieved by a "
+            "decision of the Central Public Information Officer or State Public Information "
+            "Officer, as the case may be, may within thirty days from the expiry of such period or "
+            "from the receipt of such a decision prefer an appeal to such officer who is senior in "
+            "rank to the Central Public Information Officer or State Public Information Officer, "
+            "as the case may be, in each public authority.\n"
+            "(3) A second appeal against the decision under sub-section (1) shall lie within "
+            "ninety days from the date on which the decision should have been made or was actually "
+            "received, with the Central Information Commission or the State Information Commission."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1362",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "If your RTI is refused or ignored, you can file a FIRST APPEAL within 30 days to a "
+            "senior officer in the same department. If still not satisfied, a SECOND APPEAL goes "
+            "to the Central or State Information Commission within 90 days."
+        ),
+        "keywords": [
+            "rti 19", "section 19 rti", "rti appeal", "rti first appeal", "rti second appeal",
+            "first appellate authority", "information commission", "central information commission",
+            "state information commission", "cic", "sic", "rti refused appeal",
+            "how to appeal rti", "rti complaint",
+        ],
+    },
+    {
+        "key": "rti_20",
+        "citation": "Right to Information Act 2005, Section 20 — Penalties",
+        "short_label": "RTI 20",
+        "act": "RTI",
+        "official_text": (
+            "(1) Where the Central Information Commission or the State Information Commission, "
+            "as the case may be, at the time of deciding any complaint or appeal is of the opinion "
+            "that the Central Public Information Officer or the State Public Information Officer, "
+            "as the case may be, has, without any reasonable cause, refused to receive an "
+            "application for information or has not furnished information within the time "
+            "specified under sub-section (1) of section 7 or malafidely denied the request for "
+            "information or knowingly given incorrect, incomplete or misleading information or "
+            "destroyed information which was the subject of the request or obstructed in any "
+            "manner in furnishing the information, it shall impose a penalty of two hundred and "
+            "fifty rupees each day till application is received or information is furnished, so "
+            "however, the total amount of such penalty shall not exceed twenty-five thousand rupees:\n"
+            "Provided that the Central Public Information Officer or the State Public Information "
+            "Officer, as the case may be, shall be given a reasonable opportunity of being heard "
+            "before any penalty is imposed on him."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1362",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "RTI Section 20 lets the Information Commission fine the PIO ₹250 per day (up to "
+            "₹25,000) if they wrongly refuse your RTI, delay it, or give false / incomplete "
+            "information. This penalty comes out of the officer's salary."
+        ),
+        "keywords": [
+            "rti 20", "section 20 rti", "rti penalty", "penalty pio", "pio fine",
+            "rti punishment", "action against pio", "fine information officer",
+            "wrong rti reply", "false rti reply", "misleading rti",
+        ],
+    },
+    # -------------------- Consumer Protection Act 2019 --------------------
+    {
+        "key": "cpa_2_7",
+        "citation": "Consumer Protection Act 2019, Section 2(7) — Definition of consumer",
+        "short_label": "CPA 2(7)",
+        "act": "CPA",
+        "official_text": (
+            "'consumer' means any person who—\n"
+            "(i) buys any goods for a consideration which has been paid or promised or partly "
+            "paid and partly promised, or under any system of deferred payment and includes any "
+            "user of such goods other than the person who buys such goods for consideration paid "
+            "or promised or partly paid or partly promised, or under any system of deferred "
+            "payment, when such use is made with the approval of such person, but does not include "
+            "a person who obtains such goods for resale or for any commercial purpose; or\n"
+            "(ii) hires or avails of any service for a consideration which has been paid or "
+            "promised or partly paid and partly promised, or under any system of deferred payment "
+            "and includes any beneficiary of such service other than the person who hires or "
+            "avails of the services for consideration paid or promised, or partly paid and partly "
+            "promised, or under any system of deferred payment, when such services are availed of "
+            "with the approval of the first mentioned person, but does not include a person who "
+            "avails of such service for any commercial purpose.\n"
+            "Explanation.—For the purposes of this clause,—\n"
+            "(a) the expression 'commercial purpose' does not include use by a person of goods "
+            "bought and used by him exclusively for the purpose of earning his livelihood, by "
+            "means of self-employment;\n"
+            "(b) the expressions 'buys any goods' and 'hires or avails any services' includes "
+            "offline or online transactions through electronic means or by teleshopping or direct "
+            "selling or multi-level marketing."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/15256",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "You are a CONSUMER under this law if you paid for goods or services (offline OR "
+            "online) for personal use — not for resale or business. Family members who use what "
+            "you bought are also protected."
+        ),
+        "keywords": [
+            "cpa 2", "cpa 2(7)", "section 2 consumer protection", "who is a consumer",
+            "consumer definition", "am i a consumer", "online purchase consumer",
+            "buyer rights", "customer rights", "e-commerce consumer",
+        ],
+    },
+    {
+        "key": "cpa_34",
+        "citation": "Consumer Protection Act 2019, Section 34 — Jurisdiction of District Commission",
+        "short_label": "CPA 34",
+        "act": "CPA",
+        "official_text": (
+            "(1) Subject to the other provisions of this Act, the District Commission shall have "
+            "jurisdiction to entertain complaints where the value of the goods or services paid as "
+            "consideration does not exceed fifty lakh rupees.\n"
+            "(2) A complaint shall be instituted in a District Commission within the local limits "
+            "of whose jurisdiction,—\n"
+            "(a) the opposite party or each of the opposite parties, where there are more than "
+            "one, at the time of the institution of the complaint, ordinarily resides or carries "
+            "on business or has a branch office or personally works for gain; or\n"
+            "(b) any of the opposite parties, where there are more than one, at the time of the "
+            "institution of the complaint, actually and voluntarily resides, or carries on "
+            "business or has a branch office, or personally works for gain, provided that in such "
+            "case the permission of the District Commission is given; or\n"
+            "(c) the cause of action, wholly or in part, arises; or\n"
+            "(d) the complainant resides or personally works for gain."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/15256",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "For consumer complaints up to ₹50 lakh, file at the DISTRICT Commission. You can "
+            "file where the seller does business, where the transaction happened, OR where you "
+            "yourself live — you no longer have to travel to the seller's city."
+        ),
+        "keywords": [
+            "cpa 34", "section 34 consumer", "district commission", "district consumer forum",
+            "where to file consumer complaint", "consumer complaint jurisdiction",
+            "50 lakh consumer", "pecuniary jurisdiction consumer",
+            "consumer court location", "consumer forum near me",
+        ],
+    },
+    {
+        "key": "cpa_35",
+        "citation": "Consumer Protection Act 2019, Section 35 — Manner in which complaint shall be made",
+        "short_label": "CPA 35",
+        "act": "CPA",
+        "official_text": (
+            "(1) A complaint, in relation to any goods sold or delivered or agreed to be sold or "
+            "delivered or any service provided or agreed to be provided, may be filed with a "
+            "District Commission by—\n"
+            "(a) the consumer,—\n"
+            "  (i) to whom such goods are sold or delivered or agreed to be sold or delivered or "
+            "such service is provided or agreed to be provided; or\n"
+            "  (ii) who alleges unfair trade practice in respect of such goods or service;\n"
+            "(b) any recognised consumer association, whether the consumer to whom such goods are "
+            "sold or delivered or agreed to be sold or delivered or such service is provided or "
+            "agreed to be provided, or who alleges unfair trade practice, is a member of such "
+            "association or not;\n"
+            "(c) one or more consumers, where there are numerous consumers having the same "
+            "interest, with the permission of the District Commission, on behalf of, or for the "
+            "benefit of, all consumers so interested;\n"
+            "(d) the Central Government, the Central Authority or the State Government, as the "
+            "case may be:\n"
+            "Provided that the complaint under this sub-section may be filed electronically in "
+            "such manner as may be prescribed."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/15256",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "You can file a consumer complaint yourself, or through a recognised consumer group. "
+            "Complaints can now be filed ONLINE via the e-Daakhil portal (edaakhil.nic.in)."
+        ),
+        "keywords": [
+            "cpa 35", "section 35 consumer", "how to file consumer complaint",
+            "file consumer case", "consumer court complaint", "e-daakhil", "edaakhil",
+            "online consumer complaint", "consumer helpline", "cheated by seller",
+            "faulty product", "defective goods", "bad service complaint",
+            "shopkeeper cheated", "online shopping fraud",
+        ],
+    },
+    {
+        "key": "cpa_69",
+        "citation": "Consumer Protection Act 2019, Section 69 — Limitation period",
+        "short_label": "CPA 69",
+        "act": "CPA",
+        "official_text": (
+            "(1) The District Commission, the State Commission or the National Commission shall "
+            "not admit a complaint unless it is filed within two years from the date on which the "
+            "cause of action has arisen.\n"
+            "(2) Notwithstanding anything contained in sub-section (1), a complaint may be "
+            "entertained after the period specified in sub-section (1), if the complainant "
+            "satisfies the District Commission, the State Commission or the National Commission, "
+            "as the case may be, that he had sufficient cause for not filing the complaint within "
+            "such period:\n"
+            "Provided that no such complaint shall be entertained unless the District Commission "
+            "or the State Commission or the National Commission, as the case may be, records its "
+            "reasons for condoning such delay."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/15256",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "You must file your consumer complaint within TWO YEARS from the date the problem "
+            "arose. Later than that, the court can still accept it only if you show a good reason "
+            "for the delay."
+        ),
+        "keywords": [
+            "cpa 69", "section 69 consumer", "consumer complaint time limit",
+            "consumer limitation", "2 years consumer", "two years consumer complaint",
+            "old consumer complaint", "delayed consumer complaint",
+        ],
+    },
+    # -------------------- Motor Vehicles Act 1988 (as amended 2019) --------------------
+    {
+        "key": "mv_129",
+        "citation": "Motor Vehicles Act 1988, Section 129 — Wearing of protective headgear",
+        "short_label": "MV 129",
+        "act": "MV",
+        "official_text": (
+            "Every person, above four years of age, driving or riding or being carried on a "
+            "motor cycle of any class or description shall, while in a public place, wear "
+            "protective headgear conforming to such standards as may be prescribed by the "
+            "Central Government:\n"
+            "Provided that the provisions of this section shall not apply to a person who is a "
+            "Sikh, if he is, while driving or riding on the motor cycle, in a public place, "
+            "wearing a turban:\n"
+            "Provided further that the Central Government may by rules provide for measures for "
+            "the safety of children below four years of age riding or being carried on a motor cycle.\n"
+            "Explanation.—'Protective headgear' means a helmet which—\n"
+            "(a) by virtue of its shape, material and construction, could reasonably be expected "
+            "to afford to the person driving or riding on a motor cycle a degree of protection "
+            "from injury in the event of an accident; and\n"
+            "(b) is fastened to the head of the wearer by means of straps or other fastenings "
+            "provided on the headgear."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "Everyone above 4 years — driver AND pillion — must wear a proper BIS-certified "
+            "helmet on a two-wheeler in public. Sikhs wearing a turban are exempted."
+        ),
+        "keywords": [
+            "mv 129", "section 129 motor vehicles", "helmet law", "helmet rule",
+            "helmet mandatory", "helmet fine", "two wheeler helmet", "pillion helmet",
+            "bike helmet", "scooter helmet", "sikh helmet exemption",
+        ],
+    },
+    {
+        "key": "mv_132",
+        "citation": "Motor Vehicles Act 1988, Section 132 — Duty of driver to stop in certain cases",
+        "short_label": "MV 132",
+        "act": "MV",
+        "official_text": (
+            "(1) The driver of a motor vehicle shall cause the vehicle to stop and cause it to "
+            "remain stationary so long as may reasonably be necessary,—\n"
+            "(a) when required to do so by any police officer in uniform, or by a person "
+            "authorised to remove obstructions to traffic; or\n"
+            "(b) when required to do so by any other person indicating that the vehicle is "
+            "required to be stopped for the purpose of enabling any person to board or alight "
+            "from another vehicle;\n"
+            "(c) on the occurrence of an accident in which the vehicle is involved, in the manner "
+            "prescribed in section 134.\n"
+            "(2) The driver of a motor vehicle shall, on demand by a police officer in uniform, "
+            "produce his driving licence for examination."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "You MUST stop when signalled by a UNIFORMED police officer, and you must show your "
+            "driving licence on demand. Refusing to stop is itself an offence."
+        ),
+        "keywords": [
+            "mv 132", "section 132 motor vehicles", "police stopped vehicle", "traffic stop",
+            "traffic police stop", "duty to stop", "show license traffic",
+            "produce driving licence", "traffic check", "traffic police powers",
+            "vehicle check", "police checking vehicle",
+        ],
+    },
+    {
+        "key": "mv_134",
+        "citation": "Motor Vehicles Act 1988, Section 134 — Duty of driver in case of accident and injury to a person",
+        "short_label": "MV 134",
+        "act": "MV",
+        "official_text": (
+            "When any person is injured or any property of a third party is damaged, as a result "
+            "of an accident in which a motor vehicle is involved, the driver of the vehicle or "
+            "other person in charge of the vehicle shall—\n"
+            "(a) unless it is not practicable to do so on account of mob fury or any other "
+            "reason beyond his control, take all reasonable steps to secure medical attention for "
+            "the injured person, by conveying him to the nearest medical practitioner or hospital, "
+            "and it shall be the duty of every registered medical practitioner or the doctor on "
+            "duty in the hospital immediately to attend to the injured person and render medical "
+            "aid or treatment without waiting for any procedural formalities, unless the injured "
+            "person or his guardian, in case he is a minor, desires otherwise;\n"
+            "(b) give on demand by a police officer any information required by him, or, if no "
+            "police officer is present, report the circumstances of the occurrence, including the "
+            "circumstances, if any, for not taking reasonable steps to secure medical attention "
+            "as required under clause (a), at the nearest police station as soon as possible, and "
+            "in any case within twenty-four hours of the occurrence."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "If you are in a road accident, the law REQUIRES you to help the injured person to a "
+            "hospital and report the accident to police within 24 hours. Hospitals must treat the "
+            "injured immediately — no paperwork first. Good Samaritans are protected from "
+            "harassment."
+        ),
+        "keywords": [
+            "mv 134", "section 134 motor vehicles", "road accident", "accident duty",
+            "hit and run", "duty after accident", "accident report police", "accident 24 hours",
+            "good samaritan", "help injured accident", "hospital accident treatment",
+            "car accident what to do", "bike accident what to do", "accident procedure",
+        ],
+    },
+    {
+        "key": "mv_185",
+        "citation": "Motor Vehicles Act 1988, Section 185 — Driving by a drunken person or by a person under the influence of drugs",
+        "short_label": "MV 185",
+        "act": "MV",
+        "official_text": (
+            "Whoever, while driving, or attempting to drive, a motor vehicle,—\n"
+            "(a) has, in his blood, alcohol exceeding 30 mg. per 100 ml. of blood detected in a "
+            "test by a breath analyser, or in any another test including a laboratory test, or\n"
+            "(b) is under the influence of a drug to such an extent as to be incapable of "
+            "exercising proper control over the vehicle,\n"
+            "shall be punishable for the first offence with imprisonment for a term which may "
+            "extend to six months, or with fine which may extend to ten thousand rupees, or with "
+            "both; and for a second or subsequent offence, if committed within three years of the "
+            "commission of the previous similar offence, with imprisonment for a term which may "
+            "extend to two years, or with fine which may extend to fifteen thousand rupees, or "
+            "with both."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "Legal blood-alcohol limit is 30 mg per 100 ml. Cross that OR drive under the "
+            "influence of drugs, and the first offence is up to 6 months jail or ₹10,000 fine (or "
+            "both). A repeat within 3 years can lead to 2 years jail or ₹15,000."
+        ),
+        "keywords": [
+            "mv 185", "section 185 motor vehicles", "drunk driving", "drink and drive",
+            "dui india", "alcohol driving", "breath analyser", "breathalyzer",
+            "blood alcohol limit", "drugs driving", "drunk driving fine",
+            "drunk driving punishment", "drunk driving jail",
+        ],
+    },
+    {
+        "key": "mv_194b",
+        "citation": "Motor Vehicles Act 1988, Section 194B — Use of safety belts and the safety measures for children below fourteen years of age",
+        "short_label": "MV 194B",
+        "act": "MV",
+        "official_text": (
+            "(1) Whoever drives a motor vehicle without wearing a safety belt or carries "
+            "passengers not wearing seat belts shall be punishable with a fine of one thousand "
+            "rupees.\n"
+            "(2) Whoever drives a motor vehicle without securing a child, who has not attained "
+            "the age of fourteen years, either by a safety belt or a child restraint system, in "
+            "accordance with such standards as may be prescribed, shall be punishable with a fine "
+            "of one thousand rupees."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-02-01",
+        "scope_note": (
+            "Everyone in a car — driver AND passengers — must wear a seat belt. Children under "
+            "14 must be secured with a seat belt or a proper child restraint. Fine is ₹1,000 per "
+            "offence."
+        ),
+        "keywords": [
+            "mv 194b", "section 194b motor vehicles", "seat belt", "seatbelt",
+            "seat belt fine", "seat belt law", "child seat", "child restraint",
+            "back seat belt", "passenger seat belt", "seat belt mandatory",
+        ],
+    },
 ]
 
 # Non-Indian jurisdictions — trap-question refusal helper
@@ -641,17 +1092,20 @@ _CITATION_LEAK_PATTERNS = [
     # "Article 21", "Article 22(1)", "Article 21 of the Constitution"
     (_re.compile(r"\b[Aa]rticle\s+\d+[A-Z]?(\(\d+\))?(\s+of\s+the\s+Constitution)?\b"), "this constitutional right"),
     # "Section 35 BNSS", "Section 43(5) of BNSS", "Sec. 43(5) BNSS", "BNSS Section 35"
-    (_re.compile(r"\b(?:[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\s+(?:of\s+)?(?:BNS|BNSS|BSA|IPC|CrPC))\b"), "the law"),
-    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC)\s+[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\b"), "the law"),
-    # Bare "BNSS 43(5)" or "PWDVA 12" style
-    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC|PWDVA|DV Act)\s+\d+[A-Z]?(?:\(\d+\))?\b"), "the law"),
+    (_re.compile(r"\b(?:[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\s+(?:of\s+)?(?:BNS|BNSS|BSA|IPC|CrPC|RTI|CPA|MV|MVA))(?![A-Za-z0-9])"), "the law"),
+    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC|RTI|CPA|MV|MVA)\s+[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?(?![A-Za-z0-9])"), "the law"),
+    # Bare "BNSS 43(5)" or "PWDVA 12" or "RTI 6" or "CPA 2(7)" or "MV 194B" style
+    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC|PWDVA|DV Act|RTI|CPA|MV|MVA)\s+\d+[A-Z]?(?:\(\d+\))?(?![A-Za-z0-9])"), "the law"),
     # Just "Section 35" alone
-    (_re.compile(r"\b[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\b"), "the law"),
+    (_re.compile(r"\b[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?(?![A-Za-z0-9])"), "the law"),
     # Long forms of the statutes
     (_re.compile(r"\bBharatiya\s+(?:Nyaya|Nagarik|Sakshya)\s+(?:Sanhita|Suraksha|Adhiniyam)(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\bIndian\s+Penal\s+Code(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\bCode\s+of\s+Criminal\s+Procedure(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\b(?:Protection\s+of\s+Women\s+from\s+Domestic\s+Violence\s+Act|PWDVA)(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\b(?:Right\s+to\s+Information\s+Act|RTI\s+Act)(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\bConsumer\s+Protection\s+Act(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\bMotor\s+Vehicles\s+Act(?:,?\s*\d{4})?\b"), "the law"),
 ]
 
 
