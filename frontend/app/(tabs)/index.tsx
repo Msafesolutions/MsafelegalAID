@@ -93,6 +93,32 @@ export default function ChatScreen() {
   // without a circular dependency (speak is defined AFTER send in this file).
   const speakRef = useRef<((msgId: string, text: string) => void) | null>(null);
 
+  // Global unmount cleanup — critical for preventing app crashes when the user
+  // navigates away while the mic is still recording. Without this, the STT
+  // module keeps a live audio input stream that the OS eventually kills with
+  // a native exception (which manifests as "Something went wrong with Msafe
+  // DHARA" on some Android ROMs).
+  useEffect(() => {
+    return () => {
+      // Stop any active STT handle
+      if (nativeSTTHandleRef.current) {
+        try {
+          nativeSTTHandleRef.current.stop();
+        } catch {}
+        nativeSTTHandleRef.current = null;
+      }
+      // Kill the hold-to-talk elapsed-time interval
+      if (holdTimerRef.current) {
+        clearInterval(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
+      // Stop any ongoing TTS playback
+      try {
+        Speech.stop();
+      } catch {}
+    };
+  }, []);
+
   const isPro = !!user?.is_pro;
   const remaining =
     samplesRemaining !== null

@@ -188,46 +188,79 @@ class NativeSTT implements STTProvider {
     onPartial?: (r: STTResult) => void;
     onError?: (m: string) => void;
   }) {
+    // Every path in this method must be defensive — an unhandled exception or
+    // rejected promise here has been the root cause of app crashes reported by
+    // users on older/customised Android ROMs (Xiaomi, Realme, OnePlus).
     const mod = await loadNativeMod();
     if (!mod) throw new Error('expo-speech-recognition not installed');
     const { ExpoSpeechRecognitionModule } = mod;
-
-    // Request permissions
-    const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (!perm.granted) {
-      onError?.('Microphone / speech recognition permission denied');
-      throw new Error('Permission denied');
+    if (!ExpoSpeechRecognitionModule) {
+      throw new Error('Speech recognition module missing on this device');
     }
 
-    // Assemble a promise that resolves with the final transcript
+    // Request permissions — protect against permission API changes across
+    // library versions. Some older builds don't have requestPermissionsAsync.
+    try {
+      const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync?.();
+      if (perm && perm.granted === false) {
+        onError?.('Microphone / speech recognition permission denied');
+        throw new Error('Permission denied');
+      }
+    } catch (e: any) {
+      // If the permission API is missing, keep going — start() will raise
+      // its own error if the OS actually blocks recording.
+      if (String(e?.message || '').includes('Permission denied')) throw e;
+    }
+
+    // Assemble a promise that resolves with the final transcript. This
+    // promise MUST resolve in every code path (success, error, silent end),
+    // otherwise the caller's `await handle.stop()` hangs forever.
     let finalText = '';
     let resolved = false;
     let resolveFinal: (r: STTResult) => void = () => {};
     const finalPromise = new Promise<STTResult>((resolve) => {
       resolveFinal = resolve;
     });
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      resolveFinal({ text: finalText, provider: 'native', is_final: true });
+    };
 
-    const resultSub = mod.addSpeechRecognitionListener('result', (ev: any) => {
-      const t = ev?.results?.[0]?.transcript ?? '';
-      if (ev?.isFinal) {
-        finalText = t;
-      } else {
-        onPartial?.({ text: t, provider: 'native', is_final: false });
+    // Defensive listener setup — if the library API changed between versions,
+    // a missing `addSpeechRecognitionListener` must not crash the app.
+    const listeners: { remove?: () => void }[] = [];
+    const addL = (evt: string, cb: (ev: any) => void) => {
+      try {
+        if (typeof mod.addSpeechRecognitionListener === 'function') {
+          const sub = mod.addSpeechRecognitionListener(evt, cb);
+          if (sub) listeners.push(sub);
+        }
+      } catch (err) {
+        console.warn(`STT listener setup failed for '${evt}':`, err);
+      }
+    };
+    addL('result', (ev: any) => {
+      try {
+        const t = ev?.results?.[0]?.transcript ?? '';
+        if (ev?.isFinal) {
+          finalText = t;
+        } else {
+          onPartial?.({ text: t, provider: 'native', is_final: false });
+        }
+      } catch (err) {
+        console.warn('STT result handler crashed:', err);
       }
     });
-    const endSub = mod.addSpeechRecognitionListener('end', () => {
-      if (!resolved) {
-        resolved = true;
-        resolveFinal({ text: finalText, provider: 'native', is_final: true });
-      }
+    addL('end', () => {
+      finish();
     });
-    const errorSub = mod.addSpeechRecognitionListener('error', (ev: any) => {
-      const em = ev?.error || ev?.message || 'STT error';
-      onError?.(em);
-      if (!resolved) {
-        resolved = true;
-        resolveFinal({ text: finalText, provider: 'native', is_final: true });
-      }
+    addL('error', (ev: any) => {
+      try {
+        const em = ev?.error || ev?.message || 'STT error';
+        onError?.(em);
+      } catch {}
+      finish();
     });
 
     try {
@@ -235,29 +268,30 @@ class NativeSTT implements STTProvider {
         lang: languageTag,
         interimResults: true,
         continuous: false,
-        requiresOnDeviceRecognition: false, // OS decides; false gives broader lang coverage
-        // NOTE: `addsPunctuation` was previously true, but that option silently
-        // fails on many older Android devices (and some Xiaomi/OnePlus ROMs),
-        // which was one cause of "voice not recording" on Hindi & other locales.
-        // Punctuation is nice-to-have, not required — keep it off for reliability.
+        requiresOnDeviceRecognition: false,
         addsPunctuation: false,
       });
     } catch (e: any) {
+      // Guarantee listeners get cleaned up and the caller's promise settles,
+      // otherwise the mic button gets stuck in "recording" state forever.
       onError?.(e?.message || 'Failed to start recognition');
+      listeners.forEach((s) => { try { s.remove?.(); } catch {} });
+      finish();
       throw e;
     }
 
     return {
       stop: async () => {
         try {
-          ExpoSpeechRecognitionModule.stop();
-        } catch {}
+          ExpoSpeechRecognitionModule.stop?.();
+        } catch (err) {
+          console.warn('STT stop() threw:', err);
+        }
+        // Safety net: if the module never fires `end`/`error` (some Android
+        // ROMs are buggy), resolve after a short timeout so the UI unfreezes.
+        setTimeout(finish, 4000);
         const r = await finalPromise;
-        try {
-          resultSub?.remove?.();
-          endSub?.remove?.();
-          errorSub?.remove?.();
-        } catch {}
+        listeners.forEach((s) => { try { s.remove?.(); } catch {} });
         return r;
       },
     };
