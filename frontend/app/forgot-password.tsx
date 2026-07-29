@@ -5,12 +5,10 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -80,9 +78,12 @@ export default function ForgotPassword() {
 
   return (
     <SafeAreaView style={styles.safe} testID="forgot-password-screen">
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <Pressable onPress={() => router.back()} style={styles.back} testID="fp-back">
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={24}
+      >
+        <Pressable onPress={() => router.back()} style={styles.back} testID="fp-back">
             <Ionicons name="chevron-back" size={22} color={theme.colors.onBrandPrimary} />
             <Text style={styles.backText}>Back to sign in</Text>
           </Pressable>
@@ -176,8 +177,7 @@ export default function ForgotPassword() {
           <Text style={styles.copyright}>
             © {new Date().getFullYear()} Callistus Moses · An Msafe product
           </Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

@@ -6,13 +6,13 @@ import {
   Pressable,
   StyleSheet,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Alert,
   Modal,
   Switch,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -538,6 +538,12 @@ export default function ChatScreen() {
         return;
       }
       await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+      // Defensive: release any lingering prepared/recording session from a
+      // previous quick tap before preparing a new one — otherwise Expo Audio
+      // throws "AudioRecorder has already been prepared".
+      try {
+        await recorder.stop();
+      } catch {}
       await recorder.prepareToRecordAsync();
       recorder.record();
       setRecording(true);
@@ -734,8 +740,8 @@ export default function ChatScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={80}
+        behavior="translate-with-padding"
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 64}
       >
         <ScrollView
           ref={scrollRef}
