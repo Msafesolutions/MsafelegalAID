@@ -86,6 +86,5 @@ android-sdk/
 credentials.json
 *.key
 .credentials
-.env
-.env.*
-*.env
+# Only ignore local-override env files, keep committed backend/.env & frontend/.env
+.env*.local

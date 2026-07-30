@@ -959,6 +959,457 @@ CORPUS = [
             "back seat belt", "passenger seat belt", "seat belt mandatory",
         ],
     },
+    # -------------------- RTI Rules 2012 (Central) --------------------
+    {
+        "key": "rti_rule_3",
+        "citation": "Right to Information Rules 2012, Rule 3 — Application fee",
+        "short_label": "RTI Rule 3",
+        "act": "RTIR",
+        "official_text": (
+            "An application under sub-section (1) of section 6 of the Act shall be accompanied "
+            "by a fee of rupees ten and shall ordinarily not contain more than five hundred words, "
+            "excluding annexures, containing address of the Central Public Information Officer and "
+            "of the applicant:\n"
+            "Provided that no application shall be rejected on the ground that it contains more than "
+            "five hundred words."
+        ),
+        "source_url": "https://www.pmindia.gov.in/wp-content/uploads/2017/04/RTIRules_2012_English_0.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "To file an RTI with a Central government body, you pay only ₹10. Your application "
+            "should ideally be under 500 words, but it CANNOT be rejected just for being longer."
+        ),
+        "keywords": [
+            "rti rule 3", "rti fee", "rti application fee", "rti 10 rupees", "rti ten rupees",
+            "rti cost", "how much rti fee", "rti word limit", "rti 500 words",
+            "central rti rules", "rti 2012 rules",
+        ],
+    },
+    {
+        "key": "rti_rule_4",
+        "citation": "Right to Information Rules 2012, Rule 4 — Fees for providing information",
+        "short_label": "RTI Rule 4",
+        "act": "RTIR",
+        "official_text": (
+            "Fee for providing information under sub-section (4) of section 4 and sub-sections (1) "
+            "and (5) of section 7 of the Act shall be charged at the following rates, namely:—\n"
+            "(a) rupees two for each page in A-4 or A-3 size paper created or copied;\n"
+            "(b) actual cost or price of a copy in larger size paper;\n"
+            "(c) actual cost or price for samples or models;\n"
+            "(d) rupees fifty per diskette; and\n"
+            "(e) price fixed for a publication or rupees two per page of photocopy for extracts from "
+            "the publication.\n"
+            "For inspection of records, no fee for the first hour; and a fee of rupees five for each "
+            "fifteen minutes (or fraction thereof) thereafter."
+        ),
+        "source_url": "https://www.pmindia.gov.in/wp-content/uploads/2017/04/RTIRules_2012_English_0.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "After filing an RTI, you pay ₹2 per A4/A3 page of the information. Samples/models are "
+            "at cost, a CD is ₹50. Inspection of records is FREE for the first hour and ₹5 per 15 "
+            "minutes after that."
+        ),
+        "keywords": [
+            "rti rule 4", "rti photocopy fee", "rti page fee", "rti 2 rupees per page",
+            "rti additional fee", "rti inspection fee", "rti cd fee", "rti sample fee",
+            "cost of rti reply", "rti copying charges",
+        ],
+    },
+    {
+        "key": "rti_rule_5",
+        "citation": "Right to Information Rules 2012, Rule 5 — Exemption from payment of fee",
+        "short_label": "RTI Rule 5",
+        "act": "RTIR",
+        "official_text": (
+            "No fee under rule 3 and rule 4 shall be charged from any person who is below poverty "
+            "line provided a copy of the certificate issued by the appropriate Government in this "
+            "regard is submitted along with the application."
+        ),
+        "source_url": "https://www.pmindia.gov.in/wp-content/uploads/2017/04/RTIRules_2012_English_0.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "If you hold a Below Poverty Line (BPL) card, you pay NO RTI fee — neither the ₹10 "
+            "application fee nor the per-page copy fee. Just attach a copy of your BPL certificate "
+            "with the application."
+        ),
+        "keywords": [
+            "rti rule 5", "rti bpl", "rti free bpl", "rti poverty line", "rti fee exemption",
+            "rti no fee", "bpl certificate rti", "rti below poverty",
+        ],
+    },
+    {
+        "key": "rti_rule_6",
+        "citation": "Right to Information Rules 2012, Rule 6 — Appeal to the First Appellate Authority",
+        "short_label": "RTI Rule 6",
+        "act": "RTIR",
+        "official_text": (
+            "A person aggrieved by the decision of the Central Public Information Officer, or "
+            "otherwise for not receiving the information within the time specified in the Act, may "
+            "file an appeal to the First Appellate Authority. The appeal shall be accompanied by "
+            "self-attested copies of the documents pertaining to the appellant. The First Appellate "
+            "Authority shall dispose of the appeal in accordance with the provisions of the Act."
+        ),
+        "source_url": "https://www.pmindia.gov.in/wp-content/uploads/2017/04/RTIRules_2012_English_0.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "If your RTI is refused or you get no reply within 30 days, file a FIRST APPEAL to the "
+            "First Appellate Authority (a senior officer of the same department) within 30 days. "
+            "Attach self-attested copies of your RTI and the reply/refusal."
+        ),
+        "keywords": [
+            "rti rule 6", "first appellate authority", "faa rti", "how to file rti appeal",
+            "rti appeal procedure", "rti appeal form", "rti no reply appeal",
+            "appeal against pio", "first appeal rti",
+        ],
+    },
+    {
+        "key": "rti_rule_8",
+        "citation": "Right to Information Rules 2012, Rule 8 — Disposal of appeal",
+        "short_label": "RTI Rule 8",
+        "act": "RTIR",
+        "official_text": (
+            "The First Appellate Authority shall dispose of the appeal within a period of thirty "
+            "days from the date of its receipt, or within such extended period not exceeding a "
+            "total of forty-five days from the date of filing thereof, after recording in writing "
+            "the reasons for such extension. The order of the First Appellate Authority shall be "
+            "communicated to the appellant in writing."
+        ),
+        "source_url": "https://www.pmindia.gov.in/wp-content/uploads/2017/04/RTIRules_2012_English_0.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "The First Appellate Authority must decide your RTI appeal within 30 days. It can "
+            "extend by up to 15 days more (total 45 days) but only with a written reason. You must "
+            "get the order in writing."
+        ),
+        "keywords": [
+            "rti rule 8", "rti appeal timeline", "rti first appeal 30 days", "rti appeal 45 days",
+            "rti appeal disposal", "faa timeline", "when will first appeal be decided",
+        ],
+    },
+    {
+        "key": "rti_rule_9",
+        "citation": "Right to Information Rules 2012, Rule 9 — Personal presence of the appellant before the First Appellate Authority",
+        "short_label": "RTI Rule 9",
+        "act": "RTIR",
+        "official_text": (
+            "The appellant may at his discretion be present in person or through a duly authorized "
+            "representative or through video conferencing, if the facility of video conferencing is "
+            "available, at the time of hearing of the appeal by the First Appellate Authority. "
+            "Where the appellant is unable to attend the hearing, the First Appellate Authority may, "
+            "in its discretion, decide the appeal on the basis of records available with it."
+        ),
+        "source_url": "https://www.pmindia.gov.in/wp-content/uploads/2017/04/RTIRules_2012_English_0.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "You DO NOT have to attend the RTI appeal hearing in person. You can appear yourself, "
+            "send an authorised representative, or join via video conference if available. If you "
+            "cannot attend, the Appellate Authority can still decide based on records."
+        ),
+        "keywords": [
+            "rti rule 9", "rti hearing", "rti appeal hearing", "attend rti appeal",
+            "rti representative", "rti video conference", "rti appellant presence",
+            "who can attend rti hearing",
+        ],
+    },
+    # -------------------- Consumer Protection (E-Commerce) Rules 2020 --------------------
+    {
+        "key": "cprules_ecomm_4",
+        "citation": "Consumer Protection (E-Commerce) Rules 2020, Rule 4 — Duties of e-commerce entities",
+        "short_label": "E-Comm Rule 4",
+        "act": "CPER",
+        "official_text": (
+            "(1) An e-commerce entity shall be a company incorporated under the Companies Act, or "
+            "a foreign company covered under section 2(42) of that Act, or an office/branch/agency "
+            "in India owned or controlled by a person resident outside India.\n"
+            "(2) Every e-commerce entity shall provide the following information in a clear and "
+            "accessible manner on its platform: legal name of the entity; principal geographic "
+            "address of its headquarters and all branches; name and details of its website; and "
+            "contact details including e-mail, fax, landline and mobile numbers of customer care "
+            "and of the grievance officer.\n"
+            "(3) No e-commerce entity shall adopt any unfair trade practice, whether in the course "
+            "of business on its platform or otherwise.\n"
+            "(4) Every e-commerce entity shall establish an adequate grievance redressal mechanism "
+            "having regard to the number of consumers, and shall appoint a grievance officer for "
+            "consumer grievance redressal, whose name, contact details and designation shall be "
+            "displayed on the platform.\n"
+            "(5) The grievance officer shall acknowledge receipt of any consumer complaint within "
+            "forty-eight hours and redress the complaint within one month from the date of receipt."
+        ),
+        "source_url": "https://consumeraffairs.gov.in/sites/default/files/E-commerce%20rules.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "Every online shopping platform (Amazon, Flipkart, Meesho, etc.) MUST show its legal "
+            "name, address and grievance officer contact clearly on the site. Your complaint must "
+            "be acknowledged in 48 hours and resolved within one month. Unfair trade is banned."
+        ),
+        "keywords": [
+            "e-commerce rules 4", "ecommerce rules 4", "online shopping rules", "grievance officer",
+            "amazon complaint", "flipkart complaint", "meesho complaint", "48 hours acknowledgement",
+            "one month redressal", "e-commerce grievance", "online seller details",
+            "consumer protection e-commerce", "unfair trade e-commerce",
+        ],
+    },
+    {
+        "key": "cprules_ecomm_4b",
+        "citation": "Consumer Protection (E-Commerce) Rules 2020, Rule 4(9)–(11) — Consumer consent and cancellation charges",
+        "short_label": "E-Comm Rule 4(9)",
+        "act": "CPER",
+        "official_text": (
+            "(9) No e-commerce entity shall impose cancellation charges on consumers cancelling "
+            "after confirming purchase unless similar charges are also borne by the e-commerce "
+            "entity, if such entity cancels the purchase order unilaterally for any reason.\n"
+            "(10) Every e-commerce entity shall only record the consent of a consumer for the "
+            "purchase of any good or service on its platform where such consent is expressed "
+            "through an explicit and affirmative action, and no such entity shall record such "
+            "consent automatically, including in the form of pre-ticked check-boxes.\n"
+            "(11) Every e-commerce entity shall effect all payments towards accepted refund "
+            "requests of the consumers as prescribed by the Reserve Bank of India or any other "
+            "competent authority under any law for the time being in force, within a reasonable "
+            "period of time, or as prescribed under applicable laws."
+        ),
+        "source_url": "https://consumeraffairs.gov.in/sites/default/files/E-commerce%20rules.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "Online sellers CANNOT charge you cancellation fees unless they also lose the same "
+            "amount when they cancel. Consent for a purchase must be a clear tap — pre-ticked "
+            "check-boxes are illegal. Refunds owed to you must be paid in a reasonable time."
+        ),
+        "keywords": [
+            "e-commerce rule 4(9)", "cancellation charges online", "cancellation fee amazon",
+            "pre ticked checkbox illegal", "auto consent illegal", "online refund delay",
+            "refund not received", "e-commerce refund time", "flipkart cancellation fee",
+            "online purchase consent",
+        ],
+    },
+    {
+        "key": "cprules_ecomm_5",
+        "citation": "Consumer Protection (E-Commerce) Rules 2020, Rule 5 — Liabilities of marketplace e-commerce entities",
+        "short_label": "E-Comm Rule 5",
+        "act": "CPER",
+        "official_text": (
+            "(1) A marketplace e-commerce entity which seeks to avail the exemption from liability "
+            "under sub-section (1) of section 79 of the Information Technology Act, 2000 shall "
+            "comply with sub-sections (2) and (3) of that section, including the instructions of "
+            "the intermediary guidelines.\n"
+            "(2) Every marketplace e-commerce entity shall require sellers through an undertaking "
+            "to ensure that descriptions, images, and other content pertaining to goods or services "
+            "on their platform are accurate and correspond directly with the appearance, nature, "
+            "quality, purpose and other general features of such good or service.\n"
+            "(3) Every marketplace e-commerce entity shall provide the following information in a "
+            "clear and accessible manner, displayed prominently to its users at the appropriate "
+            "place on its platform: details about sellers offering goods and services, including "
+            "the name of the business, principal geographic address, name of the website, contact "
+            "details, and any rating or other aggregated feedback about such seller.\n"
+            "(4) Any information provided to a user must enable the user to make an informed "
+            "decision at the pre-purchase stage on its platform including guarantees, warranties, "
+            "delivery, exchange, return, refund, modes of payment, grievance redressal mechanism, "
+            "and any relevant details required to enable consumers to make informed choices."
+        ),
+        "source_url": "https://consumeraffairs.gov.in/sites/default/files/E-commerce%20rules.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "Marketplaces (Amazon, Flipkart) must show YOU the seller's name, address, rating and "
+            "the full return/warranty/refund/payment details BEFORE you buy. They must also make "
+            "sellers guarantee that images and descriptions match the actual product."
+        ),
+        "keywords": [
+            "e-commerce rule 5", "marketplace liability", "amazon liability", "flipkart liability",
+            "seller details marketplace", "wrong product delivered", "misleading listing",
+            "return policy display", "warranty display online", "product description accurate",
+            "marketplace responsibility",
+        ],
+    },
+    {
+        "key": "cprules_ecomm_6",
+        "citation": "Consumer Protection (E-Commerce) Rules 2020, Rule 6 — Duties of sellers on marketplace",
+        "short_label": "E-Comm Rule 6",
+        "act": "CPER",
+        "official_text": (
+            "(1) No seller offering goods or services through a marketplace e-commerce entity "
+            "shall adopt any unfair trade practice whether in the course of offer on the "
+            "e-commerce entity's platform or otherwise.\n"
+            "(2) No seller through a marketplace e-commerce entity shall falsely represent itself "
+            "as a consumer and post reviews about goods and services or misrepresent the quality "
+            "or the features of any goods and services.\n"
+            "(3) No seller offering goods or services through a marketplace e-commerce entity "
+            "shall refuse to take back goods, or withdraw or discontinue services purchased or "
+            "agreed to be purchased, or refuse to refund consideration, if paid, if such goods or "
+            "services are defective, deficient or spurious, or if the goods or services are not of "
+            "the characteristics or features as advertised or as agreed to, or if they are "
+            "delivered late from the stated delivery schedule.\n"
+            "(5) Every seller through a marketplace e-commerce entity shall provide to the "
+            "e-commerce entity the following information, which shall be displayed prominently to "
+            "its users by the e-commerce entity: total price, breakup of the price showing all "
+            "compulsory and voluntary charges such as delivery charges, postage and handling "
+            "charges, conveyance charges and applicable tax, mandatory notices and information; "
+            "expiry date; country of origin; name and details of importer where applicable; "
+            "guarantees related to authenticity or genuineness; grievance officer details; "
+            "and terms of exchange, returns and refund."
+        ),
+        "source_url": "https://consumeraffairs.gov.in/sites/default/files/E-commerce%20rules.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "A seller on Amazon/Flipkart CANNOT post fake reviews or refuse a refund/return if the "
+            "product is defective, spurious, not as advertised, or delivered late. They must also "
+            "display total price with all taxes/charges, expiry date, country of origin and "
+            "grievance officer details up front."
+        ),
+        "keywords": [
+            "e-commerce rule 6", "seller duties marketplace", "defective product return",
+            "fake reviews", "spurious product refund", "late delivery refund", "country of origin",
+            "hidden charges online", "seller refuses refund", "seller no return policy",
+            "online shopping refund",
+        ],
+    },
+    {
+        "key": "cprules_ecomm_7",
+        "citation": "Consumer Protection (E-Commerce) Rules 2020, Rule 7 — Duties and liabilities of inventory e-commerce entities",
+        "short_label": "E-Comm Rule 7",
+        "act": "CPER",
+        "official_text": (
+            "(1) Every inventory e-commerce entity shall provide the following information in a "
+            "clear and accessible manner, displayed prominently to its users: accurate information "
+            "related to return, refund, exchange, warranty and guarantee, delivery and shipment, "
+            "modes of payment, and grievance redressal mechanism.\n"
+            "(2) Every inventory e-commerce entity shall provide the following information: all "
+            "mandatory notices and information provided by applicable laws; information relating "
+            "to total price in single figure of any good or service, along with the breakup price "
+            "for the good or service, showing all the compulsory and voluntary charges; expiry "
+            "date of goods; country of origin.\n"
+            "(3) No inventory e-commerce entity shall falsely represent itself as a consumer and "
+            "post reviews about goods and services, or misrepresent the quality or features of any "
+            "goods and services.\n"
+            "(4) No inventory e-commerce entity shall refuse to take back goods, or refuse to "
+            "refund consideration, if such goods or services are defective, deficient or spurious, "
+            "or are not of the characteristics or features as advertised, or if the goods or "
+            "services are delivered late from the stated delivery schedule."
+        ),
+        "source_url": "https://consumeraffairs.gov.in/sites/default/files/E-commerce%20rules.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "Direct online sellers (who own their stock — e.g. Myntra, Nykaa, brand websites) must "
+            "show return, refund, warranty, delivery and payment details clearly. Fake reviews are "
+            "banned. They must refund you for defective, spurious or wrongly-described goods, or "
+            "for late delivery."
+        ),
+        "keywords": [
+            "e-commerce rule 7", "inventory e-commerce", "direct seller website", "nykaa refund",
+            "myntra refund", "brand website refund", "online defective product",
+            "expiry date online", "fake reviews inventory", "single price online",
+        ],
+    },
+    # -------------------- Central Motor Vehicles Rules 1989 --------------------
+    {
+        "key": "cmvr_138_3",
+        "citation": "Central Motor Vehicles Rules 1989, Rule 138(3) — Wearing of seat belts",
+        "short_label": "CMVR 138(3)",
+        "act": "CMVR",
+        "official_text": (
+            "In a motor vehicle in which seat belts have been provided under the provisions of "
+            "sub-rule (1) or sub-rule (1A) or sub-rule (1B), it shall be ensured by the driver "
+            "that he and the person seated in the front seat or the persons occupying front facing "
+            "rear seats, as the case may be, wear the seat belts while the vehicle is in motion."
+        ),
+        "source_url": "https://upload.indiacode.nic.in/showfile?actid=AC_CG_61_1084_00001_00001_1554966634246&type=rule&filename=the_central_motor_vehicles_rules,_1989.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "In any car with seat belts fitted, the driver AND front-seat passenger AND "
+            "front-facing rear-seat passengers MUST wear seat belts while the vehicle is moving. "
+            "The driver is responsible for making sure everyone belts up."
+        ),
+        "keywords": [
+            "cmvr 138", "rule 138 seat belt", "car seat belt rule", "rear seat belt rule",
+            "back seat seat belt", "seat belt front seat", "driver responsibility seat belt",
+            "seat belt while moving", "central motor vehicles rules seat belt",
+        ],
+    },
+    {
+        "key": "cmvr_138_4f",
+        "citation": "Central Motor Vehicles Rules 1989, Rule 138(4)(f) — Supply of protective headgear with two-wheeler",
+        "short_label": "CMVR 138(4)(f)",
+        "act": "CMVR",
+        "official_text": (
+            "In addition to the requirements specified in sub-rules (1), (2) and (3), the "
+            "manufacturer of a two-wheeled motor vehicle shall, at the time of sale, supply a "
+            "protective headgear (helmet) conforming to the specifications of the Bureau of "
+            "Indian Standards, subject to the exemption specified in section 129 of the Act and "
+            "the applicable rules made by the State Government."
+        ),
+        "source_url": "https://upload.indiacode.nic.in/showfile?actid=AC_CG_61_1084_00001_00001_1554966634246&type=rule&filename=the_central_motor_vehicles_rules,_1989.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "When you buy a new two-wheeler (bike/scooter), the manufacturer MUST supply a "
+            "BIS-approved helmet along with it. Sikhs wearing turbans are exempt under Section 129 "
+            "of the MV Act."
+        ),
+        "keywords": [
+            "cmvr 138 4f", "helmet with bike purchase", "helmet with two wheeler",
+            "manufacturer helmet mandatory", "bis helmet", "helmet standard",
+            "new bike helmet", "helmet law india",
+        ],
+    },
+    {
+        "key": "cmvr_138_7",
+        "citation": "Central Motor Vehicles Rules 1989, Rule 138(7) — Safety measures for children on motor cycles",
+        "short_label": "CMVR 138(7)",
+        "act": "CMVR",
+        "official_text": (
+            "In respect of a child of the age above nine months and below four years being carried "
+            "on a motor cycle, the following provisions shall be complied with:—\n"
+            "(a) the driver of the motor cycle shall ensure that the child is wearing a crash "
+            "helmet meeting the specifications of the Bureau of Indian Standards or a bicycle "
+            "helmet as prescribed by the Bureau of Indian Standards or a European Committee for "
+            "Standardization, Snell Memorial Foundation, or an American National Standards "
+            "Institute-approved bicycle helmet;\n"
+            "(b) the driver of the motor cycle shall ensure that the child on the motor cycle is "
+            "attached to the driver by using a safety harness;\n"
+            "(c) the speed of the motor cycle carrying a child of the age above nine months and "
+            "below four years shall not exceed forty kilometres per hour."
+        ),
+        "source_url": "https://upload.indiacode.nic.in/showfile?actid=AC_CG_61_1084_00001_00001_1554966634246&type=rule&filename=the_central_motor_vehicles_rules,_1989.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "If you carry a child aged 9 months to 4 years on a two-wheeler, the child must wear "
+            "a BIS/international-standard helmet, be secured to you with a safety harness, and "
+            "the bike speed must NOT exceed 40 km/h."
+        ),
+        "keywords": [
+            "cmvr 138 7", "child on motorcycle", "child pillion rule", "toddler on bike",
+            "child helmet law", "safety harness child bike", "40 kmph child bike",
+            "9 months to 4 years bike", "kids on scooter rule",
+        ],
+    },
+    {
+        "key": "cmvr_118",
+        "citation": "Central Motor Vehicles Rules 1989, Rule 118 — Speed governors",
+        "short_label": "CMVR 118",
+        "act": "CMVR",
+        "official_text": (
+            "On and from the date of commencement of the Central Motor Vehicles (Fourteenth "
+            "Amendment) Rules, 2015, every transport vehicle shall be fitted with a speed "
+            "limiting device or shall have inbuilt speed limiting function, which is sealed by "
+            "the manufacturer or any testing agency specified by the Central Government, or a "
+            "dealer or operator or the manufacturer of a speed limiting device, in such a manner "
+            "that its maximum speed does not exceed 80 kmph or as notified by the Central "
+            "Government from time to time.\n"
+            "Provided that the following categories of transport vehicles shall be exempt from "
+            "this rule: (a) vehicles used for police, fire fighting and ambulance purposes; "
+            "(b) two and three wheeled transport vehicles; and (c) such vehicles as may be "
+            "exempted by the Central Government by notification in the Official Gazette."
+        ),
+        "source_url": "https://upload.indiacode.nic.in/showfile?actid=AC_CG_61_1084_00001_00001_1554966634246&type=rule&filename=the_central_motor_vehicles_rules,_1989.pdf",
+        "verified_at": "2026-02-14",
+        "scope_note": (
+            "Buses, trucks, taxis and other transport vehicles MUST have a sealed speed limiter "
+            "capping speed at 80 km/h. Police, fire, ambulance, two-wheelers and three-wheelers "
+            "are exempt."
+        ),
+        "keywords": [
+            "cmvr 118", "speed governor rule", "speed limiter truck", "speed limiter bus",
+            "80 kmph transport vehicle", "speed limiting device", "commercial vehicle speed",
+            "taxi speed limit", "goods vehicle speed",
+        ],
+    },
 ]
 
 # Non-Indian jurisdictions — trap-question refusal helper
@@ -1092,20 +1543,28 @@ _CITATION_LEAK_PATTERNS = [
     # "Article 21", "Article 22(1)", "Article 21 of the Constitution"
     (_re.compile(r"\b[Aa]rticle\s+\d+[A-Z]?(\(\d+\))?(\s+of\s+the\s+Constitution)?\b"), "this constitutional right"),
     # "Section 35 BNSS", "Section 43(5) of BNSS", "Sec. 43(5) BNSS", "BNSS Section 35"
-    (_re.compile(r"\b(?:[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\s+(?:of\s+)?(?:BNS|BNSS|BSA|IPC|CrPC|RTI|CPA|MV|MVA))(?![A-Za-z0-9])"), "the law"),
-    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC|RTI|CPA|MV|MVA)\s+[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?(?![A-Za-z0-9])"), "the law"),
+    (_re.compile(r"\b(?:[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\s+(?:of\s+)?(?:BNS|BNSS|BSA|IPC|CrPC|RTI|RTIR|CPA|CPER|MV|MVA|CMVR))(?![A-Za-z0-9])"), "the law"),
+    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC|RTI|RTIR|CPA|CPER|MV|MVA|CMVR)\s+[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?(?![A-Za-z0-9])"), "the law"),
+    # "Rule 3 RTIR", "Rule 138(7) CMVR", "CMVR Rule 118", "E-Comm Rule 4"
+    (_re.compile(r"\b[Rr]ule\s+\d+[A-Z]?(?:\(\d+\))?(?:\([a-z]\))?\s+(?:of\s+)?(?:RTIR|CPER|CMVR|E[- ]?Comm)(?![A-Za-z0-9])"), "the rule"),
+    (_re.compile(r"\b(?:RTIR|CPER|CMVR|E[- ]?Comm)\s+[Rr]ule\s+\d+[A-Z]?(?:\(\d+\))?(?:\([a-z]\))?(?![A-Za-z0-9])"), "the rule"),
     # Bare "BNSS 43(5)" or "PWDVA 12" or "RTI 6" or "CPA 2(7)" or "MV 194B" style
-    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC|PWDVA|DV Act|RTI|CPA|MV|MVA)\s+\d+[A-Z]?(?:\(\d+\))?(?![A-Za-z0-9])"), "the law"),
+    (_re.compile(r"\b(?:BNS|BNSS|BSA|IPC|CrPC|PWDVA|DV Act|RTI|RTIR|CPA|CPER|MV|MVA|CMVR)\s+\d+[A-Z]?(?:\(\d+\))?(?:\([a-z]\))?(?![A-Za-z0-9])"), "the law"),
     # Just "Section 35" alone
     (_re.compile(r"\b[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?(?![A-Za-z0-9])"), "the law"),
+    # Just "Rule 138(3)" alone
+    (_re.compile(r"\b[Rr]ule\s+\d+[A-Z]?(?:\(\d+\))?(?:\([a-z]\))?(?![A-Za-z0-9])"), "the rule"),
     # Long forms of the statutes
     (_re.compile(r"\bBharatiya\s+(?:Nyaya|Nagarik|Sakshya)\s+(?:Sanhita|Suraksha|Adhiniyam)(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\bIndian\s+Penal\s+Code(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\bCode\s+of\s+Criminal\s+Procedure(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\b(?:Protection\s+of\s+Women\s+from\s+Domestic\s+Violence\s+Act|PWDVA)(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\b(?:Right\s+to\s+Information\s+Act|RTI\s+Act)(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\bRight\s+to\s+Information\s+Rules(?:,?\s*\d{4})?\b"), "the rules"),
     (_re.compile(r"\bConsumer\s+Protection\s+Act(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\bConsumer\s+Protection\s+\(E[- ]?Commerce\)\s+Rules(?:,?\s*\d{4})?\b"), "the rules"),
     (_re.compile(r"\bMotor\s+Vehicles\s+Act(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\bCentral\s+Motor\s+Vehicles\s+Rules(?:,?\s*\d{4})?\b"), "the rules"),
 ]
 
 

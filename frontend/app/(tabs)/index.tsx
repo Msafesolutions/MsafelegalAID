@@ -46,16 +46,16 @@ type Msg = {
 };
 
 const BASIC_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
-  { text: 'What are my rights during a police stop?', icon: 'shield-checkmark-outline' },
-  { text: 'How do I file an RTI application?', icon: 'document-text-outline' },
-  { text: 'How to file a consumer complaint online?', icon: 'cart-outline' },
-  { text: 'What are the rules for a road accident?', icon: 'car-outline' },
+  { text: 'What is the RTI application fee and word limit?', icon: 'document-text-outline' },
+  { text: 'Can Amazon charge me a cancellation fee?', icon: 'cart-outline' },
+  { text: 'Must rear-seat passengers wear seat belts?', icon: 'car-outline' },
+  { text: 'What is the helmet law for a child on a bike?', icon: 'shield-checkmark-outline' },
 ];
 
 const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
-  { text: 'Draft a complaint letter to the SP against wrongful detention', icon: 'create-outline' },
-  { text: 'Give me a step-by-step action plan to file a consumer complaint', icon: 'list-outline' },
-  { text: 'Draft an RTI application asking for FIR copy', icon: 'file-tray-outline' },
+  { text: 'Draft a first appeal for an unanswered RTI', icon: 'create-outline' },
+  { text: 'Step-by-step complaint against a defective online product', icon: 'list-outline' },
+  { text: 'Draft an RTI asking for a certified FIR copy', icon: 'file-tray-outline' },
   { text: 'Full escalation path for a domestic violence case', icon: 'trending-up-outline' },
 ];
 
