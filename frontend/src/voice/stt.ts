@@ -216,6 +216,7 @@ class NativeSTT implements STTProvider {
     // promise MUST resolve in every code path (success, error, silent end),
     // otherwise the caller's `await handle.stop()` hangs forever.
     let finalText = '';
+    let lastPartial = '';   // fallback if the recognizer ends WITHOUT a final event
     let resolved = false;
     let resolveFinal: (r: STTResult) => void = () => {};
     const finalPromise = new Promise<STTResult>((resolve) => {
@@ -224,7 +225,14 @@ class NativeSTT implements STTProvider {
     const finish = () => {
       if (resolved) return;
       resolved = true;
-      resolveFinal({ text: finalText, provider: 'native', is_final: true });
+      // If we never got an isFinal result but did receive partials, use the
+      // last partial. Android's SpeechRecognizer frequently ends the session
+      // (silence timeout, user releases button, network hiccup) BEFORE it emits
+      // a final result — but partial results carry the actually recognised
+      // words. Without this fallback the user's speech is silently dropped
+      // and the app appears to do nothing on mic release.
+      const bestText = finalText || lastPartial || '';
+      resolveFinal({ text: bestText, provider: 'native', is_final: true });
     };
 
     // Defensive listener setup — if the library API changed between versions,
@@ -246,6 +254,7 @@ class NativeSTT implements STTProvider {
         if (ev?.isFinal) {
           finalText = t;
         } else {
+          if (t) lastPartial = t;
           onPartial?.({ text: t, provider: 'native', is_final: false });
         }
       } catch (err) {

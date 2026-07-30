@@ -96,6 +96,10 @@ export default function ChatScreen() {
   // This ref is set synchronously on press-in/out and consulted throughout
   // the async flow so we always know the user's current intent.
   const isMicHeldRef = useRef<boolean>(false);
+  // Track which languages we've already warned about "voice not installed" so
+  // the TTS watchdog alert fires ONCE per language per session, not on every
+  // auto-spoken bot message (which would be extremely spammy).
+  const ttsVoiceMissingWarnedRef = useRef<Set<string>>(new Set());
   // Forward-declared ref to `speak` so auto-speak logic inside `send` can call it
   // without a circular dependency (speak is defined AFTER send in this file).
   const speakRef = useRef<((msgId: string, text: string) => void) | null>(null);
@@ -490,14 +494,20 @@ export default function ChatScreen() {
           // Nothing spoke within 1.5s — most likely the OS silently rejected
           // the request because the voice pack isn't installed.
           setSpeakingId(null);
-          Alert.alert(
-            `${language.name} voice not available`,
-            Platform.OS === 'android'
-              ? `Your device did not speak. Please open Settings → System → Languages & input → ` +
-                `Text-to-speech output, choose "Speech Services by Google" and download the ${language.name} voice.`
-              : `Your device did not speak. Please open Settings → Accessibility → Spoken Content → ` +
-                `Voices and download the ${language.name} voice.`,
-          );
+          // Only warn ONCE per language per session — otherwise the alert
+          // fires on every auto-spoken bot message and becomes user-hostile.
+          if (!ttsVoiceMissingWarnedRef.current.has(language.code)) {
+            ttsVoiceMissingWarnedRef.current.add(language.code);
+            Alert.alert(
+              `${language.name} voice not available`,
+              Platform.OS === 'android'
+                ? `This device cannot speak ${language.name} out loud. To fix: Settings → System → Languages & input → ` +
+                  `Text-to-speech output → choose "Speech Services by Google" and download the ${language.name} voice.\n\n` +
+                  `Reading answers on screen will keep working normally.`
+                : `This device cannot speak ${language.name} out loud. To fix: Settings → Accessibility → Spoken Content → ` +
+                  `Voices → download the ${language.name} voice.\n\nReading answers on screen will keep working normally.`,
+            );
+          }
         }
       }, 1500);
 
@@ -662,6 +672,15 @@ export default function ChatScreen() {
         if (heardText) {
           setTranscriptPreview(heardText);
           setShowTranscriptModal(true);
+        } else {
+          // Empty transcript — the recognizer didn't hear or couldn't decode.
+          // Show a helpful alert (parity with the Whisper fallback path) so the
+          // user isn't left wondering why nothing happened after release.
+          Alert.alert(
+            'Nothing was heard',
+            'The mic did not catch any words. Please try again — hold the mic, speak clearly, then release. ' +
+              'On Android, install "Speech Services by Google" and download your language pack if this keeps happening.',
+          );
         }
       } catch (e: any) {
         setTranscribing(false);
