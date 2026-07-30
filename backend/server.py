@@ -110,6 +110,7 @@ class ChatIn(BaseModel):
     session_id: Optional[str] = None
     language: str = "en"
     language_name: str = "English"
+    language_native: Optional[str] = None
     model_provider: str = "anthropic"
     model_name: str = "claude-sonnet-4-5-20250929"
     mode: str = "basic"  # "basic" | "pro"
@@ -170,7 +171,12 @@ async def current_user(authorization: Optional[str] = Header(None)) -> dict:
     return user
 
 # ---------- System prompts ----------
-def build_system_prompt(language_name: str, is_pro: bool = False, corpus_context: str = "") -> str:
+def build_system_prompt(
+    language_name: str,
+    is_pro: bool = False,
+    corpus_context: str = "",
+    language_native: Optional[str] = None,
+) -> str:
     """
     Grade-6 answer prompt with strict citation-integrity rule.
 
@@ -181,8 +187,15 @@ def build_system_prompt(language_name: str, is_pro: bool = False, corpus_context
     - When corpus_context is provided, base the answer on that verified text.
     - When corpus_context is empty, decline politely with the refusal line and stop.
     """
+    # Display both English and native names to remove ambiguity
+    lang_display = (
+        f"{language_name} ({language_native})" if language_native and language_native != language_name
+        else language_name
+    )
+    is_english = language_name.strip().lower() == "english"
+
     disclaimer_line = (
-        "\n\nAt the end of your reply, add exactly this line in " + language_name + ":\n"
+        "\n\nAt the end of your reply, add exactly this line, WRITTEN IN " + lang_display + ":\n"
         '"⚠️ Legal information, not legal advice. Consult an advocate. © Callistus Moses · MSafe Solutions."'
     )
 
@@ -194,9 +207,33 @@ def build_system_prompt(language_name: str, is_pro: bool = False, corpus_context
             "explanation ONLY:\n" + corpus_context + "\n"
         )
 
+    # STRICT language enforcement — the earlier prompt let English format labels leak into
+    # non-English replies. We now (a) shout the language rule, (b) tell the model to
+    # translate the section labels, and (c) allow only proper-noun acronyms like FIR/RTI.
+    language_rule = (
+        f"REPLY LANGUAGE: {lang_display}. Write your ENTIRE reply — every word, every heading, "
+        f"every bullet, and the final disclaimer — in {lang_display}. Use the {lang_display} script. "
+        "The ONLY things that may stay in English are widely-used acronyms like FIR, RTI, POSH, PIO, SP, "
+        "and proper nouns. Do NOT reply in English if the language above is not English. "
+        "If you catch yourself writing in English, translate everything before answering."
+        if not is_english else
+        "REPLY LANGUAGE: English. Simple, dignified, Grade 6 reading level. Talk to the person as \"you\"."
+    )
+
+    # Format labels: keep English tokens ONLY as internal cues; instruct model to render
+    # them in the reply language. We also give a concrete Tamil example if the target isn't
+    # English, so the model doesn't default to copying the English tokens verbatim.
+    label_hint = (
+        ""
+        if is_english else
+        f"\n\nIMPORTANT — TRANSLATE THE SECTION HEADINGS. In your reply, the two section headings "
+        f"(the equivalents of 'Answer:' and 'What you can do:') MUST be written in {lang_display}, "
+        f"NOT in English. The user is a native {lang_display} speaker and will not understand English headings."
+    )
+
     base_rules = f"""You are Dhara — an AI legal information assistant for Indian citizens.
 
-REPLY LANGUAGE: {language_name}. Simple, dignified, Grade 6 reading level. Talk to the person as "you".
+{language_rule}{label_hint}
 
 HARD RULES (do not break — the app will strip your reply if you break them):
 1. NEVER write section numbers, article numbers, or clause numbers in your reply. Do NOT write "Article 21", "Section 35", "BNS", "BNSS", "BNSS 43(5)", "Section", "Article" etc. anywhere in your reply text. The user sees the exact citations in a separate box below your reply.
@@ -207,24 +244,25 @@ HARD RULES (do not break — the app will strip your reply if you break them):
 6. If your VERIFIED SOURCES block is empty or missing, reply exactly: "{REFUSAL_NO_CORPUS}" and STOP.
 7. If the question is about non-Indian law, or asks for personal/moral advice (should I forgive, should I marry, etc.), reply exactly: "{REFUSAL_NOT_LEGAL}" and STOP.
 
-FORMAT — respond in exactly this two-part shape and nothing else:
+FORMAT — respond in exactly this two-part shape and nothing else. The two headings below appear here in English as placeholders; you MUST write them in {lang_display} in your reply:
 
-Answer: <the direct answer in AT MOST TWO sentences, each under 15 words. First sentence must be the answer.>
+<heading meaning "Answer:" in {lang_display}> <the direct answer in AT MOST TWO sentences, each under 15 words. First sentence must be the answer.>
 
-What you can do:
-- <one short bullet, plain action>
-- <one short bullet, plain action>
-- <one short bullet, plain action>
-- <optional 4th bullet>
-- <optional 5th bullet>
+<heading meaning "What you can do:" in {lang_display}>
+- <one short bullet, plain action in {lang_display}>
+- <one short bullet, plain action in {lang_display}>
+- <one short bullet, plain action in {lang_display}>
+- <optional 4th bullet in {lang_display}>
+- <optional 5th bullet in {lang_display}>
 
-Then a blank line, then the disclaimer line.{verified_block}{disclaimer_line}
+Then a blank line, then the disclaimer line (also in {lang_display}).{verified_block}{disclaimer_line}
 """
 
     if is_pro:
         return base_rules + (
-            "\n\nPRO MODE: after the standard reply above, add another section titled 'For your situation:' "
-            "with 3–4 more bullets giving a step-by-step action plan (offices to visit, forms, escalation contacts). "
+            f"\n\nPRO MODE: after the standard reply above, add another section titled with the {lang_display} "
+            f"equivalent of 'For your situation:' (in {lang_display}) with 3–4 more bullets giving a step-by-step "
+            f"action plan (offices to visit, forms, escalation contacts) — all in {lang_display}. "
             "Same rules — no section numbers, no verbatim law, no markdown headers."
         )
     return base_rules
@@ -497,10 +535,18 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
 
     # Pro-quality prompt if user is Pro OR consuming a free sample; else basic prompt.
     use_pro_prompt = is_pro_user or is_sample_consumption
+    # Derive native name — fall back to LANGUAGES table if client didn't send it
+    lang_native = body.language_native
+    if not lang_native:
+        for _lang in LANGUAGES:
+            if _lang["code"] == body.language:
+                lang_native = _lang.get("native")
+                break
     system_prompt = build_system_prompt(
         body.language_name,
         is_pro=use_pro_prompt,
         corpus_context=corpus_context,
+        language_native=lang_native,
     )
 
     chat = LlmChat(

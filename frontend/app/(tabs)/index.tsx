@@ -163,6 +163,7 @@ export default function ChatScreen() {
             session_id: sessionId,
             language: language.code,
             language_name: language.name,
+            language_native: language.native,
             model_provider: model.provider,
             model_name: model.name,
             mode: modeToSend,
