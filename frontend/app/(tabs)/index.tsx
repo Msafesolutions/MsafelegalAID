@@ -89,6 +89,13 @@ export default function ChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const nativeSTTHandleRef = useRef<{ stop: () => Promise<any> } | null>(null);
+  // Race-condition guard: onPressIn is synchronous, startRecording is async.
+  // If the user releases the mic BEFORE the async permission/init finishes,
+  // the onPressOut closure captures a stale `recording === false` and misses
+  // stopping the recording, which then runs silently forever ("loop" bug).
+  // This ref is set synchronously on press-in/out and consulted throughout
+  // the async flow so we always know the user's current intent.
+  const isMicHeldRef = useRef<boolean>(false);
   // Forward-declared ref to `speak` so auto-speak logic inside `send` can call it
   // without a circular dependency (speak is defined AFTER send in this file).
   const speakRef = useRef<((msgId: string, text: string) => void) | null>(null);
@@ -472,14 +479,55 @@ export default function ChatScreen() {
       }
 
       setSpeakingId(msgId);
+      // Belt-and-braces: on Android, Speech.speak sometimes silently no-ops
+      // (returns immediately without emitting onStart/onDone) when the requested
+      // language tag isn't installed AND no explicit voice was found. We use a
+      // "did we hear anything?" watchdog to detect that case and surface a
+      // helpful message to the user rather than staying silent.
+      let heardOnStart = false;
+      const watchdog = setTimeout(() => {
+        if (!heardOnStart) {
+          // Nothing spoke within 1.5s — most likely the OS silently rejected
+          // the request because the voice pack isn't installed.
+          setSpeakingId(null);
+          Alert.alert(
+            `${language.name} voice not available`,
+            Platform.OS === 'android'
+              ? `Your device did not speak. Please open Settings → System → Languages & input → ` +
+                `Text-to-speech output, choose "Speech Services by Google" and download the ${language.name} voice.`
+              : `Your device did not speak. Please open Settings → Accessibility → Spoken Content → ` +
+                `Voices and download the ${language.name} voice.`,
+          );
+        }
+      }, 1500);
+
       Speech.speak(text, {
         language: voiceLangTag,
         voice: voiceId,
         volume: 1.0,
         rate: speechRate,
-        onDone: () => setSpeakingId(null),
-        onStopped: () => setSpeakingId(null),
-        onError: () => setSpeakingId(null),
+        onStart: () => {
+          heardOnStart = true;
+          clearTimeout(watchdog);
+        },
+        onDone: () => {
+          clearTimeout(watchdog);
+          setSpeakingId(null);
+        },
+        onStopped: () => {
+          clearTimeout(watchdog);
+          setSpeakingId(null);
+        },
+        onError: (err: any) => {
+          clearTimeout(watchdog);
+          setSpeakingId(null);
+          Alert.alert(
+            'Speaker error',
+            (err && (err.message || String(err))) ||
+              `Speech engine failed. Try selecting "Speech Services by Google" as the default TTS engine in ` +
+                `Settings → System → Text-to-speech.`,
+          );
+        },
       });
     },
     [speakingId, language, speechRate],
@@ -537,6 +585,14 @@ export default function ChatScreen() {
                 );
               },
             });
+            // Race guard: if the user already released the mic while we were
+            // awaiting native STT init, immediately stop and DO NOT enter the
+            // "recording" state — otherwise the recognizer runs silently forever
+            // and each subsequent press stacks another one ("loop" bug).
+            if (!isMicHeldRef.current) {
+              try { await handle.stop(); } catch {}
+              return;
+            }
             nativeSTTHandleRef.current = handle;
             setRecording(true);
           } catch (e: any) {
@@ -564,6 +620,8 @@ export default function ChatScreen() {
         Alert.alert('Microphone permission', 'Please enable microphone to speak your question.');
         return;
       }
+      // Race guard: user may have already released while we awaited permission.
+      if (!isMicHeldRef.current) return;
       await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
       // Defensive: release any lingering prepared/recording session from a
       // previous quick tap before preparing a new one — otherwise Expo Audio
@@ -572,6 +630,11 @@ export default function ChatScreen() {
         await recorder.stop();
       } catch {}
       await recorder.prepareToRecordAsync();
+      // Race guard again: prepareToRecordAsync can take another 100-500ms.
+      if (!isMicHeldRef.current) {
+        try { await recorder.stop(); } catch {}
+        return;
+      }
       recorder.record();
       setRecording(true);
     } catch (e: any) {
@@ -643,6 +706,10 @@ export default function ChatScreen() {
 
   // WhatsApp-style hold-to-talk handlers
   const onMicPressIn = useCallback(() => {
+    // Synchronously mark the mic as held BEFORE any async work — this is the
+    // signal that startRecording checks after each await to know whether the
+    // user is still holding the button.
+    isMicHeldRef.current = true;
     // Start hold timer + kick off recording
     setHoldElapsed(0);
     holdTimerRef.current = setInterval(() => {
@@ -652,15 +719,19 @@ export default function ChatScreen() {
   }, [startRecording]);
 
   const onMicPressOut = useCallback(() => {
-    // Release → stop recording (only if we were actually recording)
+    // Synchronously drop the held flag so any in-flight startRecording aborts.
+    isMicHeldRef.current = false;
+    // Always clear the timer
+    if (holdTimerRef.current) {
+      clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    setHoldElapsed(0);
+    // If any recording actually started, stop it. We check BOTH `recording`
+    // state AND the STT handle ref so we don't miss a recording that just
+    // started but whose state flush hasn't landed yet.
     if (recording || nativeSTTHandleRef.current) {
       stopRecording();
-    } else {
-      // Recording never actually started (e.g. permission dialog) — reset timer
-      if (holdTimerRef.current) {
-        clearInterval(holdTimerRef.current);
-        holdTimerRef.current = null;
-      }
     }
   }, [recording, stopRecording]);
 
