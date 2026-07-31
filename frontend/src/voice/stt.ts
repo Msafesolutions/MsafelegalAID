@@ -337,15 +337,21 @@ export async function getConfiguredSTT(
 /**
  * Send a recorded audio file to the cloud Whisper endpoint. Used by the audio-recorder
  * fallback when native STT is unavailable (e.g. web preview or Expo Go).
+ *
+ * `languageHint` — optional ISO 639-1 code (e.g. "hi", "ta") to bias Whisper's
+ * recognition toward the user's selected language. Massively improves accuracy
+ * for Indian languages compared to auto-detect.
  */
 export async function whisperTranscribeFile(
   apiBase: string,
   token: string,
-  uri: string
+  uri: string,
+  languageHint?: string
 ): Promise<string> {
   const form = new FormData();
   // @ts-expect-error RN FormData file
   form.append('audio', { uri, name: 'audio.m4a', type: 'audio/m4a' });
+  if (languageHint) form.append('language', languageHint);
   const res = await fetch(`${apiBase}/api/voice/transcribe`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },

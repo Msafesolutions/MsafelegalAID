@@ -708,7 +708,7 @@ export default function ChatScreen() {
         setTranscribing(false);
         return;
       }
-      const text = await whisperTranscribeFile(API_BASE, token, uri);
+      const text = await whisperTranscribeFile(API_BASE, token, uri, language?.code);
       setTranscribing(false);
       const heardText = (text || '').trim();
       if (heardText) {
@@ -721,7 +721,7 @@ export default function ChatScreen() {
       setTranscribing(false);
       Alert.alert('Transcription failed', e?.message || 'Try again');
     }
-  }, [recorder, token]);
+  }, [recorder, token, language]);
 
   // WhatsApp-style hold-to-talk handlers
   const onMicPressIn = useCallback(() => {

@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Optional, AsyncGenerator
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Header, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form, Header, Request
 from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -687,14 +687,33 @@ def openai_client() -> AsyncOpenAI:
     return AsyncOpenAI(api_key=EMERGENT_LLM_KEY, base_url=base_url)
 
 @api.post("/voice/transcribe")
-async def transcribe(audio: UploadFile = File(...), user: dict = Depends(current_user)):
+async def transcribe(
+    audio: UploadFile = File(...),
+    language: str = Form(None),
+    user: dict = Depends(current_user),
+):
+    """
+    Whisper cloud transcription. `language` is an optional ISO 639-1 hint
+    (e.g. "hi", "ta", "en") that dramatically improves accuracy for Indian
+    languages compared to Whisper's auto-detect. Falls back to auto-detect
+    if not provided.
+    """
+    # Whisper supports these ISO 639-1 language codes for our Indian language set.
+    # If the app sends anything outside this list, we let Whisper auto-detect.
+    WHISPER_SUPPORTED = {
+        "en", "hi", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa",
+        "or", "as", "ur", "sa", "sd", "ne",
+    }
     try:
         data = await audio.read()
         oc = openai_client()
-        result = await oc.audio.transcriptions.create(
-            model="whisper-1",
-            file=(audio.filename or "audio.m4a", data, audio.content_type or "audio/m4a"),
-        )
+        kwargs: dict = {
+            "model": "whisper-1",
+            "file": (audio.filename or "audio.m4a", data, audio.content_type or "audio/m4a"),
+        }
+        if language and language.lower() in WHISPER_SUPPORTED:
+            kwargs["language"] = language.lower()
+        result = await oc.audio.transcriptions.create(**kwargs)
         return {"text": result.text}
     except Exception as e:
         logger.exception("transcribe failed")
