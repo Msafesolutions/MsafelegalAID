@@ -696,25 +696,54 @@ async def transcribe(
     Whisper cloud transcription. `language` is an optional ISO 639-1 hint
     (e.g. "hi", "ta", "en") that dramatically improves accuracy for Indian
     languages compared to Whisper's auto-detect. Falls back to auto-detect
-    if not provided.
+    if not provided OR if the Emergent Whisper proxy rejects the specific
+    language code (silently retries without the hint so the user never
+    experiences a silent mic failure).
     """
-    # Whisper supports these ISO 639-1 language codes for our Indian language set.
-    # If the app sends anything outside this list, we let Whisper auto-detect.
-    WHISPER_SUPPORTED = {
+    # Whisper supports these ISO 639-1 language codes in principle. The
+    # actual Emergent proxy currently rejects some of them (bn/te/gu/ml/pa/
+    # or/as/sa/sd) with a 400 unsupported_language error. We keep the full
+    # set here as an OPTIMISTIC hint list and let the retry-without-hint
+    # fallback below rescue any rejection — this is safer than a hardcoded
+    # narrow list that would silently ignore a valid hint if Emergent adds
+    # support later.
+    WHISPER_HINT_SET = {
         "en", "hi", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa",
         "or", "as", "ur", "sa", "sd", "ne",
     }
     try:
         data = await audio.read()
         oc = openai_client()
-        kwargs: dict = {
+        base_kwargs: dict = {
             "model": "whisper-1",
             "file": (audio.filename or "audio.m4a", data, audio.content_type or "audio/m4a"),
         }
-        if language and language.lower() in WHISPER_SUPPORTED:
-            kwargs["language"] = language.lower()
-        result = await oc.audio.transcriptions.create(**kwargs)
-        return {"text": result.text}
+        lang_hint = None
+        if language and language.lower() in WHISPER_HINT_SET:
+            lang_hint = language.lower()
+
+        # First attempt: with the language hint if we have one.
+        try:
+            kwargs = {**base_kwargs, **({"language": lang_hint} if lang_hint else {})}
+            result = await oc.audio.transcriptions.create(**kwargs)
+            return {"text": result.text}
+        except Exception as first_err:
+            # If we sent a language hint and the proxy rejected it as
+            # unsupported, silently retry without the hint so the user still
+            # gets a transcript. Any other error re-raises.
+            err_msg = str(first_err).lower()
+            if lang_hint and (
+                "unsupported_language" in err_msg
+                or "unsupported language" in err_msg
+                or "400" in err_msg and "language" in err_msg
+            ):
+                logger.info(
+                    "Whisper rejected language hint '%s' — retrying without hint",
+                    lang_hint,
+                )
+                result = await oc.audio.transcriptions.create(**base_kwargs)
+                return {"text": result.text}
+            raise
     except Exception as e:
         logger.exception("transcribe failed")
         raise HTTPException(500, f"Transcription failed: {e}")
