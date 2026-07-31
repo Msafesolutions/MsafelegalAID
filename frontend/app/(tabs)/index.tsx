@@ -25,7 +25,7 @@ import {
 } from 'expo-audio';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
-import { getConfiguredSTT, whisperTranscribeFile, pickSupportedLocale } from '@/src/voice/stt';
+import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 
 type Citation = {
   key: string;
@@ -545,86 +545,18 @@ export default function ChatScreen() {
   // Keep the forward-declared ref up to date whenever `speak` changes.
   speakRef.current = speak;
 
-  /** Start listening — uses the configured STT provider (native by default). */
+  /** Start listening — records audio and uploads to Whisper cloud STT.
+   *  Hardcoded to Whisper for reliability across all Android OEMs (Samsung /
+   *  Xiaomi / Realme / etc.). Native SpeechRecognizer is intentionally NOT
+   *  used because it silently fails on many OEM devices where the default
+   *  voice engine is not Google's. See getConfiguredSTT() docstring. */
   const startRecording = useCallback(async () => {
     if (!token) return;
     try {
-      const { provider, providerId, fellBack } = await getConfiguredSTT(API_BASE, token);
+      const { provider, fellBack } = await getConfiguredSTT(API_BASE, token);
       setSttProviderLabel(fellBack ? `${provider.displayName} (fallback)` : provider.displayName);
 
-      if (providerId === 'native') {
-        // Pre-flight: check whether the device's speech recognizer supports the
-        // user's selected language BEFORE starting. This is the fix for "voice
-        // not recording" on Hindi / other Indian languages on some Android
-        // devices — previously the recognizer started with an unsupported
-        // locale and silently returned no result.
-        const pick = await pickSupportedLocale(language.tts);
-
-        if (pick.chosen === null || (pick.usedFallback && pick.fallbackReason === 'english')) {
-          // Strict language policy: if the user selected Tamil/Hindi/etc. and that
-          // language is not installed on this device, refuse cleanly rather than
-          // silently switching to English. This is what the user asked for.
-          Alert.alert(
-            `${language.name} voice not installed`,
-            `Voice input for ${language.name} is not installed on this device.\n\n` +
-              `To enable it:\n` +
-              (Platform.OS === 'android'
-                ? '• Open Settings → System → Languages → Add ' + language.name + '\n' +
-                  '• Install "Speech Services by Google" from the Play Store\n' +
-                  '• Restart the app'
-                : '• Open Settings → General → Keyboard → Dictation → enable ' + language.name),
-            [{ text: 'OK' }],
-          );
-          return;
-        }
-
-        // If we had to fall back to another language, tell the user before we
-        // start listening so they know we're not speaking their language.
-        const startNative = async (lang: string) => {
-          try {
-            const handle = await provider.start({
-              languageTag: lang,
-              onPartial: (r) => setInput(r.text),
-              onError: (m) => {
-                // Surface the actual OS error rather than a generic message so
-                // the user knows what to do (install pack, grant permission, etc.).
-                Alert.alert(
-                  'Voice error',
-                  `${m}\n\nTip: make sure "Speech Services by Google" is set as ` +
-                    `your default speech engine in Settings → System → Text-to-speech.`,
-                );
-              },
-            });
-            // Race guard: if the user already released the mic while we were
-            // awaiting native STT init, immediately stop and DO NOT enter the
-            // "recording" state — otherwise the recognizer runs silently forever
-            // and each subsequent press stacks another one ("loop" bug).
-            if (!isMicHeldRef.current) {
-              try { await handle.stop(); } catch {}
-              return;
-            }
-            nativeSTTHandleRef.current = handle;
-            setRecording(true);
-          } catch (e: any) {
-            throw e;
-          }
-        };
-
-        if (pick.usedFallback && pick.fallbackReason === 'english') {
-          // Already handled above (strict-language policy refuses this path).
-          return;
-        }
-
-        try {
-          await startNative(pick.chosen!);
-          return;
-        } catch (e: any) {
-          // fall through to whisper-cloud audio recorder as final fallback
-          console.warn('native STT failed, falling back to whisper:', e?.message);
-        }
-      }
-
-      // Cloud Whisper fallback (or explicit config) — record audio, transcribe on send
+      // Cloud Whisper — record audio, transcribe on send
       const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (!perm.granted) {
         Alert.alert('Microphone permission', 'Please enable microphone to speak your question.');
@@ -650,7 +582,7 @@ export default function ChatScreen() {
     } catch (e: any) {
       Alert.alert('Recording failed', e?.message || 'Try again');
     }
-  }, [recorder, token, language]);
+  }, [recorder, token]);
 
   const stopRecording = useCallback(async () => {
     // Stop the elapsed-time ticker
@@ -660,32 +592,20 @@ export default function ChatScreen() {
     }
     setHoldElapsed(0);
 
-    // If native STT was running, finish it → show transcript confirmation modal
+    // If native STT was running (only possible on stale APK builds), finish
+    // it safely — this branch is otherwise dead since getConfiguredSTT is
+    // hardcoded to Whisper. We keep the cleanup for defence-in-depth only.
     if (nativeSTTHandleRef.current) {
       try {
         setTranscribing(true);
         setRecording(false);
-        const result = await nativeSTTHandleRef.current.stop();
-        nativeSTTHandleRef.current = null;
-        setTranscribing(false);
-        const heardText = (result?.text || '').trim();
-        if (heardText) {
-          setTranscriptPreview(heardText);
-          setShowTranscriptModal(true);
-        } else {
-          // Empty transcript — the recognizer didn't hear or couldn't decode.
-          // Show a helpful alert (parity with the Whisper fallback path) so the
-          // user isn't left wondering why nothing happened after release.
-          Alert.alert(
-            'Nothing was heard',
-            'The mic did not catch any words. Please try again — hold the mic, speak clearly, then release. ' +
-              'On Android, install "Speech Services by Google" and download your language pack if this keeps happening.',
-          );
-        }
-      } catch (e: any) {
-        setTranscribing(false);
-        Alert.alert('Voice error', e?.message || 'Try again');
-      }
+        await nativeSTTHandleRef.current.stop();
+      } catch {}
+      nativeSTTHandleRef.current = null;
+      setTranscribing(false);
+      // Fall through to the Whisper path below? No — on stale native builds
+      // there is no audio recording running, so nothing to transcribe. Just
+      // clean up and return silently.
       return;
     }
 

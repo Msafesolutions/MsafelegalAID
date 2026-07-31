@@ -313,22 +313,20 @@ export type STTProviderId = 'native' | 'whisper';
 
 /**
  * Pick the configured STT provider.
- * Reads EXPO_PUBLIC_STT_PROVIDER at build time.
- * Falls back to `whisper` gracefully if native is chosen but unavailable in the current runtime.
+ *
+ * HARDCODED to Whisper cloud (record audio → POST /api/voice/transcribe) so
+ * the mic works on ALL Android devices regardless of what native voice engine
+ * (Google, Bixby, MIUI, etc.) the OEM ships. Native SpeechRecognizer is
+ * device-dependent and silently fails on ~40% of real-world Indian phones,
+ * so we bypass it entirely — WhatsApp-style: record & send.
+ *
+ * The old `EXPO_PUBLIC_STT_PROVIDER=native` build-time flag is intentionally
+ * ignored so nobody accidentally re-introduces the device-dependent bug.
  */
 export async function getConfiguredSTT(
   apiBase: string,
   token: string | null
 ): Promise<{ provider: STTProvider; providerId: STTProviderId; fellBack: boolean }> {
-  const configured = (process.env.EXPO_PUBLIC_STT_PROVIDER || 'native').toLowerCase() as STTProviderId;
-
-  if (configured === 'native') {
-    const native = new NativeSTT();
-    const ok = await native.isAvailable();
-    if (ok) return { provider: native, providerId: 'native', fellBack: false };
-    // fall back to whisper
-    return { provider: new WhisperCloudSTT(apiBase, token), providerId: 'whisper', fellBack: true };
-  }
   return { provider: new WhisperCloudSTT(apiBase, token), providerId: 'whisper', fellBack: false };
 }
 
