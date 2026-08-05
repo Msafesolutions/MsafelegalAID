@@ -16,13 +16,15 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import * as Speech from 'expo-speech';
 import {
   AudioModule,
   RecordingPresets,
   setAudioModeAsync,
   useAudioRecorder,
+  createAudioPlayer,
+  type AudioPlayer,
 } from 'expo-audio';
+import { File, Paths } from 'expo-file-system';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
@@ -96,10 +98,17 @@ export default function ChatScreen() {
   // This ref is set synchronously on press-in/out and consulted throughout
   // the async flow so we always know the user's current intent.
   const isMicHeldRef = useRef<boolean>(false);
-  // Track which languages we've already warned about "voice not installed" so
-  // the TTS watchdog alert fires ONCE per language per session, not on every
-  // auto-spoken bot message (which would be extremely spammy).
-  const ttsVoiceMissingWarnedRef = useRef<Set<string>>(new Set());
+  // Cloud TTS player + cleanup — we lazily create an AudioPlayer per playback
+  // and keep the ref so we can stop it (user taps stop / speaks another
+  // message / navigates away).
+  const ttsPlayerRef = useRef<AudioPlayer | null>(null);
+  const ttsPlayerReleaseTimerRef = useRef<any>(null);
+  // Mirror `speakingId` in a ref so async cleanup callbacks can see the
+  // latest value without stale-closure issues.
+  const speakingIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    speakingIdRef.current = speakingId;
+  }, [speakingId]);
   // Forward-declared ref to `speak` so auto-speak logic inside `send` can call it
   // without a circular dependency (speak is defined AFTER send in this file).
   const speakRef = useRef<((msgId: string, text: string) => void) | null>(null);
@@ -123,10 +132,19 @@ export default function ChatScreen() {
         clearInterval(holdTimerRef.current);
         holdTimerRef.current = null;
       }
-      // Stop any ongoing TTS playback
+      // Stop any ongoing cloud TTS playback
       try {
-        Speech.stop();
+        const p = ttsPlayerRef.current;
+        if (p) {
+          try { p.pause(); } catch {}
+          try { p.remove(); } catch {}
+        }
       } catch {}
+      ttsPlayerRef.current = null;
+      if (ttsPlayerReleaseTimerRef.current) {
+        clearTimeout(ttsPlayerReleaseTimerRef.current);
+        ttsPlayerReleaseTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -146,7 +164,7 @@ export default function ChatScreen() {
       } catch {}
     })();
     return () => {
-      Speech.stop();
+      // Cloud TTS cleanup handled by the earlier unmount effect above.
     };
   }, []);
 
@@ -369,14 +387,44 @@ export default function ChatScreen() {
     [streaming, token, sessionId, language, model, proMode, refreshUser, autoSpeak]
   );
 
+  /**
+   * Cloud TTS via /api/voice/tts. Records audio bytes returned by the backend
+   * (which uses OpenAI TTS through the Emergent LLM Key) into a temp cache
+   * file, then plays it back with expo-audio. Works on ALL devices — no OS
+   * voice pack required. This is the "WhatsApp-style" fix for the fact that
+   * on-device expo-speech silently no-ops on many Android OEMs (Samsung,
+   * Xiaomi, etc.) that ship non-Google TTS engines by default.
+   */
+  const stopCloudTTS = useCallback(() => {
+    // Debounce / cleanup helper for the AudioPlayer ref.
+    try {
+      const p = ttsPlayerRef.current;
+      if (p) {
+        try { p.pause(); } catch {}
+        try { p.remove(); } catch {}
+      }
+    } catch {}
+    ttsPlayerRef.current = null;
+    if (ttsPlayerReleaseTimerRef.current) {
+      clearTimeout(ttsPlayerReleaseTimerRef.current);
+      ttsPlayerReleaseTimerRef.current = null;
+    }
+    setSpeakingId(null);
+  }, []);
+
   const speak = useCallback(
     async (msgId: string, text: string) => {
+      // Toggle: tapping speaker of currently-speaking message stops playback
       if (speakingId === msgId) {
-        Speech.stop();
-        setSpeakingId(null);
+        stopCloudTTS();
         return;
       }
-      Speech.stop();
+      // Any other playback → stop it first
+      stopCloudTTS();
+
+      if (!text || !text.trim() || !token) return;
+
+      // Force iOS silent-switch playback and disable recording-mode conflicts
       try {
         if (Platform.OS !== 'web') {
           await setAudioModeAsync({
@@ -387,160 +435,97 @@ export default function ChatScreen() {
         }
       } catch {}
 
-      // Enumerate installed voices and pick the best match for the selected language.
-      // This is what makes TTS actually SPEAK in the selected language instead of
-      // silently falling back to English (the default browser/OS behavior when the
-      // requested locale has no installed voice).
-      let voiceId: string | undefined = undefined;
-      let voiceLangTag: string = language.tts || 'en-IN';
-      let voiceUnavailable = false;
-      let fallbackNoticeLang: string | null = null; // set if we substitute a related-family voice
-      const targetFull = (language.tts || 'en-IN').toLowerCase();
-      const targetShort = targetFull.split('-')[0];
-
-      // Script-family fallbacks for the 8 rare Indian languages whose voices are
-      // rarely pre-installed on Android/iOS. When the user's exact voice is missing,
-      // we substitute the closest phonetically-related language so the app still
-      // SPEAKS. We disclose this to the user with a small alert so they know.
-      const SCRIPT_FALLBACKS: Record<string, string[]> = {
-        // Devanagari-script minor languages → Hindi voice
-        kok: ['mr', 'hi'], mai: ['hi'], doi: ['hi'], brx: ['hi'],
-        sa: ['hi'], ne: ['hi'],
-        // Perso-Arabic + Devanagari mix → Urdu or Hindi
-        ks: ['ur', 'hi'], sd: ['ur', 'hi'],
-        // Bengali script for Manipuri; Ol Chiki (Santali) uses Bengali as closest fallback
-        mni: ['bn'], sat: ['bn', 'hi'],
-      };
+      setSpeakingId(msgId);
 
       try {
-        const voices = await Speech.getAvailableVoicesAsync();
-        if (voices && voices.length > 0) {
-          // 1) Exact locale match (e.g. hi-IN → hi-IN)
-          const exact = voices.find((v: any) => (v.language || '').toLowerCase() === targetFull);
-          // 2) Language-family match (e.g. hi-IN → any hi-*)
-          const fam = voices.find(
-            (v: any) => (v.language || '').toLowerCase().split('-')[0] === targetShort,
-          );
-          const primary = exact || fam;
-          if (primary) {
-            voiceId = (primary as any).identifier;
-            voiceLangTag = (primary as any).language || voiceLangTag;
-          } else if (SCRIPT_FALLBACKS[targetShort]) {
-            // 3) Script-family fallback (Konkani → Marathi/Hindi, etc.)
-            for (const alt of SCRIPT_FALLBACKS[targetShort]) {
-              const altVoice = voices.find(
-                (v: any) => (v.language || '').toLowerCase().split('-')[0] === alt,
-              );
-              if (altVoice) {
-                voiceId = (altVoice as any).identifier;
-                voiceLangTag = (altVoice as any).language || alt;
-                fallbackNoticeLang = alt;
-                break;
-              }
+        // 1. Ask backend to synthesise speech (OpenAI TTS → MP3 bytes)
+        const res = await fetch(`${API_BASE}/api/voice/tts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            text: text.slice(0, 3800), // safety cap; backend also truncates
+            language: language?.code || 'en',
+            voice: 'alloy',
+          }),
+        });
+        if (!res.ok) {
+          const errTxt = await res.text().catch(() => '');
+          throw new Error(`TTS server returned ${res.status}: ${errTxt.slice(0, 120)}`);
+        }
+        // 2. Read the MP3 payload as a base64 string so we can persist it to
+        // a temp file without pulling in a Blob polyfill.
+        const arrayBuf = await res.arrayBuffer();
+        if (!arrayBuf || arrayBuf.byteLength === 0) {
+          throw new Error('TTS server returned empty audio.');
+        }
+        // Convert ArrayBuffer → base64 without depending on Buffer / btoa
+        // (RN's global.btoa exists on newer versions but is inconsistent).
+        const bytes = new Uint8Array(arrayBuf);
+        let bin = '';
+        const CHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)) as any);
+        }
+        const g: any = globalThis;
+        const b64 = g.btoa
+          ? g.btoa(bin)
+          : Buffer.from(bin, 'binary').toString('base64');
+
+        // 3. Persist to the app cache directory (auto-cleared by OS)
+        const file = new File(Paths.cache, `dhara-tts-${Date.now()}.mp3`);
+        // File may already exist from a very rapid double-tap — safe overwrite
+        try { file.delete(); } catch {}
+        file.create();
+        file.write(b64, { encoding: 'base64' });
+
+        // 4. Race guard: user may have tapped stop / played something else
+        // while we were awaiting the network + disk write. If the state has
+        // moved on, silently discard this playback.
+        if (msgId !== speakingIdRef.current) {
+          try { file.delete(); } catch {}
+          return;
+        }
+
+        // 5. Create the player, wire up completion cleanup, start playback
+        const player = createAudioPlayer({ uri: file.uri });
+        ttsPlayerRef.current = player;
+        try {
+          player.setPlaybackRate(speechRate, 'high');
+        } catch {}
+        // Auto-clear when playback finishes. expo-audio doesn't emit onEnd on
+        // all platforms consistently, so we also poll status via a short
+        // watchdog scheduled below.
+        try {
+          (player as any).addListener?.('playbackStatusUpdate', (s: any) => {
+            if (s?.didJustFinish || (s?.duration > 0 && s?.currentTime >= s?.duration - 0.05)) {
+              stopCloudTTS();
+              try { file.delete(); } catch {}
             }
-            if (!voiceId) voiceUnavailable = true;
-          } else if (targetShort !== 'en') {
-            voiceUnavailable = true;
-          }
-        }
-      } catch {
-        // Voice enumeration not supported (some web browsers) — fall through and
-        // let Speech.speak try its best with the language tag alone.
-      }
+          });
+        } catch {}
+        // Play (this call kicks off decode + playback)
+        player.play();
 
-      if (voiceUnavailable) {
-        Alert.alert(
-          'Voice not installed',
-          `${language.name} voice is not installed on this device.\n\n` +
-            `To enable ${language.name} speech:\n` +
-            (Platform.OS === 'android'
-              ? '• Open Settings → General management → Text-to-speech\n• Tap the gear icon → Install voice data → download ' +
-                language.name
-              : Platform.OS === 'ios'
-              ? '• Open Settings → Accessibility → Spoken Content → Voices → download ' +
-                language.name
-              : '• Install a browser or OS voice pack for ' + language.name),
-        );
-        // Do NOT play English silently for a language the user asked for — that would
-        // create the "only English" bug we are fixing. Stop here.
+        // Fallback cleanup — if we somehow never get the finish event, release
+        // after 90s max (long enough for a 3000-char reply at slow speech).
+        ttsPlayerReleaseTimerRef.current = setTimeout(() => {
+          stopCloudTTS();
+          try { file.delete(); } catch {}
+        }, 90_000);
+      } catch (e: any) {
         setSpeakingId(null);
-        return;
+        Alert.alert(
+          'Speaker unavailable',
+          e?.message?.includes('Network')
+            ? 'Could not reach the speech server. Please check your internet connection.'
+            : 'Could not play audio right now. Please try again in a moment.',
+        );
       }
-
-      // Disclose to the user that we're using a related-family voice, so they aren't
-      // confused when the pronunciation sounds like Hindi/Marathi/Urdu/Bengali.
-      if (fallbackNoticeLang) {
-        const FALLBACK_NAMES: Record<string, string> = {
-          hi: 'Hindi', mr: 'Marathi', ur: 'Urdu', bn: 'Bengali',
-        };
-        // Fire and forget — do not block playback
-        setTimeout(() => {
-          Alert.alert(
-            'Using related voice',
-            `${language.name} voice is not installed. Speaking with the ${FALLBACK_NAMES[fallbackNoticeLang!] || fallbackNoticeLang} voice (closest available). Install ${language.name} in device settings for native pronunciation.`,
-          );
-        }, 0);
-      }
-
-      setSpeakingId(msgId);
-      // Belt-and-braces: on Android, Speech.speak sometimes silently no-ops
-      // (returns immediately without emitting onStart/onDone) when the requested
-      // language tag isn't installed AND no explicit voice was found. We use a
-      // "did we hear anything?" watchdog to detect that case and surface a
-      // helpful message to the user rather than staying silent.
-      let heardOnStart = false;
-      const watchdog = setTimeout(() => {
-        if (!heardOnStart) {
-          // Nothing spoke within 1.5s — most likely the OS silently rejected
-          // the request because the voice pack isn't installed.
-          setSpeakingId(null);
-          // Only warn ONCE per language per session — otherwise the alert
-          // fires on every auto-spoken bot message and becomes user-hostile.
-          if (!ttsVoiceMissingWarnedRef.current.has(language.code)) {
-            ttsVoiceMissingWarnedRef.current.add(language.code);
-            Alert.alert(
-              `${language.name} voice not available`,
-              Platform.OS === 'android'
-                ? `This device cannot speak ${language.name} out loud. To fix: Settings → System → Languages & input → ` +
-                  `Text-to-speech output → choose "Speech Services by Google" and download the ${language.name} voice.\n\n` +
-                  `Reading answers on screen will keep working normally.`
-                : `This device cannot speak ${language.name} out loud. To fix: Settings → Accessibility → Spoken Content → ` +
-                  `Voices → download the ${language.name} voice.\n\nReading answers on screen will keep working normally.`,
-            );
-          }
-        }
-      }, 1500);
-
-      Speech.speak(text, {
-        language: voiceLangTag,
-        voice: voiceId,
-        volume: 1.0,
-        rate: speechRate,
-        onStart: () => {
-          heardOnStart = true;
-          clearTimeout(watchdog);
-        },
-        onDone: () => {
-          clearTimeout(watchdog);
-          setSpeakingId(null);
-        },
-        onStopped: () => {
-          clearTimeout(watchdog);
-          setSpeakingId(null);
-        },
-        onError: (err: any) => {
-          clearTimeout(watchdog);
-          setSpeakingId(null);
-          Alert.alert(
-            'Speaker error',
-            (err && (err.message || String(err))) ||
-              `Speech engine failed. Try selecting "Speech Services by Google" as the default TTS engine in ` +
-                `Settings → System → Text-to-speech.`,
-          );
-        },
-      });
     },
-    [speakingId, language, speechRate],
+    [speakingId, language, speechRate, token, stopCloudTTS],
   );
   // Keep the forward-declared ref up to date whenever `speak` changes.
   speakRef.current = speak;

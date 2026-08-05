@@ -745,6 +745,17 @@ async def transcribe(
                 return {"text": result.text}
             raise
     except Exception as e:
+        # A very short hold-and-release (or a race where the recorder captures
+        # almost no audio) makes Whisper reject the clip with "audio_too_short" --
+        # this is a routine, expected user action, not a server failure. Surfacing
+        # OpenAI's raw JSON error text through a 500 (as the generic branch below
+        # would) looks like a crash to the user; return a clean, actionable 400
+        # instead so the app can show "hold longer and try again" rather than a
+        # technical error blob.
+        err_msg = str(e).lower()
+        if "audio_too_short" in err_msg or "too short" in err_msg:
+            logger.info("Whisper rejected clip as too short")
+            raise HTTPException(400, "Recording was too short. Please hold the mic button and speak for at least a second.")
         logger.exception("transcribe failed")
         raise HTTPException(500, f"Transcription failed: {e}")
 
