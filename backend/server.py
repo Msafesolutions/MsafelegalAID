@@ -761,6 +761,12 @@ async def transcribe(
 
 @api.post("/voice/tts")
 async def tts(body: TTSIn, user: dict = Depends(current_user)):
+    # Reject empty / whitespace-only text with a clean 400 instead of letting
+    # OpenAI's own 400 bubble up as a generic 500 — the frontend caches the
+    # response as an MP3 and would otherwise write the JSON error blob to
+    # disk, causing createAudioPlayer to fail silently.
+    if not body.text or not body.text.strip():
+        raise HTTPException(400, "Text is required to synthesise speech.")
     try:
         oc = openai_client()
         resp = await oc.audio.speech.create(
