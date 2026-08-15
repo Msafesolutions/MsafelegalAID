@@ -10,8 +10,12 @@ import {
   Platform,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
 } from 'react-native';
+// NOTE: must be the keyboard-controller KeyboardAvoidingView, not React Native's.
+// This modal renders inside an RN <Modal>, and keyboard-controller forces
+// SOFT_INPUT_ADJUST_NOTHING on every modal window it attaches to, so RN's
+// KeyboardAvoidingView (which relies on the window resizing) can never work here.
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -326,10 +330,7 @@ export default function Upgrade() {
         animationType="slide"
         onRequestClose={() => setRazorModal(false)}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalOverlay}
-        >
+        <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
           <View style={styles.modalCard} testID="razorpay-verify-modal">
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Confirm your Razorpay payment</Text>

@@ -760,10 +760,23 @@ export default function ChatScreen() {
         </Pressable>
       )}
 
+      {/*
+        keyboardVerticalOffset MUST be 0 here — it is not "the height of the chrome
+        below us". The library computes the lift as
+            frame.y + frame.height - (screenHeight - keyboardHeight - offset)
+        and `frame` comes from onLayout, i.e. it is already measured relative to
+        this screen's SafeAreaView, whose origin sits at window y=0. So
+        `frame.y + frame.height` is the composer's real on-screen bottom and the
+        tab bar + disclaimer banner below it are ALREADY subtracted automatically.
+        Any non-zero offset is added on top and simply floats the composer that
+        many pixels above the keyboard — the previous 64/88 left a visible gap.
+        Keeping it 0 also means the variable-height disclaimer banner (it wraps to
+        3-4 lines on narrow phones) needs no hardcoded constant to track.
+      */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior="translate-with-padding"
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 64}
+        keyboardVerticalOffset={0}
       >
         <ScrollView
           ref={scrollRef}
