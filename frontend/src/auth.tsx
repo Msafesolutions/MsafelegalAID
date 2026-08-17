@@ -8,7 +8,7 @@ const LANG_KEY = 'gk_lang';
 const MODEL_KEY = 'gk_model';
 const AUTO_SPEAK_KEY = 'dhara_auto_speak';
 
-export type User = { id: string; email: string; name: string; phone?: string; language: string; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
+export type User = { id: string; email: string; name: string; phone?: string; language: string; is_grandfathered?: boolean; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
 export type Language = { code: string; name: string; native: string; tts: string };
 export type ModelChoice = { provider: string; name: string; label: string; recommended?: boolean };
 

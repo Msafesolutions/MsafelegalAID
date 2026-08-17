@@ -37,6 +37,7 @@ from corpus import (
     REFUSAL_NO_CORPUS,
     REFUSAL_NON_INDIAN,
     REFUSAL_NOT_LEGAL,
+    localize_refusal,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -152,6 +153,7 @@ def public_user(u: dict) -> dict:
         "pro_samples_used": int(u.get("pro_samples_used", 0)),
         "pro_samples_limit": PRO_FREE_SAMPLES,
         "pro_samples_remaining": max(0, PRO_FREE_SAMPLES - int(u.get("pro_samples_used", 0))),
+        "is_grandfathered": u.get("is_grandfathered", True),
         "terms_accepted": u.get("terms_accepted", False),
         "terms_version": u.get("terms_version"),
         "terms_accepted_at": u.get("terms_accepted_at"),
@@ -287,6 +289,7 @@ async def register(body: RegisterIn):
         "is_pro": False,
         "pro_since": None,
         "pro_samples_used": 0,
+        "is_grandfathered": True,
         "terms_accepted": True,
         "terms_version": body.terms_version,
         "terms_accepted_at": now,
@@ -626,7 +629,8 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         # Refusal path — do not call the LLM. Send the refusal as a delta so the frontend
         # shows it in the normal chat bubble.
         if early_refusal:
-            refusal_text = early_refusal
+            # Localize the refusal into the user's selected language (falls back to English)
+            refusal_text = localize_refusal(early_refusal, body.language)
             yield sse({"type": "delta", "content": refusal_text})
             await save_assistant(refusal_text, error=None)
             yield sse({"type": "done"})

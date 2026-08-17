@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Modal, ScrollView } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Modal, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -47,11 +46,14 @@ export default function Signup() {
 
   return (
     <SafeAreaView style={styles.safe} testID="signup-screen">
-      <KeyboardAwareScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        bottomOffset={24}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
         <Text style={styles.brand}>Dhara</Text>
           <Text style={styles.tag}>Empowerment through knowledge</Text>
 
@@ -96,7 +98,8 @@ export default function Signup() {
             </View>
           </View>
           <Text testID="signup-copyright" style={styles.copyright}>© {new Date().getFullYear()} Callistus Moses · An Msafe product</Text>
-      </KeyboardAwareScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <Modal visible={showTerms} animationType="slide" onRequestClose={() => setShowTerms(false)} testID="terms-modal">
         <SafeAreaView style={styles.termsSafe} edges={['top', 'bottom']}>

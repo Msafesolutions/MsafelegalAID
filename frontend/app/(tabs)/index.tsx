@@ -687,6 +687,12 @@ export default function ChatScreen() {
     });
   }, []);
 
+  const startNewChat = useCallback(() => {
+    setMessages([]);
+    setSessionId(null);
+    setInput('');
+  }, []);
+
   const activeSuggestions = proMode ? PRO_SUGGESTIONS : BASIC_SUGGESTIONS;
 
   return (
@@ -706,8 +712,14 @@ export default function ChatScreen() {
             {language.native}
           </Text>
         </View>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>BNS · संविधान</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable testID="new-chat-button" style={styles.newChatBtn} onPress={startNewChat}>
+            <Ionicons name="add" size={16} color={theme.colors.brand} />
+            <Text style={styles.newChatText}>New Chat</Text>
+          </Pressable>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>BNS · संविधान</Text>
+          </View>
         </View>
       </View>
 
@@ -1066,6 +1078,19 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
   },
   badgeText: { color: theme.colors.brand, fontSize: 11, fontWeight: '700' },
+  newChatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.xs,
+    backgroundColor: theme.colors.surface,
+    minHeight: 32,
+  },
+  newChatText: { color: theme.colors.brand, fontSize: 12, fontWeight: '700' },
   modeRow: {
     flexDirection: 'row',
     alignItems: 'center',

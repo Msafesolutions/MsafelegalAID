@@ -198,10 +198,14 @@ class NativeSTT implements STTProvider {
       throw new Error('Speech recognition module missing on this device');
     }
 
-    // Request permissions — protect against permission API changes across
-    // library versions. Some older builds don't have requestPermissionsAsync.
+    // Request permissions — check current status first, then explicitly prompt
+    // the user. This guarantees the OS microphone permission dialog appears the
+    // first time the mic is used instead of silently failing to record.
     try {
-      const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync?.();
+      let perm = await ExpoSpeechRecognitionModule.getPermissionsAsync?.();
+      if (!perm || perm.granted !== true) {
+        perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync?.();
+      }
       if (perm && perm.granted === false) {
         onError?.('Microphone / speech recognition permission denied');
         throw new Error('Permission denied');

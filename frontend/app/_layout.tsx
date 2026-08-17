@@ -1,13 +1,14 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { LogBox } from "react-native";
+import { LogBox, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/auth";
+import { SOSButton } from "@/src/components/SOSButton";
 
 LogBox.ignoreAllLogs(true);
 
@@ -29,7 +30,11 @@ export default function RootLayout() {
       <KeyboardProvider>
         <AuthProvider>
           <StatusBar style="dark" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }} />
+          <View style={{ flex: 1 }}>
+            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }} />
+            {/* Persistent SOS helpline button — floats above every screen */}
+            <SOSButton />
+          </View>
         </AuthProvider>
       </KeyboardProvider>
     </SafeAreaProvider>

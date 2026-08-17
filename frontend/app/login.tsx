@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, KeyboardAvoidingView, ScrollView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
 import { useAuth } from '@/src/auth';
@@ -29,11 +28,15 @@ export default function Login() {
 
   return (
     <SafeAreaView style={styles.safe} testID="login-screen">
-      <KeyboardAwareScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        bottomOffset={24}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
+        <Image source={require('../assets/images/icon.png')} style={styles.logo} resizeMode="contain" />
         <Text style={styles.brand}>Dhara</Text>
           <Text style={styles.tag}>Know your rights. Speak them.</Text>
 
@@ -87,7 +90,8 @@ export default function Login() {
 
           <Text style={styles.footer}>सत्य • अहिंसा • अधिकार</Text>
           <Text testID="login-copyright" style={styles.copyright}>© {new Date().getFullYear()} Callistus Moses · An Msafe product</Text>
-      </KeyboardAwareScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -95,6 +99,8 @@ export default function Login() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.brand },
   scroll: { flexGrow: 1, padding: theme.spacing.xl, justifyContent: 'center' },
+  // Fixed square dimensions + resizeMode="contain" — the logo can never stretch.
+  logo: { width: 84, height: 84, alignSelf: 'center', borderRadius: 20, marginBottom: 12 },
   brand: { fontFamily: theme.fonts.display, fontSize: 44, color: theme.colors.onBrandPrimary, textAlign: 'center', fontWeight: '700' },
   tag: { color: theme.colors.brandSecondary, textAlign: 'center', marginTop: 8, fontSize: 15 },
   card: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, padding: theme.spacing.xl, marginTop: theme.spacing.xxl },
