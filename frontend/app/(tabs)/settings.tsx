@@ -81,6 +81,19 @@ export default function Settings() {
           <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
         </Pressable>
 
+        <Pressable testID="pick-state" style={styles.row} onPress={() => router.push('/state')}>
+          <Ionicons name="location-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+            <Text style={styles.rowTitle}>State / Union Territory</Text>
+            <Text style={styles.rowValue}>
+              {user?.state_name
+                ? `${user.state_name} · local rent, liquor and fine rules added`
+                : 'Not set · tap to get rules that apply where you live'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
+        </Pressable>
+
         <View style={styles.row} testID="row-auto-speak">
           <Ionicons name="volume-high-outline" size={22} color={theme.colors.brand} />
           <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
@@ -98,9 +111,53 @@ export default function Settings() {
           />
         </View>
 
+        <Text style={styles.section}>Today&apos;s free usage</Text>
+        <View style={styles.helpCard} testID="usage-card">
+          <View style={styles.helpRow}>
+            <Text style={styles.helpLabel}>Questions left today</Text>
+            <View style={styles.helpNumBadge}>
+              <Text style={styles.helpNum}>
+                {user?.daily_questions_left ?? '—'} / {user?.daily_questions_cap ?? '—'}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.helpRow, { borderBottomWidth: 0 }]}>
+            <Text style={styles.helpLabel}>Voice actions left today</Text>
+            <View style={styles.helpNumBadge}>
+              <Text style={styles.helpNum}>
+                {user?.daily_voice_left ?? '—'} / {user?.daily_voice_cap ?? '—'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <Text style={styles.section}>Tools</Text>
+
+        <Pressable testID="open-drafts" style={styles.row} onPress={() => router.push('/drafts')}>
+          <Ionicons name="document-text-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+            <Text style={styles.rowTitle}>Ready notices</Text>
+            <Text style={styles.rowValue}>
+              Cheque bounce · deposit refund · unpaid salary
+              {user?.is_pro ? ' · unlimited' : ` · ${user?.drafts_remaining ?? 1} free left`}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
+        </Pressable>
+
+        <Pressable testID="open-fraud-checklist" style={styles.row} onPress={() => router.push('/fraud-checklist')}>
+          <Ionicons name="shield-half-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+            <Text style={styles.rowTitle}>Cyber fraud golden hour</Text>
+            <Text style={styles.rowValue}>Timed checklist · call 1930 · free for everyone</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
+        </Pressable>
+
         <Text style={styles.section}>Emergency Helplines</Text>
         <View style={styles.helpCard}>
           <HelpRow label="Police" number="112" />
+          <HelpRow label="Cyber Fraud (report fast)" number="1930" />
           <HelpRow label="Women's Helpline" number="181" />
           <HelpRow label="Legal Aid (NALSA)" number="15100" />
           <HelpRow label="Child Helpline" number="1098" />

@@ -110,3 +110,77 @@ Most Indians (and even many officials) don't know the Bharatiya Nyaya Sanhita (B
   is consistent app-wide.
 - **Cleanup**: removed the "Claude Sonnet 4.5" model name from the user-facing
   Pro comparison row (now "Priority AI responses").
+
+## Iteration 13 (June 2026) — four user-selected features
+1. **Cheque bounce (Negotiable Instruments Act)** — new `backend/corpus_ni.py` with NI 138
+   (verbatim, incl. the 6-month presentation / 30-day notice / 15-day payment proviso),
+   142 (complaint within one month, jurisdiction = payee's bank branch), 139
+   (presumption for the holder), 143A (interim compensation up to 20%), 148 (20%
+   deposit on appeal). Scope notes spell the clock out in plain words.
+2. **Cyber fraud** — new `backend/corpus_cyber.py`: IT Act 66C / 66D / 43, BNS 318
+   (cheating) and 319 (cheating by personation), plus two official REPORTING entries —
+   the MHA National Cyber Crime Reporting Portal + helpline 1930 (golden hour, account
+   freeze) and the RBI limited-liability rule (report to the bank within 3 working days =
+   zero liability; bank must credit within 10 working days). Settings now lists 1930.
+3. **State rules (jurisdiction layer)** — `users.state` (ISO 3166-2:IN code) with
+   `PATCH /api/auth/state` and `GET /api/reference/states`; new `app/state.tsx` picker
+   shown once right after signup and reachable from Settings. `corpus_state.py` gained
+   verified rent entries for DL (Delhi Rent Control 14), MH (MRC 16), KA (Karnataka Rent
+   Act 27), TN (Tenancy Act 4 + 11: 3-month deposit cap), UP (Tenancy Act 4 + 11:
+   2-month deposit cap) alongside the existing GJ/BR prohibition entries. State hits are
+   returned as extra citation chips with `state` + `text_kind` on the payload.
+   `STATE_SENSITIVE_TOPICS` (rent, traffic compounding, liquor, stamp duty) drives two new
+   SSE frames: `state_prompt` (no state set → gold "set your state" card in chat) and
+   `state_note` (state known but no verified local rule → honest note naming the
+   authority to check). We never guess a local amount.
+4. **Saved answers** — `PUT/GET/DELETE /api/bookmarks` (idempotent on `client_id`, soft
+   delete) + `frontend/src/bookmarks.ts` (AsyncStorage-first, two-way sync) + new "Saved"
+   tab (`app/(tabs)/saved.tsx`) and a bookmark button on every assistant bubble. Reads
+   work fully offline; the server copy only survives reinstalls.
+
+**Retrieval accuracy hardening** (the dangerous-bug class in this app):
+`RETRIEVAL_MIN_SCORE` raised 3 → 4 (a single moderately-common token is no longer proof),
+a relative cutoff drops any hit below 50% of the top score, and a per-entry `require_any`
+guard was added to the NI, RTI/RTIR, MV 194C/194D and state-rent entries so generic words
+("notice", "deposit", "fine", "ask") can no longer pull an unrelated section into an answer.
+
+Tested by the testing agent (iteration_13): 18/18 backend pytest + all frontend flows, no bugs.
+
+## Iteration 14 (June 2026) — labour law, notice drafts, fraud checklist, more state rent
+- **Wages / termination / gratuity**: new `backend/corpus_labour.py` on the four Labour Codes
+  (in force 21 Nov 2025): Code on Wages 17 (7th-of-month; 2 working days on exit), 18
+  (deduction limits, 50% cap), 45 (claim before the wage authority within 3 years, up to
+  10x compensation), IR Code 70 (1 month notice + 15 days' pay per year on retrenchment),
+  IR Code 71 (last in first out + re-employment preference), SS Code 53 (gratuity), and the
+  SAMADHAN portal grievance pathway. All guarded with `require_any` work-context keywords.
+- **Notice drafts**: `frontend/src/drafts.ts` builds three notices ON DEVICE from fixed
+  templates (no LLM call, so deadlines can never be hallucinated): cheque-bounce demand
+  (§138 30-day/15-day), security-deposit refund, unpaid-salary demand. Screens at
+  `app/drafts/index.tsx` + `app/drafts/[type].tsx` with copy/share. Entitlement metered by
+  `POST /api/drafts/consume` — `DRAFTS_FREE=1` free draft, then Pro (402 paywall).
+  `drafts_used/free_limit/remaining` exposed on the user.
+- **Fraud golden-hour checklist**: `app/fraud-checklist.tsx` — free for everyone, 7 ordered
+  steps (call 1930 → cybercrime.gov.in → bank in writing within 3 working days → block
+  card/UPI → evidence → acknowledgement numbers → 10th-working-day follow-up), live timer
+  and tick state persisted in AsyncStorage, tel:/https: action buttons.
+- **State rent**: added Telangana (Rent Control 10), West Bengal (Premises Tenancy 6-7) and
+  Kerala (Rent Control 11) to `corpus_state.py`, all with the rent `require_any` guard.
+- **Contextual next step in chat**: an answer citing NI/labour/rent/cyber sources now shows
+  a gold chip taking the user straight to the matching draft or the fraud checklist.
+- Verified by the testing agent (iteration_14): 17/17 backend tests + all UI flows, no bugs.
+
+## Iteration 15 — LLM spend caps (user directive: "make sure the credits are capped")
+Every paid call on the Emergent key is now metered in `db.usage_daily` (per user per day
+and app-wide) by `meter_llm_use()` in `server.py`:
+- Free users: **10 questions/day**, **15 voice actions/day** (STT + TTS share the voice bucket).
+- Pro users: 60 questions/day, 90 voice actions/day. App-wide backstop: 3000 paid calls/day.
+- All limits are env-overridable: `FREE_DAILY_QUESTIONS`, `FREE_DAILY_VOICE`,
+  `PRO_DAILY_QUESTIONS`, `PRO_DAILY_VOICE`, `APP_DAILY_LLM_CALLS`.
+- Refusals (no verified source / non-Indian / not-legal) never reach the model, so they are
+  NOT counted — verified: a refusal still answers after the question cap is hit.
+- Over-cap responses are HTTP 429 with a plain-language `detail.message`; the chat shows it
+  in the answer bubble, voice shows an alert. `GET /api/auth/me` returns
+  `daily_questions_left/cap` and `daily_voice_left/cap`, shown in Settings → "Today's free usage".
+- Self-tested with curl (11th question in a day → 429 at exactly the cap; refusal after the
+  cap → 200; TTS unaffected by the question bucket). Per the user's directive, no further
+  testing-agent or sub-agent runs.

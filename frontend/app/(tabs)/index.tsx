@@ -32,9 +32,36 @@ import { File, Paths } from 'expo-file-system';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
+import { addBookmark } from '@/src/bookmarks';
 import { SOSButton } from '@/src/components/SOSButton';
 
 const CANCEL_THRESHOLD = -80; // px the user must drag left to cancel
+
+/**
+ * Contextual next step derived from the verified citations on an answer. Keeps
+ * the user moving from "what the law says" to "the thing to actually send/do",
+ * which is where a legal-information app either helps or dead-ends.
+ */
+function nextStepFor(citations?: { short_label: string }[]):
+  | { label: string; route: string; icon: React.ComponentProps<typeof Ionicons>['name'] }
+  | null {
+  if (!citations || citations.length === 0) return null;
+  const labels = citations.map((c) => c.short_label || '');
+  const has = (fn: (l: string) => boolean) => labels.some(fn);
+  if (has((l) => l.startsWith('NI '))) {
+    return { label: 'Get a ready cheque-bounce notice', route: '/drafts/cheque_bounce', icon: 'document-text-outline' };
+  }
+  if (has((l) => /IT 6|IT 43|Cyber report|RBI zero/.test(l))) {
+    return { label: 'Open the golden-hour fraud checklist', route: '/fraud-checklist', icon: 'shield-half-outline' };
+  }
+  if (has((l) => /Wage Code|IR Code|SS Code|SAMADHAN/.test(l))) {
+    return { label: 'Get a ready unpaid-salary notice', route: '/drafts/unpaid_salary', icon: 'briefcase-outline' };
+  }
+  if (has((l) => /Rent|Tenancy/.test(l))) {
+    return { label: 'Get a ready deposit-refund notice', route: '/drafts/deposit_refund', icon: 'home-outline' };
+  }
+  return null;
+}
 
 type Citation = {
   key: string;
@@ -52,12 +79,18 @@ type Msg = {
   content: string;
   mode?: 'basic' | 'pro';
   citations?: Citation[];
+  /** Server told us this topic is decided by state law and no state is set yet */
+  statePrompt?: string;
+  /** State is set but Dhara has no verified local rule for it yet */
+  stateNote?: string;
+  /** Set once the user has bookmarked this answer for offline use */
+  saved?: boolean;
 };
 
 const BASIC_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
-  { text: 'What is the RTI application fee and word limit?', icon: 'document-text-outline' },
-  { text: 'Can Amazon charge me a cancellation fee?', icon: 'cart-outline' },
-  { text: 'Must rear-seat passengers wear seat belts?', icon: 'car-outline' },
+  { text: 'My cheque bounced — what is the notice deadline?', icon: 'card-outline' },
+  { text: 'Money gone in a UPI fraud — what do I do first?', icon: 'warning-outline' },
+  { text: 'What is the fine for riding without a helmet?', icon: 'car-outline' },
   { text: 'What is the helmet law for a child on a bike?', icon: 'shield-checkmark-outline' },
 ];
 
@@ -221,6 +254,19 @@ export default function ChatScreen() {
         });
 
         // Paywall (HTTP 402) — pro-mode sample quota exhausted
+        // Daily LLM spend cap (HTTP 429) — show the plain-language message in
+        // the answer bubble instead of a technical error.
+        if (res.status === 429) {
+          const body = await res.json().catch(() => null);
+          const msg =
+            body?.detail?.message ||
+            'You have reached your daily question limit. Please try again tomorrow.';
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, content: msg } : m)),
+          );
+          return;
+        }
+
         if (res.status === 402) {
           const body = await res.json();
           const pw = body?.detail || body;
@@ -252,6 +298,8 @@ export default function ChatScreen() {
          * delta (streaming text), final (sanitized full text — overwrites), error.
          * Only text-bearing frames update the UI. Metadata frames are handled internally.
          */
+        // Jurisdiction metadata frames — mutated in place by the parser below.
+        const stateMeta: { prompt: string | null; note: string | null } = { prompt: null, note: null };
         const parseSseBuffer = (
           buf: string,
           prevAcc: string,
@@ -300,6 +348,12 @@ export default function ChatScreen() {
               case 'final':
                 // Sanitized full text — overwrites any accumulated delta output.
                 if (typeof payload.content === 'string') finalText = payload.content;
+                break;
+              case 'state_prompt':
+                if (typeof payload.message === 'string') stateMeta.prompt = payload.message;
+                break;
+              case 'state_note':
+                if (typeof payload.message === 'string') stateMeta.note = payload.message;
                 break;
               case 'error':
                 hadError = true;
@@ -376,6 +430,8 @@ export default function ChatScreen() {
                         ? 'Something went wrong. Please try again.'
                         : 'No response received. Please try again.'),
                   citations,
+                  statePrompt: stateMeta.prompt || undefined,
+                  stateNote: stateMeta.note || undefined,
                 }
               : m,
           ),
@@ -474,6 +530,13 @@ export default function ChatScreen() {
         });
         if (!res.ok) {
           const errTxt = await res.text().catch(() => '');
+          if (res.status === 429) {
+            let msg = 'You have reached your daily voice limit. Please try again tomorrow.';
+            try { msg = JSON.parse(errTxt)?.detail?.message || msg; } catch {}
+            setSpeakingId(null);
+            Alert.alert('Daily voice limit reached', msg);
+            return;
+          }
           throw new Error(`TTS server returned ${res.status}: ${errTxt.slice(0, 120)}`);
         }
         // 2. Read the MP3 payload as a base64 string so we can persist it to
@@ -701,7 +764,7 @@ export default function ChatScreen() {
           body: form,
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Transcription failed');
+        if (!res.ok) throw new Error(data?.detail?.message || data.detail || 'Transcription failed');
         const heardText = (data.text || '').trim();
         setTranscribing(false);
         if (heardText) {
@@ -877,6 +940,30 @@ export default function ChatScreen() {
 
   const activeSuggestions = proMode ? PRO_SUGGESTIONS : BASIC_SUGGESTIONS;
 
+  /** Keep an answer on this phone so it opens with no network at all. */
+  const saveAnswer = useCallback(
+    async (m: Msg) => {
+      if (!m.content.trim()) return;
+      const idx = messages.findIndex((x) => x.id === m.id);
+      const question =
+        idx > 0
+          ? [...messages.slice(0, idx)].reverse().find((x) => x.role === 'user')?.content || ''
+          : '';
+      try {
+        await addBookmark(API_BASE as string, token, {
+          question,
+          answer: m.content,
+          language: language.code,
+          citations: (m.citations || []) as any,
+        });
+        setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, saved: true } : x)));
+      } catch {
+        Alert.alert('Could not save', 'Please try again.');
+      }
+    },
+    [messages, token, language],
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']} testID="chat-screen">
       <View style={styles.header}>
@@ -1022,6 +1109,19 @@ export default function ChatScreen() {
                   </View>
                   {m.role === 'assistant' && m.content.length > 0 && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {/* Save for offline reading */}
+                      <Pressable
+                        testID={`save-${m.id}`}
+                        onPress={() => saveAnswer(m)}
+                        hitSlop={10}
+                        disabled={!!m.saved}
+                      >
+                        <Ionicons
+                          name={m.saved ? 'bookmark' : 'bookmark-outline'}
+                          size={22}
+                          color={m.saved ? theme.colors.brandSecondary : theme.colors.brand}
+                        />
+                      </Pressable>
                       {/* Playback speed toggle — cycles 1x → 1.5x → 2x */}
                       <Pressable
                         testID={`speed-${m.id}`}
@@ -1077,6 +1177,39 @@ export default function ChatScreen() {
                         </Text>
                       </View>
                     ))}
+                  </View>
+                )}
+                {(() => {
+                  if (m.role !== 'assistant') return null;
+                  const step = nextStepFor(m.citations);
+                  if (!step) return null;
+                  return (
+                    <Pressable
+                      testID={`next-step-${m.id}`}
+                      style={styles.nextStep}
+                      onPress={() => router.push(step.route as any)}
+                    >
+                      <Ionicons name={step.icon} size={18} color={theme.colors.onBrandSecondary} />
+                      <Text style={styles.nextStepText}>{step.label}</Text>
+                      <Ionicons name="chevron-forward" size={16} color={theme.colors.onBrandSecondary} />
+                    </Pressable>
+                  );
+                })()}
+                {m.role === 'assistant' && !!m.statePrompt && (
+                  <Pressable
+                    testID={`state-prompt-${m.id}`}
+                    style={styles.stateCard}
+                    onPress={() => router.push('/state')}
+                  >
+                    <Ionicons name="location-outline" size={18} color={theme.colors.brand} />
+                    <Text style={styles.stateCardText}>{m.statePrompt}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={theme.colors.brand} />
+                  </Pressable>
+                )}
+                {m.role === 'assistant' && !!m.stateNote && (
+                  <View testID={`state-note-${m.id}`} style={styles.stateNote}>
+                    <Ionicons name="information-circle-outline" size={16} color={theme.colors.onSurfaceSecondary} />
+                    <Text style={styles.stateNoteText}>{m.stateNote}</Text>
                   </View>
                 )}
               </View>
@@ -1368,6 +1501,42 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   msgHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.xs },
+  stateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.goldSoft,
+    borderWidth: 1,
+    borderColor: theme.colors.gold,
+    minHeight: 48,
+  },
+  stateCardText: { flex: 1, color: theme.colors.brand, fontSize: 13, fontWeight: '700', lineHeight: 18 },
+  nextStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.brandSecondary,
+    minHeight: 48,
+  },
+  nextStepText: { flex: 1, color: theme.colors.onBrandSecondary, fontSize: 13, fontWeight: '800' },
+  stateNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.gold,
+  },
+  stateNoteText: { flex: 1, color: theme.colors.onSurfaceSecondary, fontSize: 12, lineHeight: 18 },
   msgRole: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   userRole: { color: theme.colors.brandSecondary },
   aiRole: { color: theme.colors.brand },

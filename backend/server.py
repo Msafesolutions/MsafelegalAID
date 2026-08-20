@@ -32,6 +32,8 @@ from legal import TERMS_AND_CONDITIONS, TERMS_VERSION, DISCLAIMER_SHORT
 from mailer import send_email, password_reset_otp_email, email_configured
 from corpus import (
     retrieve as corpus_retrieve,
+    retrieve_state as corpus_retrieve_state,
+    state_sensitive_topic,
     is_non_indian_jurisdiction,
     is_non_legal_advice,
     public_citation,
@@ -43,6 +45,7 @@ from corpus import (
     top_candidate_debug,
     classify_topic,
 )
+from states import STATES, STATE_BY_CODE, is_valid_state, state_name
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -63,6 +66,19 @@ PRO_PRICE_LABEL = os.environ.get("PRO_PRICE_LABEL", "₹50")
 PRO_PRICE_USD = int(os.environ.get("PRO_PRICE_USD", "500"))  # cents
 PRO_PRICE_USD_LABEL = os.environ.get("PRO_PRICE_USD_LABEL", "$5")
 PRO_FREE_SAMPLES = int(os.environ.get("PRO_FREE_SAMPLES", "5"))
+# Ready-to-send notice drafts: the first one is free, the rest are a Pro feature.
+DRAFTS_FREE = int(os.environ.get("DRAFTS_FREE", "1"))
+
+# ---------------------------------------------------------------------------
+# LLM spend caps. Every chat answer, transcription and spoken reply costs money
+# on the Emergent key, so usage is metered per user per day AND app-wide as a
+# backstop. Refusals never reach the model, so they are not counted.
+# ---------------------------------------------------------------------------
+FREE_DAILY_QUESTIONS = int(os.environ.get("FREE_DAILY_QUESTIONS", "10"))
+FREE_DAILY_VOICE = int(os.environ.get("FREE_DAILY_VOICE", "15"))
+PRO_DAILY_QUESTIONS = int(os.environ.get("PRO_DAILY_QUESTIONS", "60"))
+PRO_DAILY_VOICE = int(os.environ.get("PRO_DAILY_VOICE", "90"))
+APP_DAILY_LLM_CALLS = int(os.environ.get("APP_DAILY_LLM_CALLS", "3000"))
 JWT_ALG = "HS256"
 JWT_EXP_DAYS = 30
 
@@ -154,11 +170,16 @@ def public_user(u: dict) -> dict:
         "name": u["name"],
         "phone": u.get("phone", ""),
         "language": u.get("language", "en"),
+        "state": u.get("state"),
+        "state_name": state_name(u.get("state") or ""),
         "is_pro": u.get("is_pro", False),
         "pro_since": u.get("pro_since"),
         "pro_samples_used": int(u.get("pro_samples_used", 0)),
         "pro_samples_limit": PRO_FREE_SAMPLES,
         "pro_samples_remaining": max(0, PRO_FREE_SAMPLES - int(u.get("pro_samples_used", 0))),
+        "drafts_used": int(u.get("drafts_used", 0)),
+        "drafts_free_limit": DRAFTS_FREE,
+        "drafts_remaining": max(0, DRAFTS_FREE - int(u.get("drafts_used", 0))),
         "is_grandfathered": u.get("is_grandfathered", True),
         "terms_accepted": u.get("terms_accepted", False),
         "terms_version": u.get("terms_version"),
@@ -435,13 +456,38 @@ async def reset_password(body: ResetPasswordIn):
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(current_user)):
-    return public_user(user)
+    out = public_user(user)
+    # Today's LLM allowance, so the UI can show what is left instead of
+    # surprising the user with a limit message.
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    is_pro = bool(user.get("is_pro"))
+    q_cap = PRO_DAILY_QUESTIONS if is_pro else FREE_DAILY_QUESTIONS
+    v_cap = PRO_DAILY_VOICE if is_pro else FREE_DAILY_VOICE
+    q_doc = await db.usage_daily.find_one({"scope": "user", "user_id": user["id"], "day": day, "kind": "question"})
+    v_doc = await db.usage_daily.find_one({"scope": "user", "user_id": user["id"], "day": day, "kind": "voice"})
+    q_used = int((q_doc or {}).get("count", 0))
+    v_used = int((v_doc or {}).get("count", 0))
+    out["daily_questions_cap"] = q_cap
+    out["daily_questions_left"] = max(0, q_cap - q_used)
+    out["daily_voice_cap"] = v_cap
+    out["daily_voice_left"] = max(0, v_cap - v_used)
+    return out
 
 @api.patch("/auth/language")
 async def update_language(payload: dict, user: dict = Depends(current_user)):
     lang = payload.get("language", "en")
     await db.users.update_one({"id": user["id"]}, {"$set": {"language": lang}})
     return {"ok": True, "language": lang}
+
+@api.patch("/auth/state")
+async def update_state(payload: dict, user: dict = Depends(current_user)):
+    """Set the user's state / UT so state-specific rules (rent, liquor, traffic
+    compounding, stamp duty) can be served alongside the central law."""
+    code = (payload.get("state") or "").upper()
+    if code and not is_valid_state(code):
+        raise HTTPException(400, "Unknown state code")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"state": code or None}})
+    return {"ok": True, "state": code or None, "state_name": state_name(code)}
 
 @api.post("/auth/accept-terms")
 async def accept_terms(body: AcceptTermsIn, user: dict = Depends(current_user)):
@@ -461,6 +507,67 @@ async def accept_terms(body: AcceptTermsIn, user: dict = Depends(current_user)):
         "source": "in_app",
     })
     return {"ok": True, "terms_version": body.terms_version, "accepted_at": now}
+
+# ---------- LLM spend metering ----------
+async def meter_llm_use(user: dict, kind: str) -> None:
+    """Count one paid LLM call for this user and for the app as a whole.
+
+    kind is "question" (chat answer) or "voice" (transcription / spoken reply).
+    Raises HTTP 429 with a plain-language message when a cap is reached. Called
+    ONLY on paths that actually hit the model, so refused questions and cached
+    UI actions never eat a user's allowance.
+    """
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    is_pro = bool(user.get("is_pro"))
+    if kind == "question":
+        cap = PRO_DAILY_QUESTIONS if is_pro else FREE_DAILY_QUESTIONS
+        noun = "questions"
+    else:
+        cap = PRO_DAILY_VOICE if is_pro else FREE_DAILY_VOICE
+        noun = "voice actions"
+
+    # App-wide backstop first — protects the key even if a single account is
+    # compromised or many users spike on the same day.
+    app_doc = await db.usage_daily.find_one_and_update(
+        {"scope": "app", "day": day},
+        {"$inc": {"count": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    if int(app_doc.get("count", 0)) > APP_DAILY_LLM_CALLS:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "limit": True,
+                "scope": "app",
+                "message": "Dhara is unusually busy today and has paused new answers. Please try again tomorrow.",
+            },
+        )
+
+    doc = await db.usage_daily.find_one_and_update(
+        {"scope": "user", "user_id": user["id"], "day": day, "kind": kind},
+        {"$inc": {"count": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    used = int(doc.get("count", 0))
+    if used > cap:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "limit": True,
+                "scope": "user",
+                "kind": kind,
+                "used": used - 1,
+                "cap": cap,
+                "is_pro": is_pro,
+                "message": (
+                    f"You have used your {cap} {noun} for today. "
+                    + ("Your allowance resets tomorrow." if is_pro else
+                       "Upgrade to Pro for a much higher daily limit, or come back tomorrow.")
+                ),
+            },
+        )
 
 # ---------- Chat ----------
 @api.post("/chat/stream")
@@ -555,6 +662,13 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     # (b) Corpus retrieval — deterministic keyword match against verified statutes
     retrieved = [] if early_refusal else corpus_retrieve(body.message, limit=3)
 
+    # (b0) State / UT layer — rent, liquor, traffic compounding and stamp duty are
+    # state subjects. If the user has told us their state we serve its verified
+    # rules ALONGSIDE the central law; we never substitute another state's rule.
+    user_state = (user.get("state") or "").upper()
+    state_hits = [] if early_refusal else corpus_retrieve_state(body.message, user_state, limit=2)
+    state_topic = None if early_refusal else state_sensitive_topic(body.message)
+
     # (b1) Citation integrity: if the user's query explicitly names a section/article
     # identifier (e.g. "BNS Section 999", "Article 350", "BNSS 220") and NONE of the
     # retrieved entries actually match that identifier, void the retrieval. Otherwise
@@ -582,8 +696,15 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
                 retrieved = []
 
     # (c) If no retrieval hit AND no early refusal, we still refuse (no verified source)
-    if not early_refusal and not retrieved:
+    if not early_refusal and not retrieved and not state_hits:
         early_refusal = REFUSAL_NO_CORPUS
+
+    # (c1) Merge the state rules into the citation list the user will see. State
+    # rules go LAST so the central position is read first, and the combined list
+    # stays capped at three chips.
+    if state_hits:
+        keep_central = max(0, 3 - len(state_hits))
+        retrieved = retrieved[:keep_central] + state_hits
 
     # -------- Refusal analytics (A4 instrumentation) --------
     # Anonymized, aggregate-only event: NO user_id, NO session_id, NO raw
@@ -625,7 +746,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
                 "sub_cause": sub_cause,
                 "category": classify_topic(body.message),
                 "language": body.language,
-                "state": None,  # jurisdiction field not yet live at schema level
+                "state": user_state or None,
                 "top_score": dbg["top_score"],
                 "top_key": dbg["top_key"],
                 "created_at": datetime.now(timezone.utc).isoformat(),
@@ -637,12 +758,38 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     corpus_context = ""
     if retrieved:
         corpus_context = "\n---\n".join([
-            f"Scope: {it['scope_note']}"
+            (
+                f"STATE RULE — applies in {state_name(it['state'])} only: {it['scope_note']}"
+                if it.get("state") else f"Scope: {it['scope_note']}"
+            )
             for it in retrieved
         ])
+    # Tell the model, in plain words, when the local rule is the missing piece so
+    # it never presents the central position as the complete answer.
+    if state_topic and not state_hits:
+        if user_state:
+            corpus_context += (
+                f"\n---\nJURISDICTION GAP: {state_topic['label']} are decided by STATE law and "
+                f"no verified rule for {state_name(user_state)} is available. Say plainly that the "
+                f"local rule decides this and that the user must confirm it with "
+                f"{state_topic['authority']}. Do NOT state any local amount, limit or deadline."
+            )
+        else:
+            corpus_context += (
+                f"\n---\nJURISDICTION GAP: {state_topic['label']} are decided by STATE law and the "
+                "user has not told us their state. Say plainly that the answer depends on their "
+                "state and ask them to set their state in the app. Do NOT state any local amount, "
+                "limit or deadline."
+            )
 
     # Pro-quality prompt if user is Pro OR consuming a free sample; else basic prompt.
     use_pro_prompt = is_pro_user or is_sample_consumption
+
+    # Daily LLM spend cap — only counted when we are actually going to call the
+    # model (a refusal costs nothing, so it must not eat the user's allowance).
+    if not early_refusal:
+        await meter_llm_use(user, "question")
+
     # Derive native name — fall back to LANGUAGES table if client didn't send it
     lang_native = body.language_native
     if not lang_native:
@@ -731,6 +878,31 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         for it in retrieved:
             yield sse({"type": "citation", "citation": public_citation(it)})
 
+        # State-jurisdiction signalling. Two distinct cases, both honest:
+        #  - the user has no state set → ask for it once, in context
+        #  - the state is known but we hold no verified local rule yet → say so
+        if state_topic and not state_hits:
+            if not user_state:
+                yield sse({
+                    "type": "state_prompt",
+                    "topic": state_topic["topic"],
+                    "label": state_topic["label"],
+                    "message": (
+                        f"{state_topic['label'].capitalize()} are decided by state law. "
+                        "Set your state once to get the rules that actually apply to you."
+                    ),
+                })
+            else:
+                yield sse({
+                    "type": "state_note",
+                    "topic": state_topic["topic"],
+                    "state": user_state,
+                    "message": (
+                        f"No verified {state_topic['label']} rule for {state_name(user_state)} is "
+                        f"in Dhara yet. Confirm the local position with {state_topic['authority']}."
+                    ),
+                })
+
         # Refusal path — do not call the LLM. Send the refusal as a delta so the frontend
         # shows it in the normal chat bubble.
         if early_refusal:
@@ -790,6 +962,109 @@ async def delete_session(session_id: str, user: dict = Depends(current_user)):
     await db.messages.delete_many({"session_id": session_id, "user_id": user["id"]})
     return {"ok": True}
 
+# ---------- Saved answers (bookmarks) ----------
+# The device keeps its own copy in AsyncStorage so a saved answer opens with no
+# network at all (the "standing in a police station" case). The server copy is
+# only a sync target so the collection survives a reinstall or a new phone.
+class BookmarkIn(BaseModel):
+    client_id: str
+    question: str
+    answer: str
+    language: str = "en"
+    citations: List[dict] = []
+    created_at: Optional[str] = None
+
+
+@api.get("/bookmarks")
+async def list_bookmarks(user: dict = Depends(current_user)):
+    items = await db.bookmarks.find(
+        {"user_id": user["id"], "deleted": {"$ne": True}}, {"_id": 0, "user_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    return items
+
+
+@api.put("/bookmarks")
+async def upsert_bookmark(body: BookmarkIn, user: dict = Depends(current_user)):
+    """Idempotent on (user, client_id) so the device can re-push its queue after
+    being offline without creating duplicates."""
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "client_id": body.client_id,
+        "user_id": user["id"],
+        "question": body.question,
+        "answer": body.answer,
+        "language": body.language,
+        "citations": body.citations,
+        "created_at": body.created_at or now,
+        "deleted": False,
+        "synced_at": now,
+    }
+    await db.bookmarks.update_one(
+        {"user_id": user["id"], "client_id": body.client_id},
+        {"$set": doc, "$setOnInsert": {"id": str(uuid.uuid4())}},
+        upsert=True,
+    )
+    saved = await db.bookmarks.find_one(
+        {"user_id": user["id"], "client_id": body.client_id}, {"_id": 0, "user_id": 0}
+    )
+    return saved
+
+
+@api.delete("/bookmarks/{client_id}")
+async def delete_bookmark(client_id: str, user: dict = Depends(current_user)):
+    # Soft delete — a tombstone keeps a second device from resurrecting the row.
+    await db.bookmarks.update_one(
+        {"user_id": user["id"], "client_id": client_id},
+        {"$set": {"deleted": True, "deleted_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True}
+
+# ---------- Ready-to-send notice drafts ----------
+# The draft text itself is assembled ON THE DEVICE from a fixed template (no LLM
+# call, so it is deterministic and costs nothing). This endpoint only meters the
+# entitlement: the first draft is free, after that it is a Pro feature.
+DRAFT_TYPES = {"cheque_bounce", "deposit_refund", "unpaid_salary"}
+
+
+@api.post("/drafts/consume")
+async def consume_draft(payload: dict, user: dict = Depends(current_user)):
+    draft_type = (payload.get("draft_type") or "").strip()
+    if draft_type not in DRAFT_TYPES:
+        raise HTTPException(400, "Unknown draft type")
+    used = int(user.get("drafts_used", 0))
+    if not user.get("is_pro") and used >= DRAFTS_FREE:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "paywall": True,
+                "reason": "drafts_exhausted",
+                "drafts_used": used,
+                "drafts_free_limit": DRAFTS_FREE,
+                "pro_price_label": PRO_PRICE_LABEL,
+                "pro_price_usd_label": PRO_PRICE_USD_LABEL,
+                "message": (
+                    f"Your {DRAFTS_FREE} free notice draft has been used. Upgrade to Pro for "
+                    "unlimited ready-to-send legal notices."
+                ),
+            },
+        )
+    if not user.get("is_pro"):
+        await db.users.update_one({"id": user["id"]}, {"$inc": {"drafts_used": 1}})
+        used += 1
+    await db.draft_events.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "draft_type": draft_type,
+        "is_pro": bool(user.get("is_pro")),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {
+        "ok": True,
+        "draft_type": draft_type,
+        "drafts_used": used,
+        "drafts_remaining": max(0, DRAFTS_FREE - used),
+    }
+
 # ---------- Voice ----------
 def openai_client() -> AsyncOpenAI:
     base_url = os.environ.get("EMERGENT_OPENAI_BASE_URL", "https://integrations.emergentagent.com/llm/openai/v1")
@@ -820,6 +1095,7 @@ async def transcribe(
         "en", "hi", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa",
         "or", "as", "ur", "sa", "sd", "ne",
     }
+    await meter_llm_use(user, "voice")
     try:
         data = await audio.read()
         oc = openai_client()
@@ -876,6 +1152,7 @@ async def tts(body: TTSIn, user: dict = Depends(current_user)):
     # disk, causing createAudioPlayer to fail silently.
     if not body.text or not body.text.strip():
         raise HTTPException(400, "Text is required to synthesise speech.")
+    await meter_llm_use(user, "voice")
     try:
         oc = openai_client()
         resp = await oc.audio.speech.create(
@@ -1197,6 +1474,10 @@ TOPICS = [
 @api.get("/reference/languages")
 async def get_languages():
     return LANGUAGES
+
+@api.get("/reference/states")
+async def get_states():
+    return STATES
 
 @api.get("/reference/models")
 async def get_models():

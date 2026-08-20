@@ -360,6 +360,11 @@ export async function whisperTranscribeFile(
     body: form,
   });
   const data = await res.json();
+  if (res.status === 429) {
+    throw new Error(
+      data?.detail?.message || 'You have reached your daily voice limit. Please try again tomorrow.',
+    );
+  }
   if (!res.ok) throw new Error(data.detail || 'Transcription failed');
   return data.text || '';
 }

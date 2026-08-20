@@ -36,7 +36,7 @@ export default function Signup() {
     setLoading(true);
     try {
       await register(email.trim(), password, name.trim(), phone.trim(), true, termsVersion);
-      router.replace('/(tabs)');
+      router.replace('/state?onboarding=1');
     } catch (e: any) {
       setError(e?.message || 'Registration failed');
     } finally {

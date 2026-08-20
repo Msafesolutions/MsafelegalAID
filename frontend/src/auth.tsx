@@ -8,7 +8,7 @@ const LANG_KEY = 'gk_lang';
 const MODEL_KEY = 'gk_model';
 const AUTO_SPEAK_KEY = 'dhara_auto_speak';
 
-export type User = { id: string; email: string; name: string; phone?: string; language: string; is_grandfathered?: boolean; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
+export type User = { id: string; email: string; name: string; phone?: string; language: string; state?: string | null; state_name?: string; is_grandfathered?: boolean; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; drafts_used?: number; drafts_free_limit?: number; drafts_remaining?: number; daily_questions_cap?: number; daily_questions_left?: number; daily_voice_cap?: number; daily_voice_left?: number; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
 export type Language = { code: string; name: string; native: string; tts: string };
 export type ModelChoice = { provider: string; name: string; label: string; recommended?: boolean };
 
@@ -22,6 +22,7 @@ type AuthCtx = {
   setModel: (m: ModelChoice) => Promise<void>;
   autoSpeak: boolean;
   setAutoSpeak: (v: boolean) => Promise<void>;
+  setUserState: (code: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, phone: string, terms_accepted: boolean, terms_version: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -122,8 +123,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(AUTO_SPEAK_KEY, v ? '1' : '0');
   }, []);
 
+  // Jurisdiction — state / UT decides rent, liquor, stamp duty and traffic fine
+  // amounts, so the server needs it to serve the local rule with the answer.
+  const setUserState = useCallback(async (code: string) => {
+    if (!token) return;
+    const r = await fetch(`${API}/api/auth/state`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ state: code }),
+    });
+    if (!r.ok) throw new Error('Could not save your state');
+    const data = await r.json();
+    setUser((prev) => {
+      const next = prev ? { ...prev, state: data.state, state_name: data.state_name } : prev;
+      if (next) AsyncStorage.setItem(USER_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, [token]);
+
   return (
-    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, login, register, logout, refreshUser, hydrateSession: persist }}>
+    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, setUserState, login, register, logout, refreshUser, hydrateSession: persist }}>
       {children}
     </Ctx.Provider>
   );

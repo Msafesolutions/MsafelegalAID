@@ -514,6 +514,7 @@ CORPUS = [
         "citation": "Right to Information Act 2005, Section 6 — Request for obtaining information",
         "short_label": "RTI 6",
         "act": "RTI",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "(1) A person, who desires to obtain any information under this Act, shall make a "
             "request in writing or through electronic means in English or Hindi or in the official "
@@ -552,6 +553,7 @@ CORPUS = [
         "citation": "Right to Information Act 2005, Section 7 — Disposal of request",
         "short_label": "RTI 7",
         "act": "RTI",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "(1) Subject to the proviso to sub-section (2) of section 5 or the proviso to "
             "sub-section (3) of section 6, the Central Public Information Officer or State Public "
@@ -590,6 +592,7 @@ CORPUS = [
         "citation": "Right to Information Act 2005, Section 19 — Appeal",
         "short_label": "RTI 19",
         "act": "RTI",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "(1) Any person who does not receive a decision within the time specified in "
             "sub-section (1) or clause (a) of sub-section (3) of section 7, or is aggrieved by a "
@@ -621,6 +624,7 @@ CORPUS = [
         "citation": "Right to Information Act 2005, Section 20 — Penalties",
         "short_label": "RTI 20",
         "act": "RTI",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "(1) Where the Central Information Commission or the State Information Commission, "
             "as the case may be, at the time of deciding any complaint or appeal is of the opinion "
@@ -655,6 +659,7 @@ CORPUS = [
         "citation": "Right to Information Act 2005, Section 2 — Definitions",
         "short_label": "RTI 2",
         "act": "RTI",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "In this Act, unless the context otherwise requires,—\n"
             "(f) 'information' means any material in any form, including records, documents, "
@@ -697,6 +702,7 @@ CORPUS = [
         "citation": "Right to Information Act 2005, Section 4 — Obligations of public authorities",
         "short_label": "RTI 4",
         "act": "RTI",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "(1) Every public authority shall—\n"
             "(a) maintain all its records duly catalogued and indexed in a manner and the form "
@@ -742,6 +748,7 @@ CORPUS = [
         "citation": "Right to Information Act 2005, Section 5 — Designation of Public Information Officers",
         "short_label": "RTI 5",
         "act": "RTI",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "(1) Every public authority shall, within one hundred days of the enactment of this "
             "Act, designate as many officers as the Central Public Information Officers or State "
@@ -780,6 +787,7 @@ CORPUS = [
         "citation": "Right to Information Act 2005, Section 8 — Exemption from disclosure of information",
         "short_label": "RTI 8",
         "act": "RTI",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "(1) Notwithstanding anything contained in this Act, there shall be no obligation to "
             "give any citizen,—\n"
@@ -844,6 +852,7 @@ CORPUS = [
         "citation": "Right to Information Act 2005, Section 18 — Powers and functions of Information Commissions",
         "short_label": "RTI 18",
         "act": "RTI",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "(1) Subject to the provisions of this Act, it shall be the duty of the Central "
             "Information Commission or State Information Commission, as the case may be, to "
@@ -1203,6 +1212,7 @@ CORPUS = [
     },
     {
         "key": "mv_194d",
+        "require_any": ["helmet", "headgear", "two wheeler", "twowheeler", "bike", "scooter", "motor cycle", "motorcycle", "pillion", "194d"],
         "citation": "Motor Vehicles Act 1988, Section 194D — Penalty for not wearing protective headgear",
         "short_label": "MV 194D",
         "act": "MV",
@@ -1227,6 +1237,7 @@ CORPUS = [
     },
     {
         "key": "mv_194c",
+        "require_any": ["triple", "three", "pillion", "two wheeler", "bike", "scooter", "motor cycle", "motorcycle", "overload", "194c"],
         "citation": "Motor Vehicles Act 1988, Section 194C — Penalty for violation of safety measures for motor cycle drivers and pillion riders",
         "short_label": "MV 194C",
         "act": "MV",
@@ -1492,6 +1503,7 @@ CORPUS = [
         "citation": "Right to Information Rules 2012, Rule 3 — Application fee",
         "short_label": "RTI Rule 3",
         "act": "RTIR",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "An application under sub-section (1) of section 6 of the Act shall be accompanied "
             "by a fee of rupees ten and shall ordinarily not contain more than five hundred words, "
@@ -1517,6 +1529,7 @@ CORPUS = [
         "citation": "Right to Information Rules 2012, Rule 4 — Fees for providing information",
         "short_label": "RTI Rule 4",
         "act": "RTIR",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "Fee for providing information under sub-section (4) of section 4 and sub-sections (1) "
             "and (5) of section 7 of the Act shall be charged at the following rates, namely:—\n"
@@ -1547,6 +1560,7 @@ CORPUS = [
         "citation": "Right to Information Rules 2012, Rule 5 — Exemption from payment of fee",
         "short_label": "RTI Rule 5",
         "act": "RTIR",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "No fee under rule 3 and rule 4 shall be charged from any person who is below poverty "
             "line provided a copy of the certificate issued by the appropriate Government in this "
@@ -1569,6 +1583,7 @@ CORPUS = [
         "citation": "Right to Information Rules 2012, Rule 6 — Appeal to the First Appellate Authority",
         "short_label": "RTI Rule 6",
         "act": "RTIR",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "A person aggrieved by the decision of the Central Public Information Officer, or "
             "otherwise for not receiving the information within the time specified in the Act, may "
@@ -1594,6 +1609,7 @@ CORPUS = [
         "citation": "Right to Information Rules 2012, Rule 8 — Disposal of appeal",
         "short_label": "RTI Rule 8",
         "act": "RTIR",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "The First Appellate Authority shall dispose of the appeal within a period of thirty "
             "days from the date of its receipt, or within such extended period not exceeding a "
@@ -1618,6 +1634,7 @@ CORPUS = [
         "citation": "Right to Information Rules 2012, Rule 9 — Personal presence of the appellant before the First Appellate Authority",
         "short_label": "RTI Rule 9",
         "act": "RTIR",
+        "require_any": ["rti", "information", "pio", "public authority"],
         "official_text": (
             "The appellant may at his discretion be present in person or through a duly authorized "
             "representative or through video conferencing, if the facility of video conferencing is "
@@ -1947,6 +1964,21 @@ from corpus_ipc import IPC_CRPC_CORPUS  # noqa: E402
 
 CORPUS.extend(IPC_CRPC_CORPUS)
 
+# Cheque bounce (Negotiable Instruments Act) and cyber fraud (IT Act + BNS
+# cheating sections + the official reporting pathways) — the two biggest
+# refusal buckets in the A4 analytics, so they live in their own modules.
+from corpus_ni import NI_CORPUS  # noqa: E402
+from corpus_cyber import CYBER_CORPUS  # noqa: E402
+
+CORPUS.extend(NI_CORPUS)
+CORPUS.extend(CYBER_CORPUS)
+
+# Wages, termination and gratuity under the four Labour Codes (in force since
+# 21 November 2025) — the `wage_labour` refusal bucket.
+from corpus_labour import LABOUR_CORPUS  # noqa: E402
+
+CORPUS.extend(LABOUR_CORPUS)
+
 # Non-Indian jurisdictions — trap-question refusal helper
 NON_INDIAN_JURISDICTION_KEYWORDS = [
     "texas", "california", "florida", "new york state", "uk law", "united kingdom law",
@@ -2036,7 +2068,10 @@ def _token_weight(tok: str) -> int:
     return 1          # appears everywhere — weak signal
 
 
-RETRIEVAL_MIN_SCORE = 3
+# 4, not 3: a single moderately-common token (weight 3) matching is not enough
+# evidence on its own — that is what put an unrelated 'notice of appearance'
+# section on top of a landlord-eviction question.
+RETRIEVAL_MIN_SCORE = 4
 
 
 def _score_all(question: str) -> list[tuple[int, dict]]:
@@ -2051,6 +2086,9 @@ def _score_all(question: str) -> list[tuple[int, dict]]:
 
     scored: list[tuple[int, dict]] = []
     for item in CORPUS:
+        req = item.get("require_any")
+        if req and not any(_norm(r) in q_norm for r in req):
+            continue
         score = 0
         # (a) short label match — strongest signal
         if _norm(item["short_label"]) in q_norm:
@@ -2098,7 +2136,15 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
     enough on its own.
     """
     scored = [(s, it) for s, it in _score_all(question) if s >= RETRIEVAL_MIN_SCORE]
-    return [item for _, item in scored[:limit]]
+    if not scored:
+        return []
+    # Relative cutoff. A clear winner used to drag along weakly-related entries
+    # (e.g. a cheque-bounce question also returned an RTI reply-deadline chip
+    # because both mention "notice" and "30 days"). Anything scoring less than
+    # half the best hit is noise and, worse, looks authoritative in the UI.
+    top = scored[0][0]
+    floor = max(RETRIEVAL_MIN_SCORE, top * 0.5)
+    return [item for s, item in scored[:limit] if s >= floor]
 
 
 def top_candidate_debug(question: str) -> dict:
@@ -2204,7 +2250,76 @@ def public_citation(item: dict) -> dict:
         "official_text": item["official_text"],
         "source_url": item["source_url"],
         "verified_at": item["verified_at"],
+        # Present only on state entries and on entries whose official_text is a
+        # faithful summary rather than a word-for-word quote. The UI labels these
+        # honestly so a user is never told a summary is a verbatim quote.
+        "text_kind": item.get("text_kind", "verbatim"),
+        "state": item.get("state"),
     }
+
+
+# ---------------------------------------------------------------------------
+# State / UT layer. Central law answers only half of a rent, liquor, traffic
+# compounding or stamp duty question — the rest is state law. We score the
+# state corpus with the SAME algorithm, but only against entries belonging to
+# the user's state, and we never fall back to another state's rules.
+# ---------------------------------------------------------------------------
+from corpus_state import STATE_CORPUS, STATE_SENSITIVE_TOPICS  # noqa: E402
+
+
+def _score_items(question: str, items: list) -> list[tuple[int, dict]]:
+    q_norm = _norm(question)
+    if not q_norm:
+        return []
+    q_tokens = _tokens(question) - _STOP
+    scored: list[tuple[int, dict]] = []
+    for item in items:
+        req = item.get("require_any")
+        if req and not any(_norm(r) in q_norm for r in req):
+            continue
+        score = 0
+        if _norm(item["short_label"]) in q_norm:
+            score += 12
+        kw_tokens: set = set()
+        for kw in item["keywords"]:
+            kw_norm = _norm(kw)
+            if " " in kw_norm and kw_norm in q_norm:
+                score += 6
+            kw_tokens |= _tokens(kw)
+        kw_tokens -= _STOP
+        for t in kw_tokens & q_tokens:
+            if t.isdigit():
+                continue
+            score += _token_weight(t)
+        if score > 0:
+            scored.append((score, item))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored
+
+
+def retrieve_state(question: str, state: str, limit: int = 2) -> list[dict]:
+    """Verified rules that apply ONLY inside the user's state / UT."""
+    code = (state or "").upper()
+    if not code:
+        return []
+    items = [it for it in STATE_CORPUS if it.get("state") == code]
+    if not items:
+        return []
+    scored = [(s, it) for s, it in _score_items(question, items) if s >= RETRIEVAL_MIN_SCORE]
+    return [it for _, it in scored[:limit]]
+
+
+def state_sensitive_topic(question: str):
+    """If the question is on a subject where STATE law decides the answer,
+    return {"topic", "label", "authority"}. Used to tell the user honestly that
+    the local rule matters — never to invent a local rule."""
+    q = _norm(question)
+    for topic, meta in STATE_SENSITIVE_TOPICS.items():
+        for kw in meta["keywords"]:
+            k = _norm(kw)
+            if k and k in q:
+                return {"topic": topic, "label": meta["label"], "authority": meta["authority"]}
+    return None
 
 
 REFUSAL_NO_CORPUS = (
@@ -2338,6 +2453,18 @@ _CITATION_LEAK_PATTERNS = [
     (_re.compile(r"\bConsumer\s+Protection\s+\(E[- ]?Commerce\)\s+Rules(?:,?\s*\d{4})?\b"), "the rules"),
     (_re.compile(r"\bMotor\s+Vehicles\s+Act(?:,?\s*\d{4})?\b"), "the law"),
     (_re.compile(r"\bCentral\s+Motor\s+Vehicles\s+Rules(?:,?\s*\d{4})?\b"), "the rules"),
+    (_re.compile(r"\bNegotiable\s+Instruments\s+Act(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\bInformation\s+Technology\s+Act(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\b(?:NI|IT)\s+[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?(?![A-Za-z0-9])"), "the law"),
+    (_re.compile(r"\b[Ss]ec(?:tion|\.)?\s+\d+[A-Z]?(?:\(\d+\))?\s+(?:of\s+)?(?:NI|IT)(?![A-Za-z0-9])"), "the law"),
+    (_re.compile(r"\bRent\s+Control\s+Act(?:,?\s*\d{4})?\b"), "the state rent law"),
+    (_re.compile(r"\bCode\s+on\s+Wages(?:,?\s*\d{4})?\b"), "the wage law"),
+    (_re.compile(r"\bIndustrial\s+Relations\s+Code(?:,?\s*\d{4})?\b"), "the labour law"),
+    (_re.compile(r"\bCode\s+on\s+Social\s+Security(?:,?\s*\d{4})?\b"), "the social security law"),
+    (_re.compile(r"\bPayment\s+of\s+(?:Wages|Gratuity)\s+Act(?:,?\s*\d{4})?\b"), "the law"),
+    (_re.compile(r"\bIndustrial\s+Disputes\s+Act(?:,?\s*\d{4})?\b"), "the labour law"),
+    (_re.compile(r"\bTenancy\s+Act(?:,?\s*\d{4})?\b"), "the state tenancy law"),
+    (_re.compile(r"\bProhibition\s+(?:and\s+Excise\s+)?Act(?:,?\s*\d{4})?\b"), "the state liquor law"),
 ]
 
 
