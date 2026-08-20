@@ -756,7 +756,18 @@ export default function ChatScreen() {
         Animated.timing(micPulse, { toValue: 1, duration: 600, useNativeDriver: true }),
       ])
     ).start();
-    startRecording();
+    // Guard: startRecording is async and touches native audio / speech modules.
+    // On some Android ROMs a missing native module rejects here — an unhandled
+    // rejection would crash the app, so swallow it and surface a message.
+    try {
+      startRecording()?.catch((err: any) => {
+        setRecording(false);
+        Alert.alert('Mic unavailable', err?.message || 'Could not start recording.');
+      });
+    } catch (err: any) {
+      setRecording(false);
+      Alert.alert('Mic unavailable', err?.message || 'Could not start recording.');
+    }
   }, [startRecording, slideX, micPulse]);
 
   const onMicPressOut = useCallback(() => {
@@ -807,7 +818,7 @@ export default function ChatScreen() {
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: (_: GestureResponderEvent, gs: PanResponderGestureState) => Math.abs(gs.dx) > 5,
     onPanResponderGrant: () => {
-      onMicPressIn();
+      try { onMicPressIn(); } catch (err) { console.warn('mic press-in failed:', err); }
     },
     onPanResponderMove: (_: GestureResponderEvent, gs: PanResponderGestureState) => {
       // Only allow sliding left (negative dx)
@@ -823,10 +834,10 @@ export default function ChatScreen() {
       }
     },
     onPanResponderRelease: () => {
-      onMicPressOut();
+      try { onMicPressOut(); } catch (err) { console.warn('mic release failed:', err); }
     },
     onPanResponderTerminate: () => {
-      onMicPressOut();
+      try { onMicPressOut(); } catch (err) { console.warn('mic terminate failed:', err); }
     },
   }), [onMicPressIn, onMicPressOut, slideX]);
 

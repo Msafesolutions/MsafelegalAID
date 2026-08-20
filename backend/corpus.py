@@ -650,6 +650,248 @@ CORPUS = [
             "wrong rti reply", "false rti reply", "misleading rti",
         ],
     },
+    {
+        "key": "rti_2",
+        "citation": "Right to Information Act 2005, Section 2 — Definitions",
+        "short_label": "RTI 2",
+        "act": "RTI",
+        "official_text": (
+            "In this Act, unless the context otherwise requires,—\n"
+            "(f) 'information' means any material in any form, including records, documents, "
+            "memos, e-mails, opinions, advices, press releases, circulars, orders, logbooks, "
+            "contracts, reports, papers, samples, models, data material held in any electronic "
+            "form and information relating to any private body which can be accessed by a public "
+            "authority under any other law for the time being in force;\n"
+            "(h) 'public authority' means any authority or body or institution of self-government "
+            "established or constituted—(a) by or under the Constitution; (b) by any other law "
+            "made by Parliament; (c) by any other law made by State Legislature; (d) by "
+            "notification issued or order made by the appropriate Government, and includes any—"
+            "(i) body owned, controlled or substantially financed; (ii) non-Government "
+            "organisation substantially financed, directly or indirectly by funds provided by the "
+            "appropriate Government;\n"
+            "(j) 'right to information' means the right to information accessible under this Act "
+            "which is held by or under the control of any public authority and includes the right "
+            "to—(i) inspection of work, documents, records; (ii) taking notes, extracts or "
+            "certified copies of documents or records; (iii) taking certified samples of "
+            "material; (iv) obtaining information in the form of diskettes, floppies, tapes, "
+            "video cassettes or in any other electronic mode or through printouts where such "
+            "information is stored in a computer or in any other device."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1362",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "You can ask for almost any record a government office holds — files, emails, "
+            "contracts, reports, registers, samples, even computer data. You can also inspect "
+            "records or take certified copies. Private bodies are covered when a public "
+            "authority can already access their information."
+        ),
+        "keywords": [
+            "rti 2", "section 2 rti", "what is information rti", "rti definition",
+            "what can i ask rti", "which documents rti", "rti inspection of records",
+            "certified copies rti", "public authority meaning", "is private company rti",
+            "ngo rti", "rti scope", "right to information meaning",
+        ],
+    },
+    {
+        "key": "rti_4",
+        "citation": "Right to Information Act 2005, Section 4 — Obligations of public authorities",
+        "short_label": "RTI 4",
+        "act": "RTI",
+        "official_text": (
+            "(1) Every public authority shall—\n"
+            "(a) maintain all its records duly catalogued and indexed in a manner and the form "
+            "which facilitates the right to information under this Act;\n"
+            "(b) publish within one hundred and twenty days from the enactment of this Act,—"
+            "(i) the particulars of its organisation, functions and duties; (ii) the powers and "
+            "duties of its officers and employees; (iii) the procedure followed in the "
+            "decision-making process, including channels of supervision and accountability; "
+            "(iv) the norms set by it for the discharge of its functions; (v) the rules, "
+            "regulations, instructions, manuals and records held by it or under its control; "
+            "(vi) a statement of the categories of documents that are held by it; (xi) the budget "
+            "allocated to each of its agency; (xii) the manner of execution of subsidy "
+            "programmes, including the amounts allocated and the details of beneficiaries; "
+            "(xiii) particulars of recipients of concessions, permits or authorisations granted "
+            "by it; (xvi) the names, designations and other particulars of the Public Information "
+            "Officers;\n"
+            "(c) publish all relevant facts while formulating important policies or announcing "
+            "the decisions which affect public;\n"
+            "(d) provide reasons for its administrative or quasi-judicial decisions to affected "
+            "persons.\n"
+            "(2) It shall be a constant endeavour of every public authority to take steps to "
+            "provide as much information suo motu to the public at regular intervals through "
+            "various means of communications, including internet, so that the public have minimum "
+            "resort to the use of this Act to obtain information."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1362",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Every government office must publish key information on its own — its structure, "
+            "rules, budget, subsidy beneficiaries, and the name of its Public Information "
+            "Officer. It must also give you REASONS for any decision that affects you. If this "
+            "is missing, you can demand it."
+        ),
+        "keywords": [
+            "rti 4", "section 4 rti", "suo motu disclosure", "proactive disclosure",
+            "government must publish", "who is pio", "find pio name", "pio details",
+            "budget information government", "subsidy beneficiary list",
+            "reasons for decision government", "no reason given order",
+        ],
+    },
+    {
+        "key": "rti_5",
+        "citation": "Right to Information Act 2005, Section 5 — Designation of Public Information Officers",
+        "short_label": "RTI 5",
+        "act": "RTI",
+        "official_text": (
+            "(1) Every public authority shall, within one hundred days of the enactment of this "
+            "Act, designate as many officers as the Central Public Information Officers or State "
+            "Public Information Officers, as the case may be, in all administrative units or "
+            "offices under it as may be necessary to provide information to persons requesting "
+            "for the information under this Act.\n"
+            "(2) Without prejudice to the provisions of sub-section (1), every public authority "
+            "shall designate an officer, within one hundred days of the enactment of this Act, at "
+            "each sub-divisional level or other sub-district level as a Central Assistant Public "
+            "Information Officer or a State Assistant Public Information Officer, as the case may "
+            "be, to receive the applications for information or appeals under this Act for "
+            "forwarding the same forthwith to the Central Public Information Officer or the State "
+            "Public Information Officer.\n"
+            "(3) Every Central Public Information Officer or State Public Information Officer "
+            "shall deal with requests from persons seeking information and render reasonable "
+            "assistance to the persons seeking such information.\n"
+            "(4) The Central Public Information Officer or State Public Information Officer, as "
+            "the case may be, may seek the assistance of any other officer as he or she considers "
+            "it necessary for the proper discharge of his or her duties."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1362",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Every office must have a Public Information Officer (PIO), and every sub-division "
+            "must have an Assistant PIO who is bound to accept your RTI and forward it. The PIO "
+            "must also HELP you frame your request — including helping people who cannot write."
+        ),
+        "keywords": [
+            "rti 5", "section 5 rti", "assistant public information officer", "apio",
+            "where to submit rti", "who accepts rti", "rti help writing", "pio duty assist",
+            "office refused to accept rti", "rti not accepted counter",
+        ],
+    },
+    {
+        "key": "rti_8",
+        "citation": "Right to Information Act 2005, Section 8 — Exemption from disclosure of information",
+        "short_label": "RTI 8",
+        "act": "RTI",
+        "official_text": (
+            "(1) Notwithstanding anything contained in this Act, there shall be no obligation to "
+            "give any citizen,—\n"
+            "(a) information, disclosure of which would prejudicially affect the sovereignty and "
+            "integrity of India, the security, strategic, scientific or economic interests of the "
+            "State, relation with foreign State or lead to incitement of an offence;\n"
+            "(b) information which has been expressly forbidden to be published by any court of "
+            "law or tribunal or the disclosure of which may constitute contempt of court;\n"
+            "(c) information, the disclosure of which would cause a breach of privilege of "
+            "Parliament or the State Legislature;\n"
+            "(d) information including commercial confidence, trade secrets or intellectual "
+            "property, the disclosure of which would harm the competitive position of a third "
+            "party, unless the competent authority is satisfied that larger public interest "
+            "warrants the disclosure of such information;\n"
+            "(e) information available to a person in his fiduciary relationship, unless the "
+            "competent authority is satisfied that the larger public interest warrants the "
+            "disclosure of such information;\n"
+            "(f) information received in confidence from foreign Government;\n"
+            "(g) information, the disclosure of which would endanger the life or physical safety "
+            "of any person or identify the source of information or assistance given in "
+            "confidence for law enforcement or security purposes;\n"
+            "(h) information which would impede the process of investigation or apprehension or "
+            "prosecution of offenders;\n"
+            "(i) cabinet papers including records of deliberations of the Council of Ministers, "
+            "Secretaries and other officers:\n"
+            "Provided that the decisions of Council of Ministers, the reasons thereof, and the "
+            "material on the basis of which the decisions were taken shall be made public after "
+            "the decision has been taken, and the matter is complete, or over;\n"
+            "(j) information which relates to personal information the disclosure of which has no "
+            "relationship to any public activity or interest, or which would cause unwarranted "
+            "invasion of the privacy of the individual unless the Central Public Information "
+            "Officer or the State Public Information Officer or the appellate authority, as the "
+            "case may be, is satisfied that the larger public interest justifies the disclosure "
+            "of such information.\n"
+            "(2) Notwithstanding anything in the Official Secrets Act, 1923 nor any of the "
+            "exemptions permissible in accordance with sub-section (1), a public authority may "
+            "allow access to information, if public interest in disclosure outweighs the harm to "
+            "the protected interests.\n"
+            "(3) Subject to the provisions of clauses (a), (c) and (i) of sub-section (1), any "
+            "information relating to any occurrence, event or matter which has taken place, "
+            "occurred or happened twenty years before the date on which any request is made under "
+            "section 6 shall be provided to any person making a request under that section."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1362",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Only a short list of information can be refused — national security, court-barred "
+            "matter, trade secrets, ongoing investigation, cabinet papers before a decision, or "
+            "purely personal details. Even then, the office CAN disclose if public interest is "
+            "bigger. Records older than 20 years must normally be given."
+        ),
+        "keywords": [
+            "rti 8", "section 8 rti", "rti rejected", "rti refused reason",
+            "rti exemption", "exempt information rti", "third party information rti",
+            "personal information rti", "privacy rti refusal", "investigation rti refusal",
+            "cabinet papers rti", "20 years old records rti", "public interest override rti",
+            "my rti was denied", "pio said exempt",
+        ],
+    },
+    {
+        "key": "rti_18",
+        "citation": "Right to Information Act 2005, Section 18 — Powers and functions of Information Commissions",
+        "short_label": "RTI 18",
+        "act": "RTI",
+        "official_text": (
+            "(1) Subject to the provisions of this Act, it shall be the duty of the Central "
+            "Information Commission or State Information Commission, as the case may be, to "
+            "receive and inquire into a complaint from any person,—\n"
+            "(a) who has been unable to submit a request to a Central Public Information Officer "
+            "or State Public Information Officer, as the case may be, either by reason that no "
+            "such officer has been appointed under this Act, or because the Central Assistant "
+            "Public Information Officer or the State Assistant Public Information Officer, as the "
+            "case may be, has refused to accept his or her application for information or appeal "
+            "under this Act for forwarding the same to the Central Public Information Officer or "
+            "State Public Information Officer;\n"
+            "(b) who has been refused access to any information requested under this Act;\n"
+            "(c) who has not been given a response to a request for information or access to "
+            "information within the time limit specified under this Act;\n"
+            "(d) who has been required to pay an amount of fee which he or she considers "
+            "unreasonable;\n"
+            "(e) who believes that he or she has been given incomplete, misleading or false "
+            "information under this Act; and\n"
+            "(f) in respect of any other matter relating to requesting or obtaining access to "
+            "records under this Act.\n"
+            "(2) Where the Central Information Commission or State Information Commission, as the "
+            "case may be, is satisfied that there are reasonable grounds to inquire into the "
+            "matter, it may initiate an inquiry in respect thereof.\n"
+            "(3) The Central Information Commission or State Information Commission, as the case "
+            "may be, shall, while inquiring into any matter under this section, have the same "
+            "powers as are vested in a civil court while trying a suit under the Code of Civil "
+            "Procedure, 1908, in respect of the following matters, namely:—(a) summoning and "
+            "enforcing the attendance of persons and compelling them to give oral or written "
+            "evidence on oath and to produce the documents or things; (b) requiring the discovery "
+            "and inspection of documents; (c) receiving evidence on affidavit; (d) requisitioning "
+            "any public record or copies thereof from any court or office; (e) issuing summons for "
+            "examination of witnesses or documents."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1362",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "If the office refused to accept your RTI, ignored it, charged an unfair fee, or gave "
+            "false / incomplete information, you can COMPLAIN directly to the Information "
+            "Commission. The Commission has civil-court powers — it can summon the officer and "
+            "demand the files."
+        ),
+        "keywords": [
+            "rti 18", "section 18 rti", "rti complaint commission",
+            "complaint information commission", "cic complaint", "sic complaint",
+            "rti ignored no reply", "rti fee too high", "rti false information complaint",
+            "no pio appointed", "rti application not accepted complaint",
+        ],
+    },
     # -------------------- Consumer Protection Act 2019 --------------------
     {
         "key": "cpa_2_7",
@@ -957,6 +1199,291 @@ CORPUS = [
             "mv 194b", "section 194b motor vehicles", "seat belt", "seatbelt",
             "seat belt fine", "seat belt law", "child seat", "child restraint",
             "back seat belt", "passenger seat belt", "seat belt mandatory",
+        ],
+    },
+    {
+        "key": "mv_194d",
+        "citation": "Motor Vehicles Act 1988, Section 194D — Penalty for not wearing protective headgear",
+        "short_label": "MV 194D",
+        "act": "MV",
+        "official_text": (
+            "Whoever drives a motor cycle without wearing a protective headgear in contravention "
+            "of section 129 or the rules or regulations made thereunder shall be punishable with "
+            "a fine of one thousand rupees and he shall be disqualified for holding licence for a "
+            "period of three months."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Riding a two-wheeler without a helmet costs ₹1,000 AND your driving licence can be "
+            "suspended for 3 months. This is the penalty section that goes with the helmet rule."
+        ),
+        "keywords": [
+            "mv 194d", "section 194d motor vehicles", "helmet fine", "helmet penalty",
+            "helmet challan", "no helmet fine", "helmet fine amount", "fine for not wearing helmet",
+            "helmet 1000 rupees", "licence suspended helmet", "helmet dl suspension",
+            "without helmet punishment", "helmet violation penalty", "riding without helmet",
+        ],
+    },
+    {
+        "key": "mv_194c",
+        "citation": "Motor Vehicles Act 1988, Section 194C — Penalty for violation of safety measures for motor cycle drivers and pillion riders",
+        "short_label": "MV 194C",
+        "act": "MV",
+        "official_text": (
+            "Whoever drives a motor cycle or causes or allows a motor cycle to be driven in "
+            "contravention of the provisions of section 128 or the rules or regulations made "
+            "thereunder shall be punishable with a fine of one thousand rupees and he shall be "
+            "disqualified for holding licence for a period of three months."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "A two-wheeler may carry only ONE pillion rider. Triple riding is a ₹1,000 fine plus "
+            "3-month suspension of the driving licence."
+        ),
+        "keywords": [
+            "mv 194c", "section 194c motor vehicles", "triple riding", "triple seat",
+            "three on bike", "three people bike fine", "pillion rider rule",
+            "two wheeler overloading", "more than two on scooter",
+        ],
+    },
+    {
+        "key": "mv_177",
+        "citation": "Motor Vehicles Act 1988, Section 177 — General provision for punishment of offences",
+        "short_label": "MV 177",
+        "act": "MV",
+        "official_text": (
+            "Whoever contravenes any provision of this Act or of any rule, regulation or "
+            "notification made thereunder shall, if no penalty is provided for the offence, be "
+            "punishable for the first offence with fine of five hundred rupees, and for any "
+            "second or subsequent offence with fine of one thousand five hundred rupees."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "For any traffic rule breach that has no specific fine written for it, the general "
+            "fine is ₹500 the first time and ₹1,500 for repeat offences."
+        ),
+        "keywords": [
+            "mv 177", "section 177 motor vehicles", "general traffic fine",
+            "minor traffic violation fine", "500 rupees challan", "traffic rule fine general",
+            "no specific penalty traffic",
+        ],
+    },
+    {
+        "key": "mv_181",
+        "citation": "Motor Vehicles Act 1988, Section 181 — Driving vehicles in contravention of section 3 or section 4",
+        "short_label": "MV 181",
+        "act": "MV",
+        "official_text": (
+            "Whoever drives a motor vehicle in contravention of section 3 or section 4 shall be "
+            "punishable with imprisonment for a term which may extend to three months, or with "
+            "fine of five thousand rupees, or with both."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Driving without a valid driving licence, or while under the legal age, can mean up "
+            "to 3 months in jail or a ₹5,000 fine, or both."
+        ),
+        "keywords": [
+            "mv 181", "section 181 motor vehicles", "driving without licence",
+            "no driving licence fine", "driving without dl", "underage driving",
+            "minor driving fine", "learner licence violation", "expired licence driving",
+            "caught without licence",
+        ],
+    },
+    {
+        "key": "mv_180",
+        "citation": "Motor Vehicles Act 1988, Section 180 — Allowing unauthorised person to drive vehicle",
+        "short_label": "MV 180",
+        "act": "MV",
+        "official_text": (
+            "Whoever, being the owner or person in charge of a motor vehicle, causes or permits "
+            "any other person who does not satisfy the provisions of section 3 or section 4 to "
+            "drive the vehicle shall be punishable with imprisonment for a term which may extend "
+            "to three months, or with fine of five thousand rupees, or with both."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "If you hand your vehicle to someone without a valid licence — including your child — "
+            "YOU as the owner can face up to 3 months jail or a ₹5,000 fine, or both."
+        ),
+        "keywords": [
+            "mv 180", "section 180 motor vehicles", "gave bike to friend without licence",
+            "owner liability driving", "allowing unlicensed driver", "lending vehicle fine",
+            "son driving my car", "vehicle owner punishment",
+        ],
+    },
+    {
+        "key": "mv_183",
+        "citation": "Motor Vehicles Act 1988, Section 183 — Driving at excessive speed",
+        "short_label": "MV 183",
+        "act": "MV",
+        "official_text": (
+            "(1) Whoever drives a motor vehicle in contravention of the speed limits referred to "
+            "in section 112 shall be punishable with a fine of one thousand rupees for light "
+            "motor vehicle, two thousand rupees for medium passenger vehicle or medium goods "
+            "vehicle or heavy passenger vehicle or heavy goods vehicle and for the second or any "
+            "subsequent offence under this sub-section, the driving licence shall be impounded as "
+            "per the provisions of sub-section (4) of section 206.\n"
+            "(2) Whoever, being the employer or person in charge of a motor vehicle, causes or "
+            "permits the driver of such motor vehicle to drive at a speed exceeding the speed "
+            "limits referred to in section 112 shall be punishable with a fine of one thousand "
+            "rupees for light motor vehicle, two thousand rupees for medium passenger vehicle or "
+            "medium goods vehicle or heavy passenger vehicle or heavy goods vehicle."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Over-speeding costs ₹1,000 for a car or two-wheeler and ₹2,000 for bigger vehicles. "
+            "A second over-speeding offence lets police impound your driving licence."
+        ),
+        "keywords": [
+            "mv 183", "section 183 motor vehicles", "over speeding", "overspeeding fine",
+            "speed limit fine", "speeding challan", "speed camera fine", "speeding penalty",
+        ],
+    },
+    {
+        "key": "mv_184",
+        "citation": "Motor Vehicles Act 1988, Section 184 — Driving dangerously",
+        "short_label": "MV 184",
+        "act": "MV",
+        "official_text": (
+            "Whoever drives a motor vehicle at a speed or in a manner which is dangerous to the "
+            "public, or which causes a sense of alarm or distress to the occupants of the "
+            "vehicle, other road users, and persons near roads, having regard to all the "
+            "circumstances of the case including the nature, condition and use of the place where "
+            "the vehicle is driven and the amount of traffic which actually is at the time or "
+            "which might reasonably be expected to be in the place, shall be punishable for the "
+            "first offence with imprisonment for a term which may extend to one year but shall "
+            "not be less than six months or with a fine which shall not be less than one thousand "
+            "rupees but may extend to five thousand rupees, or with both, and for any second or "
+            "subsequent offence, if committed within three years of the commission of the previous "
+            "similar offence, with imprisonment for a term which may extend to two years, or with "
+            "a fine of ten thousand rupees, or with both.\n"
+            "Explanation.—For the purpose of this section,—\n"
+            "(a) jumping a red light;\n"
+            "(b) violating a stop sign;\n"
+            "(c) use of handheld communications devices while driving;\n"
+            "(d) passing or overtaking other vehicles in a manner contrary to law;\n"
+            "(e) driving against the authorised flow of traffic;\n"
+            "(f) driving in any manner that falls far below what would be expected of a competent "
+            "and careful driver and where it would be obvious to a competent and careful driver "
+            "that driving in that manner would be dangerous,\n"
+            "shall amount to driving in such manner which is dangerous to the public."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Jumping a red light, using a phone while driving, wrong-side driving or rash "
+            "overtaking counts as DANGEROUS driving — 6 months to 1 year jail and ₹1,000–₹5,000 "
+            "fine for a first offence, and up to 2 years jail or ₹10,000 for a repeat within 3 "
+            "years."
+        ),
+        "keywords": [
+            "mv 184", "section 184 motor vehicles", "dangerous driving", "rash driving",
+            "red light jump", "signal jump fine", "mobile phone while driving",
+            "phone driving fine", "wrong side driving", "wrong side fine",
+            "reckless driving", "overtaking fine", "stop sign violation",
+        ],
+    },
+    {
+        "key": "mv_196",
+        "citation": "Motor Vehicles Act 1988, Section 196 — Driving uninsured vehicle",
+        "short_label": "MV 196",
+        "act": "MV",
+        "official_text": (
+            "Whoever drives a motor vehicle or causes or allows a motor vehicle to be driven in "
+            "contravention of the provisions of section 146 shall be punishable with imprisonment "
+            "for a term which may extend to three months, or with fine of two thousand rupees, or "
+            "with both; and for a subsequent offence, with imprisonment for a term which may "
+            "extend to three months, or with fine of four thousand rupees, or with both."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Third-party insurance is compulsory. Driving without valid insurance is a ₹2,000 "
+            "fine (₹4,000 for a repeat) and can also mean up to 3 months jail."
+        ),
+        "keywords": [
+            "mv 196", "section 196 motor vehicles", "no insurance fine",
+            "driving without insurance", "insurance expired vehicle", "third party insurance",
+            "uninsured vehicle penalty", "insurance challan",
+        ],
+    },
+    {
+        "key": "mv_199a",
+        "citation": "Motor Vehicles Act 1988, Section 199A — Offences by juveniles",
+        "short_label": "MV 199A",
+        "act": "MV",
+        "official_text": (
+            "(1) Where an offence under this Act has been committed by a juvenile, the guardian "
+            "of such juvenile or the owner of the motor vehicle shall be deemed to be guilty of "
+            "the contravention and shall be liable to be proceeded against and punished "
+            "accordingly:\n"
+            "Provided that nothing in this sub-section shall render such guardian or owner liable "
+            "to any punishment provided in this Act, if he proves that—(a) he had exercised all "
+            "due and reasonable diligence to prevent the commission of such offence; or (b) the "
+            "offence was committed without his knowledge or that the juvenile had committed the "
+            "offence by taking the motor vehicle without his consent.\n"
+            "(2) The guardian or the owner referred to in sub-section (1) shall be punishable with "
+            "imprisonment for a term which may extend to three years and with a fine of "
+            "twenty-five thousand rupees.\n"
+            "(3) The registration of the motor vehicle used in the commission of the offence by "
+            "the juvenile shall be cancelled for a period of twelve months.\n"
+            "(4) The juvenile who has committed the offence shall not be eligible to be granted a "
+            "driving licence under section 9 or a learner's licence under section 8 until he has "
+            "attained the age of twenty-five years."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "If a minor is caught driving, the PARENT or vehicle owner is punished — up to 3 "
+            "years jail and ₹25,000 fine, the vehicle's registration is cancelled for 12 months, "
+            "and the minor cannot get a licence until age 25."
+        ),
+        "keywords": [
+            "mv 199a", "section 199a motor vehicles", "minor driving", "juvenile driving",
+            "underage driving punishment", "child driving car", "parent liable minor driving",
+            "school student driving bike", "minor caught driving fine",
+        ],
+    },
+    {
+        "key": "mv_130",
+        "citation": "Motor Vehicles Act 1988, Section 130 — Duty to produce licence and certificate of registration",
+        "short_label": "MV 130",
+        "act": "MV",
+        "official_text": (
+            "(1) The driver of a motor vehicle in any public place shall, on demand by any police "
+            "officer in uniform, produce his licence for examination:\n"
+            "Provided that the driver may, if his licence has been submitted to, or has been "
+            "seized by, any officer or authority under this or any other Act, produce in lieu of "
+            "the licence a receipt or other acknowledgement issued by such officer or authority "
+            "in respect thereof and thereafter produce the licence within such period, in such "
+            "manner as the Central Government may prescribe to the police officer making the "
+            "demand.\n"
+            "(2) The conductor, if any, of a stage carriage shall, on demand by any police officer "
+            "in uniform, produce for examination his licence.\n"
+            "(3) The driver of a motor vehicle in any public place shall, on demand by any police "
+            "officer in uniform, produce the certificate of insurance of the vehicle, and if "
+            "the vehicle is a transport vehicle, the certificate of fitness, the certificate of "
+            "registration and the permit, or such other documents as may be prescribed."
+        ),
+        "source_url": "https://www.indiacode.nic.in/handle/123456789/1798",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Only a police officer IN UNIFORM can demand your licence, insurance and "
+            "registration. If your licence was already seized, the receipt is enough. Digital "
+            "documents on DigiLocker or mParivahan are legally valid."
+        ),
+        "keywords": [
+            "mv 130", "section 130 motor vehicles", "produce documents traffic police",
+            "police asked licence", "show rc insurance", "digilocker documents valid",
+            "mparivahan documents", "which documents to carry driving",
+            "traffic police document check",
         ],
     },
     # -------------------- RTI Rules 2012 (Central) --------------------

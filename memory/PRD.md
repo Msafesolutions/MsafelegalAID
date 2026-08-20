@@ -85,3 +85,28 @@ Most Indians (and even many officials) don't know the Bharatiya Nyaya Sanhita (B
 - A browser-accessible web version of Dhara for the MSafe website must be built as
   a separate Emergent Full Stack (web) project — Expo mobile deploys only ship the
   QR/landing link and store builds.
+
+## Build 17 (June 2026) — direct build command (no tests run, per user)
+- **Mic**: `expo-speech-recognition` pinned to `3.1.3` in `package.json`; `yarn.lock`
+  already matched; stale `package-lock.json` entry (bogus `56.0.1`) corrected to
+  `3.1.3` with the right tarball + integrity so npm-based builds can't pull a
+  different native module. Added crash guards: `startRecording()` promise rejection
+  is caught in `onMicPressIn`, and all PanResponder mic callbacks are try/catch wrapped.
+- **Corpus (Motor Vehicles Act 1988, amended 2019)** — 10 new verbatim sections:
+  194D (no-helmet ₹1,000 + 3-month DL suspension), 194C (triple riding), 177
+  (general penalty), 181 (no licence), 180 (owner permitting unlicensed driver),
+  183 (over-speeding), 184 (dangerous driving: red light, phone, wrong side),
+  196 (no insurance), 199A (juvenile offences — guardian liable), 130 (documents
+  on demand by uniformed officer).
+- **Corpus (RTI Act 2005)** — 5 new verbatim sections: 2 (definitions/scope),
+  4 (proactive disclosure + reasons for decisions), 5 (PIO/APIO designation),
+  8 (exemptions + public-interest override + 20-year rule), 18 (complaint to the
+  Information Commission). Corpus total now 102 entries; retrieval verified for
+  helmet fine, minor driving, red light, insurance, RTI refusal/complaint queries.
+- **Branding**: theme switched to Royal Blue + Gold — `brand/brandPrimary #12328C`,
+  `brandSecondary #9A6E00` (gold, WCAG-safe with white text), `brandTertiary #1B4BB8`,
+  plus `gold #D4AF37` / `goldSoft #F5E3A3` tokens. `app.json` splash + adaptive-icon
+  background updated to `#12328C`. All screens read from the theme, so the palette
+  is consistent app-wide.
+- **Cleanup**: removed the "Claude Sonnet 4.5" model name from the user-facing
+  Pro comparison row (now "Priority AI responses").

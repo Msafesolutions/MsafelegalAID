@@ -228,7 +228,7 @@ export default function Upgrade() {
           <CompareRow label="Draft complaint / RTI / notice paragraphs" pro />
           <CompareRow label="Step-by-step action plans with jurisdiction" pro />
           <CompareRow label="Counter-arguments & escalation paths" pro />
-          <CompareRow label="Priority Claude Sonnet 4.5 responses" pro />
+          <CompareRow label="Priority AI responses" pro />
         </View>
 
         <View style={styles.disclaimerBox}>
