@@ -39,3 +39,49 @@ Most Indians (and even many officials) don't know the Bharatiya Nyaya Sanhita (B
 - Phase 3: Paid tier — lawyer connect, document drafting (RTI, complaint letters, cease-and-desist), notarized FIR templates
 - Phase 4: Emergency mode — one-tap "record rights during police stop" with automatic legal narration and NALSA alert
 - Phase 5: White-label API for NGOs, panchayats, government helplines
+
+---
+
+## June 2026 — Corpus expansion, SOS reposition, security hardening
+
+### Corpus
+- Added `/app/backend/corpus_ipc.py`: 26 IPC 1860 sections + 16 CrPC 1973 sections,
+  verbatim, each with a BNS/BNSS mapping note (old codes still govern all matters
+  arising before 1 July 2024). Appended to `CORPUS` at import. Total = 87 entries
+  (Constitution, BNS, BNSS, IPC, CrPC, MV Act, CMVR, RTI Act + Rules, Consumer
+  Protection Act + E-Comm Rules, PWDVA).
+- Retrieval ranking rewritten in `corpus.py`: label hit 12, phrase hit 6, and
+  IDF-style token weights (rare token 4 → common token 1), min score 3, plus an
+  expanded stop-word list. Fixes wrong-section ranking (e.g. "driving without
+  helmet" now returns MV 129, previously BNSS 35).
+
+### UI
+- SOS is no longer a floating FAB in the root layout (it overlapped the chat mic).
+  It is now a compact red SOS chip in the Chat header + the existing dialable
+  Emergency Helplines card in Settings.
+
+### Security (post-audit fixes)
+- **Payments fail closed.** Removed the Razorpay "trust the pasted payment id"
+  fallback; `submit-payment-id` returns 503 without server keys. Stripe and
+  Razorpay webhooks now REQUIRE their signing secret (503 if unset, 400 on bad
+  signature) — previously an unsigned webhook could grant Pro to any user id.
+  `razorpay.enabled` in pricing/config is now `bool(razor_client)`.
+- **Password reset replaced with emailed OTP.** New `mailer.py` (Emergent-managed
+  Resend). `POST /api/auth/forgot-password {email}` emails a 6-digit code (bcrypt
+  hashed at rest, 10-min expiry, single use, 5 wrong-code limit, 60s/3-per-hour
+  send throttle) and always returns a generic response (no account enumeration).
+  `POST /api/auth/reset-password {email, code, new_password}` returns {token,user}.
+  The old email+phone reset (account takeover risk) is deleted.
+- **Admin export** now requires the `X-Admin-Key` header (was `?key=`, which leaks
+  into logs). `ADMIN_KEY` rotated; compared with `hmac.compare_digest`.
+
+### Known / deferred
+- Paytm payment gateway to replace Razorpay for India — playbook obtained, blocked
+  on user creating a Paytm merchant account (needs PAYTM_MID + PAYTM_MERCHANT_KEY).
+  Paytm/UPI checkout cannot be tested in Expo Go; needs a native build.
+- P3 hardening not done (user deferred): generic API error strings, upload
+  size/type cap on /api/voice/transcribe, SecureStore for the auth token,
+  shorter JWT lifetime with aud/iss.
+- A browser-accessible web version of Dhara for the MSafe website must be built as
+  a separate Emergent Full Stack (web) project — Expo mobile deploys only ship the
+  QR/landing link and store builds.

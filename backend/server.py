@@ -5,6 +5,7 @@ import json
 import uuid
 import hmac
 import hashlib
+import secrets
 import logging
 import bcrypt
 import jwt
@@ -28,6 +29,7 @@ from openai import AsyncOpenAI
 from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
 
 from legal import TERMS_AND_CONDITIONS, TERMS_VERSION, DISCLAIMER_SHORT
+from mailer import send_email, password_reset_otp_email, email_configured
 from corpus import (
     retrieve as corpus_retrieve,
     is_non_indian_jurisdiction,
@@ -95,11 +97,13 @@ class LoginIn(BaseModel):
     password: str
 
 class ForgotPasswordIn(BaseModel):
-    """Identity-verification-based reset — no email/SMS delivery required.
-    User must prove they own the account by matching BOTH email AND registered phone.
-    Rate-limited via in-memory throttle to defeat brute force."""
+    """Step 1 — ask for a one-time code to be emailed to the account address."""
     email: EmailStr
-    phone: str = Field(min_length=6, max_length=20)
+
+class ResetPasswordIn(BaseModel):
+    """Step 2 — prove ownership of the mailbox with the emailed code."""
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=10)
     new_password: str = Field(min_length=6)
 
 class AuthOut(BaseModel):
@@ -316,63 +320,114 @@ async def login(body: LoginIn):
         raise HTTPException(401, "Invalid credentials")
     return {"token": make_token(user["id"]), "user": public_user(user)}
 
-# ---- Password reset via identity verification ----
-# Rate-limit table keyed by email — max 5 failed attempts per hour to defeat brute force
-_FORGOT_ATTEMPTS: dict[str, list[datetime]] = {}
-_FORGOT_MAX = 5
-_FORGOT_WINDOW = timedelta(hours=1)
+# ---- Password reset via emailed one-time code (OTP) ----
+# The old flow accepted an email + registered phone number and immediately issued
+# a JWT. Anyone who knew a user's email and mobile number could take the account
+# over, so it was replaced: the code is delivered to the mailbox on the account,
+# is hashed at rest, expires in 10 minutes, is single-use, and is rate limited.
+OTP_TTL_MINUTES = 10
+OTP_MAX_ATTEMPTS = 5
+_RESET_SENDS: dict[str, list[datetime]] = {}
+_RESET_MAX_SENDS = 3
+_RESET_SEND_WINDOW = timedelta(hours=1)
+_RESET_MIN_GAP = timedelta(seconds=60)
 
-def _prune_attempts(email: str):
-    cutoff = datetime.now(timezone.utc) - _FORGOT_WINDOW
-    _FORGOT_ATTEMPTS[email] = [t for t in _FORGOT_ATTEMPTS.get(email, []) if t > cutoff]
 
-def _normalise_phone(p: str) -> str:
-    """Strip non-digits so '+91 98765 43210' matches '9876543210'."""
-    import re
-    return re.sub(r"\D", "", p or "")
+def _prune_sends(email: str) -> list[datetime]:
+    cutoff = datetime.now(timezone.utc) - _RESET_SEND_WINDOW
+    kept = [t for t in _RESET_SENDS.get(email, []) if t > cutoff]
+    _RESET_SENDS[email] = kept
+    return kept
 
-@api.post("/auth/forgot-password", response_model=AuthOut)
+
+@api.post("/auth/forgot-password")
 async def forgot_password(body: ForgotPasswordIn):
-    """Reset password by proving ownership via email + registered phone match.
-    No email/SMS delivery needed — works offline and at zero cost."""
-    email = body.email.lower()
-    _prune_attempts(email)
-    attempts = _FORGOT_ATTEMPTS.get(email, [])
-    if len(attempts) >= _FORGOT_MAX:
-        raise HTTPException(
-            429,
-            "Too many reset attempts. Please try again in an hour.",
-        )
+    """Step 1 — email a 6-digit one-time code to the address on the account.
+
+    Always returns the same generic response so the endpoint cannot be used to
+    discover which email addresses are registered.
+    """
+    if not email_configured():
+        raise HTTPException(503, "Password reset by email is not configured on this server.")
+
+    email = body.email.lower().strip()
+    now = datetime.now(timezone.utc)
+    sends = _prune_sends(email)
+    if sends and (now - sends[-1]) < _RESET_MIN_GAP:
+        raise HTTPException(429, "Please wait a minute before requesting another code.")
+    if len(sends) >= _RESET_MAX_SENDS:
+        raise HTTPException(429, "Too many reset requests. Please try again in an hour.")
+
+    generic = {
+        "sent": True,
+        "message": "If that email is registered, we've sent a 6-digit code to it. It expires in 10 minutes.",
+        "expires_in_minutes": OTP_TTL_MINUTES,
+    }
 
     user = await db.users.find_one({"email": email})
-    stored_phone = _normalise_phone(user.get("phone", "")) if user else ""
-    submitted_phone = _normalise_phone(body.phone)
-    phone_match = (
-        bool(stored_phone) and bool(submitted_phone) and (
-            stored_phone == submitted_phone
-            or stored_phone.endswith(submitted_phone[-10:]) if len(submitted_phone) >= 10 else False
-            or submitted_phone.endswith(stored_phone[-10:]) if len(stored_phone) >= 10 else False
-        )
-    )
-    if not user or not phone_match:
-        # Log a failed attempt (defeats phone enumeration too — always same error)
-        _FORGOT_ATTEMPTS.setdefault(email, []).append(datetime.now(timezone.utc))
-        raise HTTPException(
-            401,
-            "Email and phone number do not match any account. Please check and try again.",
-        )
+    # Count the request either way so a missing account cannot be probed cheaply.
+    _RESET_SENDS.setdefault(email, []).append(now)
+    if not user:
+        return generic
 
-    # Success — reset password and clear attempts
-    new_hash = hash_pw(body.new_password)
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    await db.password_resets.update_one(
+        {"email": email},
+        {"$set": {
+            "email": email,
+            "user_id": user["id"],
+            "code_hash": hash_pw(code),
+            "expires_at": (now + timedelta(minutes=OTP_TTL_MINUTES)).isoformat(),
+            "attempts": 0,
+            "used": False,
+            "created_at": now.isoformat(),
+        }},
+        upsert=True,
+    )
+
+    subject, html = password_reset_otp_email(
+        name=user.get("name") or "", code=code, minutes=OTP_TTL_MINUTES
+    )
+    # Fail closed: if the mail cannot be delivered, the user must not be told to
+    # go looking for a code that will never arrive.
+    await send_email(to=email, subject=subject, html=html)
+    logger.info(f"password reset code emailed to {email}")
+    return generic
+
+
+@api.post("/auth/reset-password", response_model=AuthOut)
+async def reset_password(body: ResetPasswordIn):
+    """Step 2 — verify the emailed code, set the new password, sign the user in."""
+    email = body.email.lower().strip()
+    now = datetime.now(timezone.utc)
+    rec = await db.password_resets.find_one({"email": email})
+    invalid = HTTPException(400, "That code is not valid or has expired. Please request a new one.")
+    if not rec or rec.get("used"):
+        raise invalid
+    if rec.get("attempts", 0) >= OTP_MAX_ATTEMPTS:
+        raise HTTPException(429, "Too many wrong codes. Please request a new one.")
+    try:
+        expired = datetime.fromisoformat(rec["expires_at"]) < now
+    except Exception:
+        expired = True
+    if expired:
+        await db.password_resets.delete_one({"email": email})
+        raise invalid
+
+    if not check_pw(body.code.strip(), rec["code_hash"]):
+        await db.password_resets.update_one({"email": email}, {"$inc": {"attempts": 1}})
+        raise invalid
+
+    user = await db.users.find_one({"id": rec["user_id"]})
+    if not user:
+        raise invalid
+
     await db.users.update_one(
         {"id": user["id"]},
-        {"$set": {
-            "password_hash": new_hash,
-            "password_reset_at": datetime.now(timezone.utc).isoformat(),
-        }},
+        {"$set": {"password_hash": hash_pw(body.new_password), "password_reset_at": now.isoformat()}},
     )
-    _FORGOT_ATTEMPTS.pop(email, None)
-    # Auto-login the user with the new password
+    await db.password_resets.delete_one({"email": email})
+    _RESET_SENDS.pop(email, None)
     updated = await db.users.find_one({"id": user["id"]})
     return {"token": make_token(user["id"]), "user": public_user(updated)}
 
@@ -867,13 +922,17 @@ async def verify_checkout(payload: dict, user: dict = Depends(current_user)):
 async def stripe_webhook(request: Request):
     payload = await request.body()
     sig = request.headers.get("stripe-signature", "")
+    # Fail closed. Without a configured signing secret ANY caller could POST a
+    # fake "checkout.session.completed" and unlock Pro for any user id, so an
+    # unsigned webhook is never processed.
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.error("stripe webhook rejected: STRIPE_WEBHOOK_SECRET is not configured")
+        raise HTTPException(503, "Webhook not configured")
     try:
-        if STRIPE_WEBHOOK_SECRET:
-            event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
-        else:
-            event = json.loads(payload)  # dev fallback
-    except Exception as e:
-        raise HTTPException(400, f"Invalid webhook: {e}")
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except Exception:
+        logger.warning("stripe webhook rejected: bad signature")
+        raise HTTPException(400, "Invalid webhook signature")
 
     et = event["type"] if isinstance(event, dict) else event.get("type")
     if et == "checkout.session.completed":
@@ -891,7 +950,10 @@ class RazorpayVerifyIn(BaseModel):
 @api.get("/billing/razorpay/config")
 async def razorpay_config():
     return {
-        "enabled": True,
+        # Only advertise the India payment path when the server can actually
+        # verify a payment. Without keys we cannot prove anyone paid, so the
+        # option is hidden rather than granted on trust.
+        "enabled": bool(razor_client),
         "handle": RAZORPAY_ME_HANDLE,
         "link_url": RAZORPAY_ME_URL,
         "key_id_public": RAZORPAY_KEY_ID or None,
@@ -904,12 +966,21 @@ async def razorpay_config():
 
 @api.post("/billing/razorpay/submit-payment-id")
 async def razorpay_submit_payment(body: RazorpayVerifyIn, user: dict = Depends(current_user)):
-    """User pastes the Razorpay Payment ID (pay_xxx) received from Razorpay after paying
-    on the razorpay.me hosted page. If server credentials are configured we verify
-    the payment status & amount via Razorpay API; otherwise we log & optimistically
-    grant Pro (trust-based fallback for the razorpay.me link flow)."""
+    """User pastes the Razorpay Payment ID (pay_xxx) shown after paying.
+
+    FAIL CLOSED: Pro is granted only when Razorpay itself confirms the payment is
+    captured/authorised for at least the Pro price. The old build fell back to
+    trusting the pasted id whenever server keys were missing, which let anyone
+    unlock Pro for free by typing "pay_" followed by anything.
+    """
     if user.get("is_pro"):
         return {"is_pro": True, "already_pro": True}
+
+    if not razor_client:
+        raise HTTPException(
+            503,
+            "Online payment is temporarily unavailable. Please try again later.",
+        )
 
     pid = body.payment_id.strip()
     if not pid.startswith("pay_"):
@@ -930,46 +1001,42 @@ async def razorpay_submit_payment(body: RazorpayVerifyIn, user: dict = Depends(c
     verified = False
     verify_error: Optional[str] = None
 
-    if razor_client:
-        try:
-            payment = razor_client.payment.fetch(pid)
-            intent_doc["razorpay_payment"] = {
-                "status": payment.get("status"),
-                "amount": payment.get("amount"),
-                "currency": payment.get("currency"),
-                "email": payment.get("email"),
-                "contact": payment.get("contact"),
-                "method": payment.get("method"),
-            }
-            status = payment.get("status")
-            amount = int(payment.get("amount") or 0)
-            if status in ("captured", "authorized") and amount >= PRO_PRICE_INR:
-                verified = True
-            else:
-                verify_error = f"Payment status={status}, amount={amount} paise (required {PRO_PRICE_INR})"
-        except Exception as e:
-            logger.exception("razorpay fetch failed")
-            verify_error = str(e)[:200]
+    try:
+        payment = razor_client.payment.fetch(pid)
+        intent_doc["razorpay_payment"] = {
+            "status": payment.get("status"),
+            "amount": payment.get("amount"),
+            "currency": payment.get("currency"),
+            "email": payment.get("email"),
+            "contact": payment.get("contact"),
+            "method": payment.get("method"),
+        }
+        status = payment.get("status")
+        amount = int(payment.get("amount") or 0)
+        if status in ("captured", "authorized") and amount >= PRO_PRICE_INR:
+            verified = True
+        else:
+            verify_error = f"Payment status={status}, amount={amount} paise (required {PRO_PRICE_INR})"
+    except Exception as e:
+        logger.exception("razorpay fetch failed")
+        verify_error = str(e)[:200]
 
     # Duplicate protection: a payment_id should only unlock Pro once
     existing = await db.billing_intents.find_one({"razorpay_payment_id": pid, "status": "paid"})
     if existing and existing.get("user_id") != user["id"]:
         raise HTTPException(400, "This payment has already been used by another account.")
 
-    if verified or not razor_client:
-        # Grant Pro (verified OR trust-based fallback when no server keys)
-        intent_doc["status"] = "paid" if verified else "trust_paid"
+    if verified:
+        intent_doc["status"] = "paid"
         intent_doc["paid_at"] = now
-        if verify_error:
-            intent_doc["verify_error"] = verify_error
         await db.billing_intents.insert_one(intent_doc)
         await _mark_pro(user["id"], provider="razorpay", payment_ref=pid)
-        return {"is_pro": True, "verified": verified, "trust_based": (not razor_client)}
+        return {"is_pro": True, "verified": True}
     else:
         intent_doc["status"] = "verify_failed"
         intent_doc["verify_error"] = verify_error
         await db.billing_intents.insert_one(intent_doc)
-        raise HTTPException(400, f"Could not verify payment: {verify_error}")
+        raise HTTPException(400, "We could not confirm that payment yet. Please try again in a few minutes.")
 
 @app.post("/api/webhooks/razorpay")
 async def razorpay_webhook(request: Request):
@@ -978,14 +1045,19 @@ async def razorpay_webhook(request: Request):
     payload = await request.body()
     sig = request.headers.get("x-razorpay-signature", "")
 
-    if RAZORPAY_WEBHOOK_SECRET:
-        expected = hmac.new(
-            RAZORPAY_WEBHOOK_SECRET.encode(),
-            payload,
-            hashlib.sha256,
-        ).hexdigest()
-        if not hmac.compare_digest(expected, sig):
-            raise HTTPException(400, "Invalid signature")
+    # Fail closed — an unsigned webhook is an unauthenticated "make this user
+    # Pro" endpoint, so it is rejected when no secret is configured.
+    if not RAZORPAY_WEBHOOK_SECRET:
+        logger.error("razorpay webhook rejected: RAZORPAY_WEBHOOK_SECRET is not configured")
+        raise HTTPException(503, "Webhook not configured")
+    expected = hmac.new(
+        RAZORPAY_WEBHOOK_SECRET.encode(),
+        payload,
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        logger.warning("razorpay webhook rejected: bad signature")
+        raise HTTPException(400, "Invalid signature")
 
     try:
         event = json.loads(payload)
@@ -1120,7 +1192,7 @@ async def pricing():
                 "regions": ["Canada", "International"],
             },
             "razorpay": {
-                "enabled": True,
+                "enabled": bool(razor_client),
                 "currency": "INR",
                 "amount_label": PRO_PRICE_LABEL,
                 "regions": ["India"],
@@ -1149,22 +1221,24 @@ async def health():
     }
 
 # ---------- Admin CSV export ----------
-# Simple key-protected read-only export for the app operator. Two endpoints:
-#   GET /api/admin/export/users.csv?key=<ADMIN_KEY>    → user roster
-#   GET /api/admin/export/messages.csv?key=<ADMIN_KEY> → all chat queries with user email
+# Key-protected read-only export for the app operator. The key MUST be sent in
+# the X-Admin-Key header — it used to be a ?key= query parameter, which leaks the
+# secret into access logs, proxy logs and browser history for an endpoint that
+# dumps every user's PII and chat history.
+#   curl -H "X-Admin-Key: $ADMIN_KEY" <API>/api/admin/export/users.csv
 # Password hashes are NEVER exported. Rows are streamed so this handles large tables.
 
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
 
-def _check_admin_key(key: str):
+def _check_admin_key(key: Optional[str]):
     if not ADMIN_KEY:
         raise HTTPException(503, "Admin export is not configured on this server.")
-    if not key or key != ADMIN_KEY:
+    if not key or not hmac.compare_digest(key, ADMIN_KEY):
         raise HTTPException(401, "Invalid admin key.")
 
 @api.get("/admin/export/users.csv")
-async def export_users_csv(key: str = ""):
-    _check_admin_key(key)
+async def export_users_csv(x_admin_key: Optional[str] = Header(None)):
+    _check_admin_key(x_admin_key)
     import csv, io
     from fastapi.responses import StreamingResponse
 
@@ -1201,8 +1275,8 @@ async def export_users_csv(key: str = ""):
     )
 
 @api.get("/admin/export/messages.csv")
-async def export_messages_csv(key: str = ""):
-    _check_admin_key(key)
+async def export_messages_csv(x_admin_key: Optional[str] = Header(None)):
+    _check_admin_key(x_admin_key)
     import csv, io
     from fastapi.responses import StreamingResponse
 
@@ -1263,9 +1337,9 @@ async def export_messages_csv(key: str = ""):
     )
 
 @api.get("/admin/stats")
-async def admin_stats(key: str = ""):
+async def admin_stats(x_admin_key: Optional[str] = Header(None)):
     """Quick JSON overview — total users, pro users, session/message counts."""
-    _check_admin_key(key)
+    _check_admin_key(x_admin_key)
     return {
         "users_total": await db.users.count_documents({}),
         "users_pro": await db.users.count_documents({"is_pro": True}),
