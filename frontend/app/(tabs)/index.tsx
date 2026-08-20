@@ -33,7 +33,6 @@ import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 import { addBookmark } from '@/src/bookmarks';
-import { SOSButton } from '@/src/components/SOSButton';
 
 const CANCEL_THRESHOLD = -80; // px the user must drag left to cancel
 
@@ -982,7 +981,6 @@ export default function ChatScreen() {
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, flexShrink: 1 }}>
-          <SOSButton />
           <Pressable testID="new-chat-button" style={styles.newChatBtn} onPress={startNewChat}>
             <Ionicons name="add" size={16} color={theme.colors.brand} />
             <Text style={styles.newChatText}>New Chat</Text>

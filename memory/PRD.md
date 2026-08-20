@@ -184,3 +184,25 @@ and app-wide) by `meter_llm_use()` in `server.py`:
 - Self-tested with curl (11th question in a day → 429 at exactly the cap; refusal after the
   cap → 200; TTS unaffected by the question bucket). Per the user's directive, no further
   testing-agent or sub-agent runs.
+
+## Iteration 16 — surgical fixes (user cap: 35 ECU)
+- **Mic pin** re-verified: `expo-speech-recognition` exactly `3.1.3` in package.json, yarn.lock,
+  package-lock.json and node_modules.
+- **SOS button moved to Settings only.** The root-layout floating mount was removed; the red
+  pill now renders inline in Settings → Emergency Helplines (`sos-row` / `sos-button-floating`),
+  opening the same one-tap dialer sheet (112 / 100 / 181 / 1098 / 15100 / 108). Verified absent
+  from every other screen and no longer able to cover the chat composer or mic.
+- **Reply-language enforcement**: new `backend/langpolicy.py` maps each of the 22 languages to
+  its Unicode script and measures the script coverage of the finished reply
+  (`MIN_SCRIPT_RATIO = 0.35`, acronyms/numbers tolerated). If a non-English reply comes back in
+  the wrong script, `server.py` runs ONE repair translation and emits a `final` SSE frame that
+  overwrites the bubble. English is untouched and the repair costs nothing on the happy path.
+  Verified by testing agent (iteration_16): Hindi/Tamil/Bengali replies scored a 1.000 script
+  ratio; 6/6 backend tests; new test file `backend/tests/test_lang_policy.py`.
+
+### KNOWN GAP found during iteration 16 (not yet fixed)
+Corpus retrieval keywords are ENGLISH-ONLY, so a question typed in Hindi/Tamil/Bengali usually
+matches nothing and falls into the (correctly localized) "no verified source" refusal. Voice
+input transcribes to the spoken language, so voice users hit this too. Fix direction: add
+native-script keyword aliases per entry, or transliterate/translate the query to English before
+scoring. This is the single biggest blocker to the bilingual promise.

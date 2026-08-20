@@ -46,6 +46,7 @@ from corpus import (
     classify_topic,
 )
 from states import STATES, STATE_BY_CODE, is_valid_state, state_name
+from langpolicy import needs_language_repair, repair_prompt
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -926,15 +927,42 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             logger.exception("LLM stream error")
             errored = str(e)[:300]
             yield sse({"type": "error", "error": errored})
-        finally:
-            # Citation-integrity post-processing: strip any leaked section/article/statute
-            # names from the model's output. The verified citations are shown by the UI
-            # from the `citation` frames — the model MUST NOT emit them itself.
-            sanitized = sanitize_model_output(full) if full else full
-            if sanitized != full:
-                # Overwrite the accumulated text on the client with the sanitized version.
-                yield sse({"type": "final", "content": sanitized})
-            await save_assistant(sanitized or full, errored)
+
+        # Post-processing runs outside try/finally so that a `return` here can
+        # never swallow an in-flight exception (the except above already handles
+        # stream failures).
+        # Citation-integrity: strip any leaked section/article/statute names from
+        # the model's output. The verified citations are shown by the UI from the
+        # `citation` frames — the model MUST NOT emit them itself.
+        sanitized = sanitize_model_output(full) if full else full
+
+        # Reply-language enforcement. A user who selected Tamil and receives
+        # English has been given nothing, so if the finished reply is not in the
+        # expected script we translate it ONCE and overwrite the bubble.
+        if sanitized and not errored and needs_language_repair(sanitized, body.language):
+            lang_display = (
+                f"{body.language_name} ({lang_native})"
+                if lang_native and lang_native != body.language_name
+                else body.language_name
+            )
+            logger.warning("reply-language repair: model answered outside the %s script", lang_display)
+            try:
+                fixer = LlmChat(
+                    api_key=EMERGENT_LLM_KEY,
+                    session_id=f"{session_id}-langfix",
+                    system_message=repair_prompt(lang_display),
+                ).with_model(body.model_provider, body.model_name)
+                translated = await fixer.send_message(UserMessage(text=sanitized))
+                translated = sanitize_model_output(str(translated or "")).strip()
+                if translated and not needs_language_repair(translated, body.language):
+                    sanitized = translated
+            except Exception:
+                logger.exception("reply-language repair failed")
+
+        if sanitized != full:
+            # Overwrite the accumulated text on the client with the sanitized version.
+            yield sse({"type": "final", "content": sanitized})
+        await save_assistant(sanitized or full, errored)
         yield sse({"type": "done"})
 
     return StreamingResponse(

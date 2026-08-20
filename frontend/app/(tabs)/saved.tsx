@@ -19,7 +19,7 @@ export default function SavedScreen() {
     const local = await loadLocal();
     setItems(local);
     setLoading(false);
-    const merged = await syncBookmarks(API_BASE, token);
+    const merged = await syncBookmarks(API_BASE as string, token);
     setItems(merged);
   }, [token]);
 
@@ -36,7 +36,7 @@ export default function SavedScreen() {
   };
 
   const onDelete = async (clientId: string) => {
-    const next = await removeBookmark(API_BASE, token, clientId);
+    const next = await removeBookmark(API_BASE as string, token, clientId);
     setItems(next);
   };
 

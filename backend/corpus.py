@@ -1079,7 +1079,7 @@ CORPUS = [
         ),
         "keywords": [
             "mv 129", "section 129 motor vehicles", "helmet law", "helmet rule",
-            "helmet mandatory", "helmet fine", "two wheeler helmet", "pillion helmet",
+            "helmet mandatory", "helmet compulsory", "helmet required", "helmet fine", "two wheeler helmet", "pillion helmet",
             "bike helmet", "scooter helmet", "sikh helmet exemption",
         ],
     },

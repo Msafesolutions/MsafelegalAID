@@ -19,13 +19,17 @@ const HELPLINES: Helpline[] = [
 ];
 
 /**
- * SOS helpline entry point.
+ * SOS helpline entry point — lives on the Settings tab.
  *
- * NOTE: this used to be a floating FAB mounted in the root layout, but it sat
- * right on top of the chat composer and blocked the mic button. It is now a
- * compact header chip (used on the Chat screen) plus a row in Settings.
+ * variant="floating" renders the big red pill; pass `inline` so it sits inside
+ * the Settings row instead of being absolutely positioned (an absolutely
+ * positioned FAB used to cover the chat composer / mic button).
+ * variant="chip" is the small header chip.
  */
-export function SOSButton() {
+export function SOSButton({
+  variant = 'chip',
+  inline = false,
+}: { variant?: 'chip' | 'floating'; inline?: boolean }) {
   const [open, setOpen] = useState(false);
 
   const dial = (number: string) => {
@@ -35,10 +39,22 @@ export function SOSButton() {
 
   return (
     <>
-      <Pressable testID="sos-button" style={styles.headerChip} onPress={() => setOpen(true)}>
-        <Ionicons name="call" size={13} color="#FFFFFF" />
-        <Text style={styles.headerChipText}>SOS</Text>
-      </Pressable>
+      {variant === 'floating' ? (
+        <Pressable
+          testID="sos-button-floating"
+          style={[styles.floating, inline && styles.floatingInline]}
+          onPress={() => setOpen(true)}
+          accessibilityLabel="Emergency helplines"
+        >
+          <Ionicons name="call" size={16} color="#FFFFFF" />
+          <Text style={styles.floatingText}>SOS</Text>
+        </Pressable>
+      ) : (
+        <Pressable testID="sos-button" style={styles.headerChip} onPress={() => setOpen(true)}>
+          <Ionicons name="call" size={13} color="#FFFFFF" />
+          <Text style={styles.headerChipText}>SOS</Text>
+        </Pressable>
+      )}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
@@ -76,6 +92,35 @@ export function SOSButton() {
 }
 
 const styles = StyleSheet.create({
+  floating: {
+    position: 'absolute',
+    right: 0,
+    top: '42%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingLeft: 12,
+    paddingRight: 10,
+    height: 48,
+    minWidth: 64,
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    backgroundColor: '#B91C1C',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: -2, height: 2 },
+    elevation: 8,
+    zIndex: 999,
+  },
+  floatingText: { color: '#FFFFFF', fontWeight: '900', fontSize: 13, letterSpacing: 0.5 },
+  floatingInline: {
+    position: 'relative',
+    right: undefined,
+    top: undefined,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+  },
   headerChip: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth, API_BASE, Language } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { SOSButton } from '@/src/components/SOSButton';
 
 export default function Settings() {
   const { user, logout, language, setLanguage, autoSpeak, setAutoSpeak, refreshUser } = useAuth();
@@ -155,6 +156,16 @@ export default function Settings() {
         </Pressable>
 
         <Text style={styles.section}>Emergency Helplines</Text>
+
+        {/* The red SOS button lives here on the Settings tab. It opens the
+            one-tap dialer sheet for every national helpline. */}
+        <View style={styles.sosRow} testID="sos-row">
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>Emergency SOS</Text>
+            <Text style={styles.rowValue}>One tap to call 112, police, women or child helpline</Text>
+          </View>
+          <SOSButton variant="floating" inline />
+        </View>
         <View style={styles.helpCard}>
           <HelpRow label="Police" number="112" />
           <HelpRow label="Cyber Fraud (report fast)" number="1930" />
@@ -271,6 +282,18 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.lg, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, marginBottom: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border },
   rowTitle: { color: theme.colors.onSurface, fontWeight: '600' },
   rowValue: { color: theme.colors.onSurfaceSecondary, fontSize: 13, marginTop: 2 },
+  sosRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    minHeight: 64,
+  },
   helpCard: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, padding: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.border },
   helpRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: theme.spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.divider },
   helpLabel: { color: theme.colors.onSurface, fontSize: 15 },
