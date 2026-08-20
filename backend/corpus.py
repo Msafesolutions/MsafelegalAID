@@ -1460,6 +1460,16 @@ _STOP = {
     "if", "as", "but", "so", "there", "their", "them", "his", "her", "its",
     "am", "get", "got", "make", "made", "tell", "know", "want", "need",
     "please", "sir", "madam", "hai", "kya", "mera", "meri",
+    # Meta words ABOUT legislation, not diagnostic of WHICH legislation.
+    # Every statute in the corpus is named "___ Act" / "___ Sanhita" / "___
+    # Code" / has "sections" and "rules" — so these are near-universal in
+    # real queries ("divorce under Hindu Marriage ACT") yet, because the
+    # hand-written keyword lists rarely spell the bare word out, they were
+    # scoring as RARE/high-weight tokens (poor-man's-IDF inverted itself).
+    # This is what caused "divorce ... Marriage Act" to false-match IPC 294
+    # ("obscene act public") on the single shared token "act".
+    "act", "acts", "section", "sections", "rule", "rules", "code", "codes",
+    "law", "laws", "sanhita", "adhiniyam", "under",
 }
 
 
@@ -1499,19 +1509,14 @@ def _token_weight(tok: str) -> int:
     return 1          # appears everywhere — weak signal
 
 
-def retrieve(question: str, limit: int = 3) -> list[dict]:
-    """
-    Deterministic retrieval over the verified corpus.
+RETRIEVAL_MIN_SCORE = 3
 
-    Score per corpus entry:
-      +12 if the entry's short_label appears (e.g. "bnss 35", "ipc 498a", "article 21")
-      +6  if a multi-word keyword appears as a contiguous substring
-      +   weighted token overlap (rare tokens 4, common tokens 1)
 
-    A result is only returned if it scores >= 3, i.e. it needs either a label
-    hit, a phrase hit, or at least one reasonably specific word in common — a
-    single generic word like "police" is no longer enough on its own.
-    """
+def _score_all(question: str) -> list[tuple[int, dict]]:
+    """Score every corpus entry against the question. Returns ALL entries that
+    scored > 0, sorted descending — WITHOUT the RETRIEVAL_MIN_SCORE cutoff.
+    Shared by retrieve() (which applies the cutoff) and top_candidate_debug()
+    (which needs to see sub-threshold candidates for refusal analytics)."""
     q_norm = _norm(question)
     if not q_norm:
         return []
@@ -1533,16 +1538,123 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
             kw_tokens |= _tokens(kw)
         kw_tokens -= _STOP
         for t in kw_tokens & q_tokens:
+            if t.isdigit():
+                # A bare section/rule NUMBER matching is weak evidence on its
+                # own — the same number is reused as a section number across
+                # unrelated acts (e.g. NI Act S.138 vs CMVR Rule 138, IPC 302
+                # vs any "302" elsewhere). Real number-based matches must
+                # come through the short_label check above (+12, which
+                # requires the act abbreviation AND number together, e.g.
+                # "cmvr 138") or the multi-word phrase check (+6, e.g. exact
+                # "section 138" appearing as a keyword substring) — not a
+                # standalone numeral floating free of its act context.
+                continue
             score += _token_weight(t)
         if score > 0:
             scored.append((score, item))
-    # Require a minimum score so a single generic word (e.g. "police",
-    # "punishment") does not drag in unrelated sections. A label hit (12), a
-    # phrase hit (6) or one specific keyword (3-4) all clear this bar; a lone
-    # common token (1-2) does not.
-    scored = [(s, it) for s, it in scored if s >= 3]
     scored.sort(key=lambda x: x[0], reverse=True)
+    return scored
+
+
+def retrieve(question: str, limit: int = 3) -> list[dict]:
+    """
+    Deterministic retrieval over the verified corpus.
+
+    Score per corpus entry:
+      +12 if the entry's short_label appears (e.g. "bnss 35", "ipc 498a", "article 21")
+      +6  if a multi-word keyword appears as a contiguous substring
+      +   weighted token overlap (rare tokens 4, common tokens 1)
+
+    A result is only returned if it scores >= RETRIEVAL_MIN_SCORE, i.e. it
+    needs either a label hit, a phrase hit, or at least one reasonably
+    specific word in common — a single generic word like "police" is not
+    enough on its own.
+    """
+    scored = [(s, it) for s, it in _score_all(question) if s >= RETRIEVAL_MIN_SCORE]
     return [item for _, item in scored[:limit]]
+
+
+def top_candidate_debug(question: str) -> dict:
+    """Refusal-analytics helper (NOT used for answers). Returns the single
+    best-scoring candidate for a question EVEN IF it is below the confidence
+    threshold or the corpus has nothing at all — so refusal events can record
+    a score distribution and distinguish 'nothing came close' from 'something
+    scored just under the bar'. Never exposed to the end user.
+    Returns: {"top_score": int, "top_key": str|None, "content_tokens": int}
+    """
+    q_tokens = _tokens(question) - _STOP
+    scored = _score_all(question)
+    if not scored:
+        return {"top_score": 0, "top_key": None, "content_tokens": len(q_tokens)}
+    top_score, top_item = scored[0]
+    return {
+        "top_score": top_score,
+        "top_key": top_item.get("short_label"),
+        "content_tokens": len(q_tokens),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Topic classifier for refusal analytics ONLY (never shown to the user).
+# Independent of what is actually IN the corpus today — the point is to see
+# which real-world scenarios people ask about so we know what to build next,
+# even for acts we do not cover yet (e.g. cheque bounce, cyber fraud).
+# ---------------------------------------------------------------------------
+TOPIC_KEYWORDS: dict = {
+    "cheque_bounce_financial": [
+        "cheque bounce", "check bounce", "cheque return", "chек", "cheque dishonour",
+        "cheque dishonoured", "bounced cheque", "138", "post dated cheque", "emi default",
+        "loan default", "insufficient funds cheque",
+    ],
+    "cyber_fraud": [
+        "online fraud", "otp fraud", "upi fraud", "phishing", "hacked", "cyber crime",
+        "cybercrime", "online scam", "fake website", "sim swap", "credit card fraud",
+        "digital arrest", "investment scam", "trading app fraud", "whatsapp scam",
+        "phone scam", "account hacked", "money debited fraud",
+    ],
+    "wage_labour": [
+        "salary not paid", "wages not paid", "employer not paying", "termination job",
+        "fired from job", "retrenchment", "notice period", "gratuity", "bonus not paid",
+        "provident fund", "pf withdrawal", "esi", "contract labour", "minimum wage",
+        "unpaid overtime", "wrongful termination", "labour commissioner",
+    ],
+    "tenancy_rent": [
+        "landlord", "tenant", "rent agreement", "security deposit", "eviction",
+        "rent control", "house owner", "vacate notice", "rental dispute",
+    ],
+    "marriage_divorce": [
+        "divorce", "marriage", "alimony", "child custody", "maintenance wife",
+        "mutual divorce", "judicial separation", "annulment", "nikah", "talaq",
+        "remarriage", "second marriage",
+    ],
+    "inheritance_property": [
+        "inheritance", "property dispute", "will", "succession", "ancestral property",
+        "property partition", "land dispute", "property registration",
+    ],
+    "arrest_police": [
+        "arrest", "police custody", "warrant", "detained", "police station rights",
+    ],
+    "fir_complaint": ["fir", "police complaint", "lodge complaint", "zero fir"],
+    "bail": ["bail", "anticipatory bail", "surety", "custody release"],
+    "domestic_violence": ["domestic violence", "husband beats", "dowry", "in-laws harassment"],
+    "consumer": ["consumer complaint", "defective product", "faulty goods", "refund denied"],
+    "motor_vehicle_traffic": ["helmet", "traffic fine", "challan", "driving licence", "seat belt", "drunk driving"],
+    "rti": ["rti", "right to information", "public information officer"],
+    "senior_citizens": ["senior citizen", "elderly parents", "old age maintenance"],
+    "drugs_ndps": ["drugs case", "narcotics", "ganja", "possession of drugs"],
+    "defamation_reputation": ["defamation", "false allegations", "reputation damage"],
+    "business_contract": ["business partner", "breach of contract", "agreement violated", "partnership dispute"],
+    "tax": ["income tax", "gst", "tax notice"],
+}
+
+
+def classify_topic(question: str) -> str:
+    q_norm = _norm(question)
+    for topic, phrases in TOPIC_KEYWORDS.items():
+        for phrase in phrases:
+            if _norm(phrase) and _norm(phrase) in q_norm:
+                return topic
+    return "other_uncategorized"
 
 
 def is_non_indian_jurisdiction(question: str) -> bool:

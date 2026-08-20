@@ -40,6 +40,8 @@ from corpus import (
     REFUSAL_NON_INDIAN,
     REFUSAL_NOT_LEGAL,
     localize_refusal,
+    top_candidate_debug,
+    classify_topic,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -582,6 +584,54 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     # (c) If no retrieval hit AND no early refusal, we still refuse (no verified source)
     if not early_refusal and not retrieved:
         early_refusal = REFUSAL_NO_CORPUS
+
+    # -------- Refusal analytics (A4 instrumentation) --------
+    # Anonymized, aggregate-only event: NO user_id, NO session_id, NO raw
+    # query text — only cause code, topic bucket, language, jurisdiction
+    # (currently always null — no state field exists yet), and the best
+    # retrieval candidate's score even when it fell below the confidence
+    # threshold or nothing matched at all. This lets us tell "no law in the
+    # corpus for this topic" apart from "a candidate existed but scored too
+    # low" apart from "the query was too vague to score anything" — a
+    # decision on where to spend corpus-building credits should never be
+    # made without this breakdown.
+    if early_refusal:
+        if early_refusal == REFUSAL_NON_INDIAN:
+            cause_code = "non_indian_jurisdiction"
+            sub_cause = None
+            dbg = {"top_score": None, "top_key": None, "content_tokens": None}
+        elif early_refusal == REFUSAL_NOT_LEGAL:
+            cause_code = "not_legal_advice_request"
+            sub_cause = None
+            dbg = {"top_score": None, "top_key": None, "content_tokens": None}
+        else:
+            cause_code = "no_corpus_match"
+            dbg = top_candidate_debug(body.message)
+            if dbg["top_score"] == 0 and dbg["content_tokens"] <= 1:
+                sub_cause = "query_too_vague"
+            elif dbg["top_score"] == 0:
+                sub_cause = "no_candidate_scored"  # true coverage gap OR a
+                # phrasing mismatch against an entry that already exists —
+                # only a human spot-check of a sample can tell those apart;
+                # the score alone cannot.
+            else:
+                sub_cause = "below_confidence_threshold"  # candidate existed
+                # (dbg["top_key"]) but scored under RETRIEVAL_MIN_SCORE — a
+                # retrieval-tuning question, not necessarily a missing law.
+        try:
+            await db.refusal_events.insert_one({
+                "id": str(uuid.uuid4()),
+                "cause_code": cause_code,
+                "sub_cause": sub_cause,
+                "category": classify_topic(body.message),
+                "language": body.language,
+                "state": None,  # jurisdiction field not yet live at schema level
+                "top_score": dbg["top_score"],
+                "top_key": dbg["top_key"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            logging.getLogger(__name__).warning("refusal_events insert failed", exc_info=True)
 
     # Build the verified-source context for the prompt (used ONLY when we have hits)
     corpus_context = ""
@@ -1347,6 +1397,81 @@ async def admin_stats(x_admin_key: Optional[str] = Header(None)):
         "messages_total": await db.messages.count_documents({}),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@api.get("/admin/refusal-stats")
+async def admin_refusal_stats(
+    days: int = 7,
+    x_admin_key: Optional[str] = Header(None),
+):
+    """
+    Refusal cause-code breakdown (A4 instrumentation) — aggregate-only,
+    no user-identifying data is stored or returned. Answers exactly the
+    four questions corpus-spend decisions depend on:
+      1. no_candidate_scored — plausible true coverage gap (topic not in corpus)
+      2. below_confidence_threshold — a candidate existed but scored under the
+         bar; a retrieval-tuning question, NOT necessarily a missing law
+      3. query_too_vague — too few content words to score anything
+      4. non_indian_jurisdiction / not_legal_advice_request — out of scope,
+         not a corpus gap at all
+    `top_key` counts show WHICH existing entries keep almost-matching (useful
+    for keyword tuning) and `category` counts show which real-world topics
+    are being asked about, including topics with zero corpus coverage today.
+    """
+    _check_admin_key(x_admin_key)
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cursor = db.refusal_events.find({"created_at": {"$gte": since}})
+    events = await cursor.to_list(10000)
+
+    total = len(events)
+    by_cause: dict = {}
+    by_sub_cause: dict = {}
+    by_category: dict = {}
+    by_language: dict = {}
+    score_histogram = {"0": 0, "1-2": 0, "3-5": 0, "6-11": 0, "12+": 0, "n/a": 0}
+    near_miss_top_keys: dict = {}  # top_key counts for sub_cause == below_confidence_threshold
+
+    for e in events:
+        cause = e.get("cause_code") or "unknown"
+        by_cause[cause] = by_cause.get(cause, 0) + 1
+        sub = e.get("sub_cause")
+        if sub:
+            by_sub_cause[sub] = by_sub_cause.get(sub, 0) + 1
+        cat = e.get("category") or "other_uncategorized"
+        by_category[cat] = by_category.get(cat, 0) + 1
+        lang = e.get("language") or "unknown"
+        by_language[lang] = by_language.get(lang, 0) + 1
+
+        score = e.get("top_score")
+        if score is None:
+            score_histogram["n/a"] += 1
+        elif score == 0:
+            score_histogram["0"] += 1
+        elif score <= 2:
+            score_histogram["1-2"] += 1
+        elif score <= 5:
+            score_histogram["3-5"] += 1
+        elif score <= 11:
+            score_histogram["6-11"] += 1
+        else:
+            score_histogram["12+"] += 1
+
+        if sub == "below_confidence_threshold" and e.get("top_key"):
+            k = e["top_key"]
+            near_miss_top_keys[k] = near_miss_top_keys.get(k, 0) + 1
+
+    return {
+        "window_days": days,
+        "total_refusals": total,
+        "by_cause_code": by_cause,
+        "by_sub_cause": by_sub_cause,
+        "by_category": dict(sorted(by_category.items(), key=lambda x: x[1], reverse=True)),
+        "by_language": by_language,
+        "score_histogram": score_histogram,
+        "near_miss_top_keys": dict(sorted(near_miss_top_keys.items(), key=lambda x: x[1], reverse=True)),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
 
 @api.get("/")
 async def root():

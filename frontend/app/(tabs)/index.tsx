@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,10 @@ import {
   Alert,
   Modal,
   Switch,
+  Animated,
+  PanResponder,
+  type GestureResponderEvent,
+  type PanResponderGestureState,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +33,8 @@ import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 import { SOSButton } from '@/src/components/SOSButton';
+
+const CANCEL_THRESHOLD = -80; // px the user must drag left to cancel
 
 type Citation = {
   key: string;
@@ -86,9 +92,14 @@ export default function ChatScreen() {
   const [transcriptPreview, setTranscriptPreview] = useState<string>('');
   const [showTranscriptModal, setShowTranscriptModal] = useState<boolean>(false);
   const [holdElapsed, setHoldElapsed] = useState<number>(0);
+  const [slideCancelled, setSlideCancelled] = useState<boolean>(false);
   // TTS playback speed — cycles 1x → 1.5x → 2x → back
   const [speechRate, setSpeechRate] = useState<number>(1.0);
   const holdTimerRef = useRef<any>(null);
+  // Animated values for WhatsApp-style mic gesture
+  const slideX = useRef(new Animated.Value(0)).current;
+  const micPulse = useRef(new Animated.Value(1)).current;
+  const slideCancelledRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const nativeSTTHandleRef = useRef<{ stop: () => Promise<any> } | null>(null);
@@ -677,30 +688,89 @@ export default function ChatScreen() {
     // signal that startRecording checks after each await to know whether the
     // user is still holding the button.
     isMicHeldRef.current = true;
+    slideCancelledRef.current = false;
+    setSlideCancelled(false);
+    slideX.setValue(0);
     // Start hold timer + kick off recording
     setHoldElapsed(0);
     holdTimerRef.current = setInterval(() => {
       setHoldElapsed((prev) => prev + 1);
     }, 1000);
+    // Start pulsing animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(micPulse, { toValue: 1.25, duration: 600, useNativeDriver: true }),
+        Animated.timing(micPulse, { toValue: 1, duration: 600, useNativeDriver: true }),
+      ])
+    ).start();
     startRecording();
-  }, [startRecording]);
+  }, [startRecording, slideX, micPulse]);
 
   const onMicPressOut = useCallback(() => {
     // Synchronously drop the held flag so any in-flight startRecording aborts.
     isMicHeldRef.current = false;
+    // Stop pulsing
+    micPulse.stopAnimation();
+    micPulse.setValue(1);
     // Always clear the timer
     if (holdTimerRef.current) {
       clearInterval(holdTimerRef.current);
       holdTimerRef.current = null;
     }
     setHoldElapsed(0);
+    // Reset slide position
+    slideX.setValue(0);
+
+    // Check if the recording was cancelled by sliding
+    if (slideCancelledRef.current) {
+      setSlideCancelled(false);
+      slideCancelledRef.current = false;
+      // Cancel: stop recording without sending
+      setRecording(false);
+      try { recorder.stop(); } catch {}
+      try {
+        if (Platform.OS !== 'web') {
+          setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+        }
+      } catch {}
+      return;
+    }
+
     // If any recording actually started, stop it. We check BOTH `recording`
     // state AND the STT handle ref so we don't miss a recording that just
     // started but whose state flush hasn't landed yet.
     if (recording || nativeSTTHandleRef.current) {
       stopRecording();
     }
-  }, [recording, stopRecording]);
+  }, [recording, stopRecording, recorder, slideX, micPulse]);
+
+  // PanResponder for WhatsApp slide-to-cancel gesture on the mic button
+  const micPanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_: GestureResponderEvent, gs: PanResponderGestureState) => Math.abs(gs.dx) > 5,
+    onPanResponderGrant: () => {
+      onMicPressIn();
+    },
+    onPanResponderMove: (_: GestureResponderEvent, gs: PanResponderGestureState) => {
+      // Only allow sliding left (negative dx)
+      const clampedX = Math.min(0, Math.max(-160, gs.dx));
+      slideX.setValue(clampedX);
+      // Check if past cancel threshold
+      if (clampedX <= CANCEL_THRESHOLD && !slideCancelledRef.current) {
+        slideCancelledRef.current = true;
+        setSlideCancelled(true);
+      } else if (clampedX > CANCEL_THRESHOLD && slideCancelledRef.current) {
+        slideCancelledRef.current = false;
+        setSlideCancelled(false);
+      }
+    },
+    onPanResponderRelease: () => {
+      onMicPressOut();
+    },
+    onPanResponderTerminate: () => {
+      onMicPressOut();
+    },
+  }), [onMicPressIn, onMicPressOut, slideX]);
 
   const cancelTranscript = useCallback(() => {
     setShowTranscriptModal(false);
@@ -946,49 +1016,61 @@ export default function ChatScreen() {
           {streaming && <ActivityIndicator style={{ marginTop: 12 }} color={theme.colors.brand} />}
         </ScrollView>
 
-        {recording && (
-          <View style={styles.recHud} testID="rec-hud">
-            <View style={styles.recDot} />
-            <Text style={styles.recTimeText}>
-              {String(Math.floor(holdElapsed / 60)).padStart(2, '0')}:
-              {String(holdElapsed % 60).padStart(2, '0')}
-            </Text>
-            <Text style={styles.recHintText}>
-              Listening in {language.name} · release to send
-            </Text>
-          </View>
-        )}
+        {/* Unified input / recording bar — mic button always mounted for gesture continuity */}
+        <View style={recording ? styles.recordingBar : styles.inputBar} testID={recording ? 'rec-bar' : 'input-bar'}>
+          {recording ? (
+            <>
+              {/* Timer + red dot on the left */}
+              <View style={styles.recLeft}>
+                <Animated.View style={[styles.recDot, { transform: [{ scale: micPulse }] }]} />
+                <Text style={styles.recTimer}>
+                  {String(Math.floor(holdElapsed / 60)).padStart(2, '0')}:
+                  {String(holdElapsed % 60).padStart(2, '0')}
+                </Text>
+              </View>
 
-        <View style={styles.inputBar}>
-          <TextInput
-            testID="chat-input"
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder={`Ask in ${language.native}…`}
-            placeholderTextColor={theme.colors.onSurfaceTertiary}
-            multiline
-            editable={!streaming && !transcribing}
-          />
-          {input.trim().length === 0 ? (
-            <Pressable
-              testID="mic-button"
-              onPressIn={onMicPressIn}
-              onPressOut={onMicPressOut}
-              disabled={transcribing}
-              style={[styles.mic, recording && styles.micActive]}
-            >
-              {transcribing ? (
-                <ActivityIndicator color={theme.colors.onBrandPrimary} />
-              ) : (
-                <Ionicons
-                  name={recording ? 'radio' : 'mic'}
-                  size={26}
-                  color={theme.colors.onBrandPrimary}
-                />
-              )}
-            </Pressable>
+              {/* Slide to cancel indicator */}
+              <Animated.View style={[
+                styles.recCenter,
+                {
+                  opacity: slideX.interpolate({
+                    inputRange: [-160, -40, 0],
+                    outputRange: [0.2, 0.7, 1],
+                    extrapolate: 'clamp',
+                  }),
+                }
+              ]}>
+                {slideCancelled ? (
+                  <View style={styles.cancelActive}>
+                    <Ionicons name="trash" size={18} color={theme.colors.error} />
+                    <Text style={styles.cancelActiveText}>Release to cancel</Text>
+                  </View>
+                ) : (
+                  <View style={styles.slideHint}>
+                    <Ionicons name="chevron-back" size={14} color={theme.colors.onSurfaceTertiary} />
+                    <Text style={styles.slideHintText}>Slide to cancel</Text>
+                  </View>
+                )}
+              </Animated.View>
+            </>
           ) : (
+            <>
+              <TextInput
+                testID="chat-input"
+                style={styles.input}
+                value={input}
+                onChangeText={setInput}
+                placeholder={`Ask in ${language.native}…`}
+                placeholderTextColor={theme.colors.onSurfaceTertiary}
+                multiline
+                editable={!streaming && !transcribing}
+              />
+            </>
+          )}
+
+          {/* Right side: mic or send — mic always renders with PanResponder for
+              gesture continuity across the recording-state transition */}
+          {(!recording && input.trim().length > 0) ? (
             <Pressable
               testID="send-button"
               onPress={() => send(input)}
@@ -997,6 +1079,31 @@ export default function ChatScreen() {
             >
               <Ionicons name="arrow-up" size={24} color={theme.colors.onBrandPrimary} />
             </Pressable>
+          ) : (
+            <Animated.View
+              testID="mic-button"
+              style={[
+                recording ? styles.micRecording : styles.mic,
+                recording && {
+                  transform: [
+                    { translateX: slideX },
+                    { scale: micPulse },
+                  ],
+                  backgroundColor: slideCancelled ? theme.colors.error : theme.colors.brandSecondary,
+                },
+              ]}
+              {...micPanResponder.panHandlers}
+            >
+              {transcribing ? (
+                <ActivityIndicator color={theme.colors.onBrandPrimary} />
+              ) : (
+                <Ionicons
+                  name={recording && slideCancelled ? 'trash' : 'mic'}
+                  size={26}
+                  color={theme.colors.onBrandPrimary}
+                />
+              )}
+            </Animated.View>
           )}
         </View>
       </KeyboardAvoidingView>
@@ -1282,7 +1389,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  micActive: { backgroundColor: theme.colors.error },
+  micRecording: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: theme.colors.brandSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Slight shadow for lift effect while held
+    ...(Platform.OS !== 'web' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+      elevation: 6,
+    } : {}),
+  },
   send: {
     width: 52,
     height: 52,
@@ -1324,27 +1446,61 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   sttHintText: { color: theme.colors.brand, fontSize: 11, fontWeight: '600' },
-  // WhatsApp-style recording HUD
-  recHud: {
+  // WhatsApp-style recording bar (replaces input bar)
+  recordingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.error,
+    backgroundColor: '#FFF5F5',
+    minHeight: 68,
+  },
+  recLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    alignSelf: 'center',
-    backgroundColor: theme.colors.brand,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: theme.radius.pill,
-    marginBottom: 8,
+    minWidth: 70,
   },
-  recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.colors.error },
-  recTimeText: {
-    color: theme.colors.onBrandPrimary,
+  recDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: theme.colors.error,
+  },
+  recTimer: {
     fontVariant: ['tabular-nums'],
     fontWeight: '700',
-    fontSize: 13,
-    minWidth: 40,
+    fontSize: 15,
+    color: theme.colors.error,
+    minWidth: 46,
   },
-  recHintText: { color: theme.colors.onBrandPrimary, fontSize: 11, opacity: 0.9 },
+  recCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  slideHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  slideHintText: {
+    color: theme.colors.onSurfaceTertiary,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  cancelActive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cancelActiveText: {
+    color: theme.colors.error,
+    fontSize: 14,
+    fontWeight: '700',
+  },
   // Playback speed chip
   speedChip: {
     backgroundColor: theme.colors.surfaceTertiary,

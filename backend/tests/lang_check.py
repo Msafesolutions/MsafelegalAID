@@ -55,7 +55,7 @@ def ask(lang):
             d = json.loads(line[6:])
             if d.get("type") == "delta":
                 text += d.get("content", "")
-        except: pass
+        except Exception: pass
     return text
 
 print(f"{'Code':6} {'Name':12} {'Script chars':>13} {'English leak':>12} {'Verdict':>10}")
