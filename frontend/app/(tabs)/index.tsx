@@ -103,6 +103,10 @@ export default function ChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const nativeSTTHandleRef = useRef<{ stop: () => Promise<any> } | null>(null);
+  // Web MediaRecorder refs — used for browser-based audio recording
+  const webRecorderRef = useRef<any>(null);
+  const webChunksRef = useRef<Blob[]>([]);
+  const webStreamRef = useRef<any>(null);
   // Race-condition guard: onPressIn is synchronous, startRecording is async.
   // If the user releases the mic BEFORE the async permission/init finishes,
   // the onPressOut closure captures a stale `recording === false` and misses
@@ -139,6 +143,11 @@ export default function ChatScreen() {
         } catch {}
         nativeSTTHandleRef.current = null;
       }
+      // Stop any web MediaRecorder
+      try { webRecorderRef.current?.stop(); } catch {}
+      try { webStreamRef.current?.getTracks()?.forEach((t: any) => t.stop()); } catch {}
+      webRecorderRef.current = null;
+      webStreamRef.current = null;
       // Kill the hold-to-talk elapsed-time interval
       if (holdTimerRef.current) {
         clearInterval(holdTimerRef.current);
@@ -580,44 +589,56 @@ export default function ChatScreen() {
   speakRef.current = speak;
 
   /** Start listening — records audio and uploads to Whisper cloud STT.
-   *  Hardcoded to Whisper for reliability across all Android OEMs (Samsung /
-   *  Xiaomi / Realme / etc.). Native SpeechRecognizer is intentionally NOT
-   *  used because it silently fails on many OEM devices where the default
-   *  voice engine is not Google's. See getConfiguredSTT() docstring. */
+   *  On native: uses expo-audio recorder.
+   *  On web: uses browser MediaRecorder API (getUserMedia).
+   *  Both paths produce audio that gets sent to the Whisper transcription endpoint. */
   const startRecording = useCallback(async () => {
     if (!token) return;
     // Defensive: recording needs exclusive audio-session access. If TTS is
-    // still speaking a previous answer, stop it first — otherwise the OS
-    // audio session switch (playback -> record) can leave the speaker
-    // player in a stuck "paused" state on some Android OEMs.
+    // still speaking a previous answer, stop it first.
     stopCloudTTS();
     try {
-      const { provider, fellBack } = await getConfiguredSTT(API_BASE, token);
-      setSttProviderLabel(fellBack ? `${provider.displayName} (fallback)` : provider.displayName);
-
-      // Cloud Whisper — record audio, transcribe on send
-      const perm = await AudioModule.requestRecordingPermissionsAsync();
-      if (!perm.granted) {
-        Alert.alert('Microphone permission', 'Please enable microphone to speak your question.');
-        return;
-      }
-      // Race guard: user may have already released while we awaited permission.
-      if (!isMicHeldRef.current) return;
-      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
-      // Defensive: release any lingering prepared/recording session from a
-      // previous quick tap before preparing a new one — otherwise Expo Audio
-      // throws "AudioRecorder has already been prepared".
-      try {
-        await recorder.stop();
-      } catch {}
-      await recorder.prepareToRecordAsync();
-      // Race guard again: prepareToRecordAsync can take another 100-500ms.
-      if (!isMicHeldRef.current) {
+      if (Platform.OS === 'web') {
+        // --- Web: use browser MediaRecorder ---
+        const nav = globalThis.navigator as any;
+        if (!nav?.mediaDevices?.getUserMedia) {
+          Alert.alert('Mic not available', 'Your browser does not support audio recording.');
+          return;
+        }
+        const stream = await nav.mediaDevices.getUserMedia({ audio: true });
+        if (!isMicHeldRef.current) {
+          stream.getTracks().forEach((t: any) => t.stop());
+          return;
+        }
+        webStreamRef.current = stream;
+        webChunksRef.current = [];
+        const mr = new (globalThis as any).MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mr.ondataavailable = (e: any) => {
+          if (e.data && e.data.size > 0) webChunksRef.current.push(e.data);
+        };
+        mr.start();
+        webRecorderRef.current = mr;
+        setRecording(true);
+      } else {
+        // --- Native: expo-audio recorder ---
+        const { provider, fellBack } = await getConfiguredSTT(API_BASE, token);
+        setSttProviderLabel(fellBack ? `${provider.displayName} (fallback)` : provider.displayName);
+        const perm = await AudioModule.requestRecordingPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Microphone permission', 'Please enable microphone to speak your question.');
+          return;
+        }
+        if (!isMicHeldRef.current) return;
+        await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
         try { await recorder.stop(); } catch {}
-        return;
+        await recorder.prepareToRecordAsync();
+        if (!isMicHeldRef.current) {
+          try { await recorder.stop(); } catch {}
+          return;
+        }
+        recorder.record();
+        setRecording(true);
       }
-      recorder.record();
-      setRecording(true);
     } catch (e: any) {
       Alert.alert('Recording failed', e?.message || 'Try again');
     }
@@ -631,9 +652,7 @@ export default function ChatScreen() {
     }
     setHoldElapsed(0);
 
-    // If native STT was running (only possible on stale APK builds), finish
-    // it safely — this branch is otherwise dead since getConfiguredSTT is
-    // hardcoded to Whisper. We keep the cleanup for defence-in-depth only.
+    // If native STT was running, finish it safely
     if (nativeSTTHandleRef.current) {
       try {
         setTranscribing(true);
@@ -642,39 +661,73 @@ export default function ChatScreen() {
       } catch {}
       nativeSTTHandleRef.current = null;
       setTranscribing(false);
-      // Fall through to the Whisper path below? No — on stale native builds
-      // there is no audio recording running, so nothing to transcribe. Just
-      // clean up and return silently.
       return;
     }
 
-    // Whisper fallback path — stop audio recorder + POST to backend → show modal
     try {
       setRecording(false);
       setTranscribing(true);
-      await recorder.stop();
-      const uri = recorder.uri;
-      try {
-        if (Platform.OS !== 'web') {
-          await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+
+      if (Platform.OS === 'web') {
+        // --- Web: stop MediaRecorder, collect blob, upload ---
+        const mr = webRecorderRef.current;
+        if (!mr) { setTranscribing(false); return; }
+        const audioBlob = await new Promise<Blob>((resolve) => {
+          mr.onstop = () => {
+            const blob = new Blob(webChunksRef.current, { type: 'audio/webm' });
+            resolve(blob);
+          };
+          mr.stop();
+        });
+        // Stop the stream tracks
+        try {
+          webStreamRef.current?.getTracks()?.forEach((t: any) => t.stop());
+        } catch {}
+        webRecorderRef.current = null;
+        webStreamRef.current = null;
+        webChunksRef.current = [];
+        if (!audioBlob || audioBlob.size === 0) {
+          setTranscribing(false);
+          return;
         }
-      } catch {}
-      if (!uri) {
+        if (!token) { setTranscribing(false); return; }
+        // Upload blob to Whisper endpoint
+        const form = new FormData();
+        form.append('audio', audioBlob, 'audio.webm');
+        if (language?.code) form.append('language', language.code);
+        const res = await fetch(`${API_BASE}/api/voice/transcribe`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Transcription failed');
+        const heardText = (data.text || '').trim();
         setTranscribing(false);
-        return;
-      }
-      if (!token) {
-        setTranscribing(false);
-        return;
-      }
-      const text = await whisperTranscribeFile(API_BASE, token, uri, language?.code);
-      setTranscribing(false);
-      const heardText = (text || '').trim();
-      if (heardText) {
-        setTranscriptPreview(heardText);
-        setShowTranscriptModal(true);
+        if (heardText) {
+          setTranscriptPreview(heardText);
+          setShowTranscriptModal(true);
+        } else {
+          Alert.alert('Could not transcribe', 'Please try again.');
+        }
       } else {
-        Alert.alert('Could not transcribe', 'Please try again.');
+        // --- Native: stop expo-audio recorder, upload file ---
+        await recorder.stop();
+        const uri = recorder.uri;
+        try {
+          await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+        } catch {}
+        if (!uri) { setTranscribing(false); return; }
+        if (!token) { setTranscribing(false); return; }
+        const text = await whisperTranscribeFile(API_BASE, token, uri, language?.code);
+        setTranscribing(false);
+        const heardText = (text || '').trim();
+        if (heardText) {
+          setTranscriptPreview(heardText);
+          setShowTranscriptModal(true);
+        } else {
+          Alert.alert('Could not transcribe', 'Please try again.');
+        }
       }
     } catch (e: any) {
       setTranscribing(false);
@@ -727,19 +780,24 @@ export default function ChatScreen() {
       slideCancelledRef.current = false;
       // Cancel: stop recording without sending
       setRecording(false);
-      try { recorder.stop(); } catch {}
-      try {
-        if (Platform.OS !== 'web') {
-          setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
-        }
-      } catch {}
+      if (Platform.OS === 'web') {
+        // Web: stop MediaRecorder and discard
+        try { webRecorderRef.current?.stop(); } catch {}
+        try { webStreamRef.current?.getTracks()?.forEach((t: any) => t.stop()); } catch {}
+        webRecorderRef.current = null;
+        webStreamRef.current = null;
+        webChunksRef.current = [];
+      } else {
+        try { recorder.stop(); } catch {}
+        try { setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false }); } catch {}
+      }
       return;
     }
 
     // If any recording actually started, stop it. We check BOTH `recording`
-    // state AND the STT handle ref so we don't miss a recording that just
-    // started but whose state flush hasn't landed yet.
-    if (recording || nativeSTTHandleRef.current) {
+    // state AND the STT handle/web recorder refs so we don't miss a recording
+    // that just started but whose state flush hasn't landed yet.
+    if (recording || nativeSTTHandleRef.current || webRecorderRef.current) {
       stopRecording();
     }
   }, [recording, stopRecording, recorder, slideX, micPulse]);
