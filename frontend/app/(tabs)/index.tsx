@@ -490,25 +490,62 @@ export default function ChatScreen() {
           return;
         }
 
-        // 5. Create the player, wire up completion cleanup, start playback
+        // 5. Create the player, wire up load-readiness + completion handling.
+        //
+        // KNOWN RACE CONDITION (github.com/expo/expo/discussions/18869):
+        // calling player.play() immediately after createAudioPlayer() can
+        // silently no-op on some Android OEMs because the native player has
+        // not finished decoding the source yet. This is the root cause of
+        // the "sound sometimes plays, sometimes doesn't" bug reported in
+        // the built APK. Fix: only call play() once the player reports
+        // isLoaded === true (via the status event, or immediately if it is
+        // already true), with a short hard-fallback timer as a safety net.
         const player = createAudioPlayer({ uri: file.uri });
         ttsPlayerRef.current = player;
         try {
           player.setPlaybackRate(speechRate, 'high');
         } catch {}
-        // Auto-clear when playback finishes. expo-audio doesn't emit onEnd on
-        // all platforms consistently, so we also poll status via a short
-        // watchdog scheduled below.
+
+        let hasStartedPlayback = false;
+        const tryStartPlayback = () => {
+          if (hasStartedPlayback) return;
+          if (ttsPlayerRef.current !== player) return; // superseded by newer playback
+          hasStartedPlayback = true;
+          try {
+            player.play();
+          } catch {
+            // Retry once — some Android OEMs throw on the very first play()
+            // call right after decode completes.
+            setTimeout(() => {
+              try { player.play(); } catch {}
+            }, 150);
+          }
+        };
+
         try {
           (player as any).addListener?.('playbackStatusUpdate', (s: any) => {
+            if (!hasStartedPlayback && s?.isLoaded) {
+              tryStartPlayback();
+            }
             if (s?.didJustFinish || (s?.duration > 0 && s?.currentTime >= s?.duration - 0.05)) {
               stopCloudTTS();
               try { file.delete(); } catch {}
             }
           });
         } catch {}
-        // Play (this call kicks off decode + playback)
-        player.play();
+
+        // Some platforms flip `isLoaded` synchronously for small local
+        // files, before the first status event ever fires — check directly.
+        if ((player as any).isLoaded) {
+          tryStartPlayback();
+        }
+
+        // Hard fallback: if we never see isLoaded become true (missed
+        // native event) within 2.5s, force-start anyway so a tap never
+        // results in permanent silence.
+        setTimeout(() => {
+          if (!hasStartedPlayback) tryStartPlayback();
+        }, 2500);
 
         // Fallback cleanup — if we somehow never get the finish event, release
         // after 90s max (long enough for a 3000-char reply at slow speech).
@@ -538,6 +575,11 @@ export default function ChatScreen() {
    *  voice engine is not Google's. See getConfiguredSTT() docstring. */
   const startRecording = useCallback(async () => {
     if (!token) return;
+    // Defensive: recording needs exclusive audio-session access. If TTS is
+    // still speaking a previous answer, stop it first — otherwise the OS
+    // audio session switch (playback -> record) can leave the speaker
+    // player in a stuck "paused" state on some Android OEMs.
+    stopCloudTTS();
     try {
       const { provider, fellBack } = await getConfiguredSTT(API_BASE, token);
       setSttProviderLabel(fellBack ? `${provider.displayName} (fallback)` : provider.displayName);
@@ -568,7 +610,7 @@ export default function ChatScreen() {
     } catch (e: any) {
       Alert.alert('Recording failed', e?.message || 'Try again');
     }
-  }, [recorder, token]);
+  }, [recorder, token, stopCloudTTS]);
 
   const stopRecording = useCallback(async () => {
     // Stop the elapsed-time ticker
