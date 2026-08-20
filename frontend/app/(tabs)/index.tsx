@@ -28,6 +28,7 @@ import { File, Paths } from 'expo-file-system';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
+import { SOSButton } from '@/src/components/SOSButton';
 
 type Citation = {
   key: string;
@@ -712,14 +713,12 @@ export default function ChatScreen() {
             {language.native}
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, flexShrink: 1 }}>
+          <SOSButton />
           <Pressable testID="new-chat-button" style={styles.newChatBtn} onPress={startNewChat}>
             <Ionicons name="add" size={16} color={theme.colors.brand} />
             <Text style={styles.newChatText}>New Chat</Text>
           </Pressable>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>BNS · संविधान</Text>
-          </View>
         </View>
       </View>
 

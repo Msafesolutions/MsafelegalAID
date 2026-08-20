@@ -19,9 +19,11 @@ const HELPLINES: Helpline[] = [
 ];
 
 /**
- * Persistent floating SOS button rendered above every screen (mounted once in
- * the root layout). Tapping it opens a helpline sheet; each row dials
- * immediately via the phone dialer.
+ * SOS helpline entry point.
+ *
+ * NOTE: this used to be a floating FAB mounted in the root layout, but it sat
+ * right on top of the chat composer and blocked the mic button. It is now a
+ * compact header chip (used on the Chat screen) plus a row in Settings.
  */
 export function SOSButton() {
   const [open, setOpen] = useState(false);
@@ -33,8 +35,9 @@ export function SOSButton() {
 
   return (
     <>
-      <Pressable testID="sos-button" style={styles.fab} onPress={() => setOpen(true)}>
-        <Text style={styles.fabText}>SOS</Text>
+      <Pressable testID="sos-button" style={styles.headerChip} onPress={() => setOpen(true)}>
+        <Ionicons name="call" size={13} color="#FFFFFF" />
+        <Text style={styles.headerChipText}>SOS</Text>
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -73,24 +76,17 @@ export function SOSButton() {
 }
 
 const styles = StyleSheet.create({
-  fab: {
-    position: 'absolute',
-    right: 14,
-    bottom: 130,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: theme.colors.error,
+  headerChip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    zIndex: 999,
+    gap: 4,
+    backgroundColor: theme.colors.error,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minHeight: 32,
   },
-  fabText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14, letterSpacing: 1 },
+  headerChipText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12, letterSpacing: 0.5 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: theme.colors.surface,

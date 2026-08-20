@@ -1412,6 +1412,14 @@ CORPUS = [
     },
 ]
 
+# ---------------------------------------------------------------------------
+# Legacy codes (IPC 1860 / CrPC 1973) live in their own module because they are
+# large and are still needed for every matter arising before 1 July 2024.
+# ---------------------------------------------------------------------------
+from corpus_ipc import IPC_CRPC_CORPUS  # noqa: E402
+
+CORPUS.extend(IPC_CRPC_CORPUS)
+
 # Non-Indian jurisdictions — trap-question refusal helper
 NON_INDIAN_JURISDICTION_KEYWORDS = [
     "texas", "california", "florida", "new york state", "uk law", "united kingdom law",
@@ -1445,7 +1453,50 @@ _STOP = {
     "can", "may", "do", "does", "did", "have", "has", "had", "be", "been",
     "will", "would", "should", "could", "shall", "any", "all", "some",
     "what", "why", "how", "when", "where", "who", "which", "this", "that",
+    # Pure function words — no legal signal. "without" in particular used to
+    # tie "driving without helmet" between BNSS 35 ("arrest without warrant")
+    # and MV 129 (helmet), pushing the wrong section to the top.
+    "without", "with", "not", "no", "from", "than", "then", "into", "about",
+    "if", "as", "but", "so", "there", "their", "them", "his", "her", "its",
+    "am", "get", "got", "make", "made", "tell", "know", "want", "need",
+    "please", "sir", "madam", "hai", "kya", "mera", "meri",
 }
+
+
+# ---------------------------------------------------------------------------
+# Token specificity (poor-man's IDF).
+#
+# Without this, a generic token like "police" or "punishment" scores exactly the
+# same as a highly diagnostic token like "helmet" or "anticipatory". As the
+# corpus grew (BNS + BNSS + Constitution + MV + CMVR + RTI + CPA + PWDVA + IPC +
+# CrPC) that made irrelevant entries out-rank the correct one, e.g. "driving
+# without helmet" returned BNSS 35 above MV 129. Rare tokens now carry 4x the
+# weight of tokens that appear across many entries.
+# ---------------------------------------------------------------------------
+def _build_token_df() -> dict:
+    df: dict = {}
+    for item in CORPUS:
+        toks: set = set()
+        for kw in item["keywords"]:
+            toks |= _tokens(kw)
+        toks |= _tokens(item["short_label"])
+        for t in toks:
+            df[t] = df.get(t, 0) + 1
+    return df
+
+
+_TOKEN_DF: dict = _build_token_df()
+
+
+def _token_weight(tok: str) -> int:
+    n = _TOKEN_DF.get(tok, 1)
+    if n <= 1:
+        return 4      # unique to one section — very strong signal
+    if n <= 3:
+        return 3
+    if n <= 6:
+        return 2
+    return 1          # appears everywhere — weak signal
 
 
 def retrieve(question: str, limit: int = 3) -> list[dict]:
@@ -1453,13 +1504,13 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
     Deterministic retrieval over the verified corpus.
 
     Score per corpus entry:
-      +5 if the entry's short_label appears (e.g. "bnss 35", "article 21")
-      +3 if a multi-word keyword appears as a contiguous substring
-      +1 per token overlap between the entry's keyword words and the question tokens
-        (ignoring stop words and very short tokens)
+      +12 if the entry's short_label appears (e.g. "bnss 35", "ipc 498a", "article 21")
+      +6  if a multi-word keyword appears as a contiguous substring
+      +   weighted token overlap (rare tokens 4, common tokens 1)
 
-    This handles both "What is Article 21?" (short_label hit) and
-    "Can police arrest a woman at night?" (token overlap on arrest / woman / night).
+    A result is only returned if it scores >= 3, i.e. it needs either a label
+    hit, a phrase hit, or at least one reasonably specific word in common — a
+    single generic word like "police" is no longer enough on its own.
     """
     q_norm = _norm(question)
     if not q_norm:
@@ -1471,28 +1522,25 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
         score = 0
         # (a) short label match — strongest signal
         if _norm(item["short_label"]) in q_norm:
-            score += 5
-        # (b) multi-word keyword substrings — moderate signal
-        # (c) token overlap on all keyword words
+            score += 12
+        # (b) multi-word keyword substrings — strong signal
+        # (c) weighted token overlap on all keyword words
         kw_tokens: set = set()
         for kw in item["keywords"]:
             kw_norm = _norm(kw)
             if " " in kw_norm and kw_norm in q_norm:
-                score += 3
+                score += 6
             kw_tokens |= _tokens(kw)
         kw_tokens -= _STOP
-        overlap = kw_tokens & q_tokens
-        score += len(overlap)
+        for t in kw_tokens & q_tokens:
+            score += _token_weight(t)
         if score > 0:
             scored.append((score, item))
-    # Require a minimum score threshold so single-word noise doesn't match.
-    # A short_label hit (5), phrase hit (3), or ANY meaningful token overlap passes.
-    # Note: stop-words are already stripped from q_tokens, so an overlap of 1 already
-    # means a real content word matched. Threshold=2 was too strict for casual queries
-    # like "What are my rights during a police stop?" — dropping to 1 restores natural
-    # phrasing while the LLM system prompt + sanitize_model_output() still contain any
-    # tangential retrievals.
-    scored = [(s, it) for s, it in scored if s >= 1]
+    # Require a minimum score so a single generic word (e.g. "police",
+    # "punishment") does not drag in unrelated sections. A label hit (12), a
+    # phrase hit (6) or one specific keyword (3-4) all clear this bar; a lone
+    # common token (1-2) does not.
+    scored = [(s, it) for s, it in scored if s >= 3]
     scored.sort(key=lambda x: x[0], reverse=True)
     return [item for _, item in scored[:limit]]
 

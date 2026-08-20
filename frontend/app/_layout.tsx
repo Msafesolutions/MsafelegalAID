@@ -8,7 +8,6 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/auth";
-import { SOSButton } from "@/src/components/SOSButton";
 
 LogBox.ignoreAllLogs(true);
 
@@ -32,8 +31,6 @@ export default function RootLayout() {
           <StatusBar style="dark" />
           <View style={{ flex: 1 }}>
             <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#FDFBF7' } }} />
-            {/* Persistent SOS helpline button — floats above every screen */}
-            <SOSButton />
           </View>
         </AuthProvider>
       </KeyboardProvider>
