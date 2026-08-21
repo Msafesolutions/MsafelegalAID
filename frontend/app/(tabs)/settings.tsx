@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform, Switch } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -8,7 +9,7 @@ import { theme } from '@/src/theme';
 import { SOSButton } from '@/src/components/SOSButton';
 
 export default function Settings() {
-  const { user, logout, language, setLanguage, autoSpeak, setAutoSpeak, refreshUser } = useAuth();
+  const { user, logout, language, setLanguage, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, refreshUser } = useAuth();
   const router = useRouter();
   const [langs, setLangs] = useState<Language[]>([]);
   const [showLang, setShowLang] = useState(false);
@@ -109,6 +110,32 @@ export default function Settings() {
             onValueChange={setAutoSpeak}
             trackColor={{ true: theme.colors.brandSecondary, false: theme.colors.borderStrong }}
             thumbColor={theme.colors.surface}
+          />
+        </View>
+
+        <View style={styles.volumeCard} testID="row-tts-volume">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+            <Ionicons
+              name={ttsVolume === 0 ? 'volume-mute-outline' : ttsVolume < 0.5 ? 'volume-low-outline' : 'volume-high-outline'}
+              size={22}
+              color={theme.colors.brand}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Speaker volume</Text>
+              <Text style={styles.rowValue}>How loud spoken answers play — {Math.round(ttsVolume * 100)}%</Text>
+            </View>
+          </View>
+          <Slider
+            testID="tts-volume-slider"
+            style={{ width: '100%', height: 36, marginTop: theme.spacing.sm }}
+            minimumValue={0}
+            maximumValue={1}
+            step={0.05}
+            value={ttsVolume}
+            onSlidingComplete={setTtsVolume}
+            minimumTrackTintColor={theme.colors.brandSecondary}
+            maximumTrackTintColor={theme.colors.borderStrong}
+            thumbTintColor={theme.colors.brand}
           />
         </View>
 
@@ -280,6 +307,7 @@ const styles = StyleSheet.create({
   email: { color: '#D1D5DB', marginTop: 2, fontSize: 13 },
   section: { fontFamily: theme.fonts.display, fontSize: 16, color: theme.colors.brand, marginTop: theme.spacing.xl, marginBottom: theme.spacing.sm, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.lg, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, marginBottom: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border },
+  volumeCard: { padding: theme.spacing.lg, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, marginBottom: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border },
   rowTitle: { color: theme.colors.onSurface, fontWeight: '600' },
   rowValue: { color: theme.colors.onSurfaceSecondary, fontSize: 13, marginTop: 2 },
   sosRow: {

@@ -93,6 +93,25 @@ def needs_language_repair(text: str, lang_code: str) -> bool:
     return script_ratio(text, script) < MIN_SCRIPT_RATIO
 
 
+def needs_retrieval_translation(text: str) -> bool:
+    """True when the query is written in a non-Latin script (Devanagari, Tamil,
+    Perso-Arabic, etc). The verified corpus in corpus.py is indexed with
+    English-only ASCII keywords, and corpus.py's own `_norm()` strips every
+    non-ASCII character before matching — so a Hindi/Tamil/Urdu question
+    normalizes to an EMPTY string and matches nothing, no matter which law it
+    is actually about. This is a cheap, offline, no-model-call check used by
+    server.py to decide whether the one-shot English bridge translation
+    (translate_for_retrieval) is needed before running retrieval.
+    """
+    if not text:
+        return False
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return False
+    non_ascii = sum(1 for c in letters if ord(c) > 127)
+    return (non_ascii / len(letters)) > 0.3
+
+
 def repair_prompt(language_display: str) -> str:
     """System prompt for the one-shot repair translation."""
     return (

@@ -19,7 +19,9 @@ export default function DraftsList() {
           <Ionicons name="chevron-back" size={26} color={theme.colors.onBrandPrimary} />
         </Pressable>
         <Text style={styles.h1}>Ready notices</Text>
-        <View style={{ width: 26 }} />
+        <Pressable testID="drafts-history-nav" onPress={() => router.push('/drafts/history')} hitSlop={12}>
+          <Ionicons name="time-outline" size={24} color={theme.colors.onBrandPrimary} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -38,6 +40,12 @@ export default function DraftsList() {
                 : 'Free notice used · upgrade to Pro for unlimited notices'}
           </Text>
         </View>
+
+        <Pressable testID="drafts-history-card" style={styles.historyCard} onPress={() => router.push('/drafts/history')}>
+          <Ionicons name="time-outline" size={18} color={theme.colors.brand} />
+          <Text style={styles.historyCardText}>View notices you&apos;ve already written</Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.onSurfaceTertiary} />
+        </Pressable>
 
         {DRAFTS.map((d) => (
           <Pressable
@@ -80,6 +88,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: theme.colors.gold, padding: theme.spacing.md,
   },
   quotaText: { flex: 1, color: theme.colors.brand, fontWeight: '700', fontSize: 13 },
+  historyCard: {
+    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm,
+    backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md,
+    borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.md,
+  },
+  historyCardText: { flex: 1, color: theme.colors.onSurface, fontWeight: '600', fontSize: 13 },
   card: {
     flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.md,
     backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md,

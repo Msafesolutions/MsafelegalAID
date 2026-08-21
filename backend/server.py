@@ -46,7 +46,7 @@ from corpus import (
     classify_topic,
 )
 from states import STATES, STATE_BY_CODE, is_valid_state, state_name
-from langpolicy import needs_language_repair, repair_prompt
+from langpolicy import needs_language_repair, repair_prompt, needs_retrieval_translation
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -98,6 +98,15 @@ db = client[DB_NAME]
 
 app = FastAPI(title="Dhara API")
 api = APIRouter(prefix="/api")
+
+
+@app.get("/health")
+async def root_health():
+    """Root-level health check for the platform's readiness/liveness probes
+    (which hit /health, not /api/health). Kept intentionally tiny — no DB call
+    — so it can't itself become a source of probe flakiness."""
+    return {"status": "ok"}
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("gandhikar")
@@ -570,6 +579,33 @@ async def meter_llm_use(user: dict, kind: str) -> None:
             },
         )
 
+async def translate_for_retrieval(text: str, model_provider: str, model_name: str) -> str:
+    """One-shot, non-streaming translation of a non-English question into English,
+    used ONLY so the deterministic corpus retrieval (English keywords) can find
+    the right verified law. Never shown to the user and never treated as a legal
+    source itself — the verified corpus text remains the only source of truth for
+    the answer; this call only helps the search understand what was asked. Falls
+    back to the original text on any failure so a translation hiccup can never
+    turn into a broken chat.
+    """
+    try:
+        translator = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"retrieval-translate-{uuid.uuid4()}",
+            system_message=(
+                "Translate the user's Indian-language legal question into a short, "
+                "literal English sentence for a search engine. Preserve every legal "
+                "keyword, name, number and section reference exactly. Output ONLY the "
+                "English translation — no notes, no quotes, no extra words."
+            ),
+        ).with_model(model_provider, model_name)
+        result = await translator.send_message(UserMessage(text=text))
+        out = str(result or "").strip().strip('"').strip()
+        return out or text
+    except Exception:
+        logger.warning("retrieval translation failed; falling back to original text", exc_info=True)
+        return text
+
 # ---------- Chat ----------
 @api.post("/chat/stream")
 async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
@@ -652,23 +688,35 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         "timestamp": now,  # explicit alias for CSV clarity
     })
 
+    # -------- Retrieval-language bridge (Hindi/Indic search fix) --------
+    # The verified corpus is indexed with English-only keywords. A question typed
+    # OR voice-transcribed in Hindi/Tamil/etc. would otherwise always miss every
+    # entry (corpus.py's normalizer strips non-ASCII text to nothing) and get
+    # refused with "no verified source" even when the exact law is covered. We
+    # translate ONLY for matching below — the citations shown and the law
+    # explained still come exclusively from the verified corpus, and the model
+    # still answers the user's own original wording, in their own language.
+    retrieval_text = body.message
+    if needs_retrieval_translation(body.message):
+        retrieval_text = await translate_for_retrieval(body.message, body.model_provider, body.model_name)
+
     # -------- Retrieval + citation integrity (P1) --------
     # (a) Non-legal / non-Indian jurisdiction → hard refusal, no LLM call
     early_refusal: Optional[str] = None
-    if is_non_indian_jurisdiction(body.message):
+    if is_non_indian_jurisdiction(retrieval_text):
         early_refusal = REFUSAL_NON_INDIAN
-    elif is_non_legal_advice(body.message):
+    elif is_non_legal_advice(retrieval_text):
         early_refusal = REFUSAL_NOT_LEGAL
 
     # (b) Corpus retrieval — deterministic keyword match against verified statutes
-    retrieved = [] if early_refusal else corpus_retrieve(body.message, limit=3)
+    retrieved = [] if early_refusal else corpus_retrieve(retrieval_text, limit=3)
 
     # (b0) State / UT layer — rent, liquor, traffic compounding and stamp duty are
     # state subjects. If the user has told us their state we serve its verified
     # rules ALONGSIDE the central law; we never substitute another state's rule.
     user_state = (user.get("state") or "").upper()
-    state_hits = [] if early_refusal else corpus_retrieve_state(body.message, user_state, limit=2)
-    state_topic = None if early_refusal else state_sensitive_topic(body.message)
+    state_hits = [] if early_refusal else corpus_retrieve_state(retrieval_text, user_state, limit=2)
+    state_topic = None if early_refusal else state_sensitive_topic(retrieval_text)
 
     # (b1) Citation integrity: if the user's query explicitly names a section/article
     # identifier (e.g. "BNS Section 999", "Article 350", "BNSS 220") and NONE of the
@@ -681,13 +729,13 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             return _re_id.sub(r"[^a-z0-9()]+", " ", (s or "").lower()).strip()
         query_ids: list[str] = []
         # "Article 21", "Article 21A"
-        for m in _re_id.finditer(r"\b[Aa]rticle\s+(\d+[A-Za-z]?)\b", body.message):
+        for m in _re_id.finditer(r"\b[Aa]rticle\s+(\d+[A-Za-z]?)\b", retrieval_text):
             query_ids.append(f"article {m.group(1).lower()}")
         # "BNS Section 999", "BNSS Section 43(5)", "Sec. 43 BNSS", "BNSS 43(5)",
         # "RTI Section 6", "CPA 34", "MV 185", "Motor Vehicles Section 185"
         for m in _re_id.finditer(
             r"\b(BNS|BNSS|BSA|IPC|CrPC|PWDVA|RTI|CPA|MV|MVA)\b[^\w]*(?:Sec(?:tion|\.)?\s*)?(\d+[A-Za-z]?(?:\(\d+\))?)\b",
-            body.message, _re_id.IGNORECASE,
+            retrieval_text, _re_id.IGNORECASE,
         ):
             query_ids.append(f"{m.group(1).lower()} {m.group(2).lower()}")
         if query_ids:
@@ -728,7 +776,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             dbg = {"top_score": None, "top_key": None, "content_tokens": None}
         else:
             cause_code = "no_corpus_match"
-            dbg = top_candidate_debug(body.message)
+            dbg = top_candidate_debug(retrieval_text)
             if dbg["top_score"] == 0 and dbg["content_tokens"] <= 1:
                 sub_cause = "query_too_vague"
             elif dbg["top_score"] == 0:
@@ -745,7 +793,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
                 "id": str(uuid.uuid4()),
                 "cause_code": cause_code,
                 "sub_cause": sub_cause,
-                "category": classify_topic(body.message),
+                "category": classify_topic(retrieval_text),
                 "language": body.language,
                 "state": user_state or None,
                 "top_score": dbg["top_score"],

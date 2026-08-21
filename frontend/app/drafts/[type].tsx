@@ -19,6 +19,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { draftByType } from '@/src/drafts';
+import { addToHistory } from '@/src/draftHistory';
 
 export default function DraftForm() {
   const { type } = useLocalSearchParams<{ type: string }>();
@@ -65,7 +66,11 @@ export default function DraftForm() {
         return;
       }
       if (!res.ok) throw new Error('failed');
-      setGenerated(spec.build(values));
+      const text = spec.build(values);
+      setGenerated(text);
+      // Save to on-device history so the user can reopen, edit or resend this
+      // exact notice later without spending another draft from the quota.
+      addToHistory({ type: spec.type, title: spec.title, text, lang: 'en' }).catch(() => {});
       refreshUser().catch(() => {});
     } catch {
       Alert.alert('Could not create the notice', 'Please check your connection and try again.');

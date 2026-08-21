@@ -200,9 +200,38 @@ and app-wide) by `meter_llm_use()` in `server.py`:
   Verified by testing agent (iteration_16): Hindi/Tamil/Bengali replies scored a 1.000 script
   ratio; 6/6 backend tests; new test file `backend/tests/test_lang_policy.py`.
 
-### KNOWN GAP found during iteration 16 (not yet fixed)
+### KNOWN GAP found during iteration 16 — FIXED this session
 Corpus retrieval keywords are ENGLISH-ONLY, so a question typed in Hindi/Tamil/Bengali usually
-matches nothing and falls into the (correctly localized) "no verified source" refusal. Voice
-input transcribes to the spoken language, so voice users hit this too. Fix direction: add
-native-script keyword aliases per entry, or transliterate/translate the query to English before
-scoring. This is the single biggest blocker to the bilingual promise.
+matched nothing and fell into the (correctly localized) "no verified source" refusal. Voice
+input transcribes to the spoken language, so voice users hit this too.
+**Fix implemented**: `backend/langpolicy.py::needs_retrieval_translation()` detects non-Latin
+script (>30% of alphabetic chars non-ASCII). If true, `server.py::translate_for_retrieval()`
+runs ONE non-streaming Claude call (via Emergent LLM key) that translates the question to English
+SOLELY for matching — `retrieval_text` replaces `body.message` everywhere retrieval logic is used
+(is_non_indian_jurisdiction, is_non_legal_advice, corpus_retrieve, corpus_retrieve_state,
+state_sensitive_topic, explicit id/section regex, classify_topic, top_candidate_debug). The
+verified corpus text remains the only source of legal fact; the model still answers the user's
+own original wording in their own language. English queries are untouched (zero extra cost/latency).
+
+### Session additions (post iteration 16)
+- **Usage meter in chat**: `/(tabs)/index.tsx` now shows a glanceable "`X/Y questions today`" /
+  "`X/Y voice today`" pill row right under the header (previously only visible in Settings).
+  Refreshes on chat-screen mount and after every message via `refreshUser()`.
+- **Draft history wired up**: `src/draftHistory.ts` existed but nothing called it. Now
+  `drafts/[type].tsx` saves every generated notice via `addToHistory()`, and a new
+  `drafts/history.tsx` screen (reachable from a header icon + a card on `drafts/index.tsx`) lists,
+  expands, copies, shares and deletes past notices — all on-device (AsyncStorage), no backend cost.
+- **Mic gestures — WhatsApp lock + waveform**: slide-left-to-cancel and the transcript
+  Send/Edit/Re-record confirmation already existed. Added slide-UP-to-lock (drag past -55px on
+  the Y axis locks hands-free recording; a floating lock-with-chevron hint fades in above the mic
+  as you drag) with a dedicated locked bar (trash = discard, checkmark = finish → existing
+  transcribe/confirm flow). Added a 5-bar live "listening" waveform driven by plain
+  `Animated.loop` timings (deliberately NOT native audio metering — flaky across Android OEMs and
+  undefined on web per Expo's own issue tracker — so it looks identical on every phone).
+- **Speaker volume control**: `ttsVolume` (0–1, default 1.0) persisted in `auth.tsx`
+  (`dhara_tts_volume`), applied to the TTS `AudioPlayer.volume` in `(tabs)/index.tsx`, adjustable
+  via a new slider in Settings (`@react-native-community/slider`, installed via `yarn expo
+  install`).
+- **Root-level `/health` added** (`server.py`) — platform readiness/liveness probes hit `/health`
+  at the root, not `/api/health`; both now return 200.
+

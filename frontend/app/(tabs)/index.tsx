@@ -35,6 +35,7 @@ import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 import { addBookmark } from '@/src/bookmarks';
 
 const CANCEL_THRESHOLD = -80; // px the user must drag left to cancel
+const LOCK_THRESHOLD = -55; // px the user must drag up to lock hands-free recording
 
 /**
  * Contextual next step derived from the verified citations on an answer. Keeps
@@ -101,7 +102,7 @@ const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicon
 ];
 
 export default function ChatScreen() {
-  const { token, user, language, model, autoSpeak, refreshUser } = useAuth();
+  const { token, user, language, model, autoSpeak, ttsVolume, refreshUser } = useAuth();
   const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -130,8 +131,18 @@ export default function ChatScreen() {
   const holdTimerRef = useRef<any>(null);
   // Animated values for WhatsApp-style mic gesture
   const slideX = useRef(new Animated.Value(0)).current;
+  const slideY = useRef(new Animated.Value(0)).current;
   const micPulse = useRef(new Animated.Value(1)).current;
   const slideCancelledRef = useRef(false);
+  // Hands-free "locked" recording — set by dragging the mic straight up,
+  // exactly like WhatsApp. Once locked, releasing the finger no longer stops
+  // the recording; the user must tap the explicit stop/cancel buttons.
+  const [locked, setLocked] = useState(false);
+  const lockedRef = useRef(false);
+  // Five bars driven by plain Animated loops (not native audio metering — that
+  // API is flaky across Android OEMs / web in Expo's own bug tracker) so the
+  // "listening" waveform looks and behaves identically on every phone.
+  const waveBars = useRef([0, 1, 2, 3, 4].map(() => new Animated.Value(0.3))).current;
   const scrollRef = useRef<ScrollView>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const nativeSTTHandleRef = useRef<{ stop: () => Promise<any> } | null>(null);
@@ -206,6 +217,55 @@ export default function ChatScreen() {
     samplesRemaining !== null
       ? samplesRemaining
       : (user?.pro_samples_remaining ?? user?.pro_samples_limit ?? 5);
+
+  // Keep the usage meter fresh the moment the chat screen opens, not just
+  // after the first message is sent.
+  useEffect(() => {
+    refreshUser().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Live waveform while recording — purely visual, driven by looping Animated
+  // timings (no dependency on native audio-level metering, which is known to
+  // be unreliable on several Android OEMs and always-undefined on web).
+  useEffect(() => {
+    const loops: Animated.CompositeAnimation[] = [];
+    if (recording) {
+      waveBars.forEach((bar, i) => {
+        const loop = Animated.loop(
+          Animated.sequence([
+            Animated.timing(bar, { toValue: 0.35 + Math.random() * 0.65, duration: 260 + i * 35, useNativeDriver: false }),
+            Animated.timing(bar, { toValue: 0.15 + Math.random() * 0.25, duration: 260 + i * 35, useNativeDriver: false }),
+          ]),
+        );
+        loop.start();
+        loops.push(loop);
+      });
+    } else {
+      waveBars.forEach((bar) => {
+        bar.stopAnimation();
+        bar.setValue(0.3);
+      });
+    }
+    return () => { loops.forEach((l) => l.stop()); };
+  }, [recording, waveBars]);
+
+  /** Live waveform bars — rendered next to the recording timer and inside the
+   * locked hands-free bar. Purely decorative "is listening" feedback. */
+  const Waveform = () => (
+    <View style={styles.waveformRow} testID="voice-waveform">
+      {waveBars.map((bar, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            styles.waveBar,
+            { height: bar.interpolate({ inputRange: [0, 1], outputRange: [4, 22] }) },
+          ]}
+        />
+      ))}
+    </View>
+  );
+
 
   // Configure audio mode for playback
   useEffect(() => {
@@ -587,6 +647,9 @@ export default function ChatScreen() {
         try {
           player.setPlaybackRate(speechRate, 'high');
         } catch {}
+        try {
+          player.volume = ttsVolume;
+        } catch {}
 
         let hasStartedPlayback = false;
         const tryStartPlayback = () => {
@@ -645,7 +708,7 @@ export default function ChatScreen() {
         );
       }
     },
-    [speakingId, language, speechRate, token, stopCloudTTS],
+    [speakingId, language, speechRate, ttsVolume, token, stopCloudTTS],
   );
   // Keep the forward-declared ref up to date whenever `speak` changes.
   speakRef.current = speak;
@@ -805,7 +868,10 @@ export default function ChatScreen() {
     isMicHeldRef.current = true;
     slideCancelledRef.current = false;
     setSlideCancelled(false);
+    lockedRef.current = false;
+    setLocked(false);
     slideX.setValue(0);
+    slideY.setValue(0);
     // Start hold timer + kick off recording
     setHoldElapsed(0);
     holdTimerRef.current = setInterval(() => {
@@ -830,11 +896,21 @@ export default function ChatScreen() {
       setRecording(false);
       Alert.alert('Mic unavailable', err?.message || 'Could not start recording.');
     }
-  }, [startRecording, slideX, micPulse]);
+  }, [startRecording, slideX, slideY, micPulse]);
 
   const onMicPressOut = useCallback(() => {
     // Synchronously drop the held flag so any in-flight startRecording aborts.
     isMicHeldRef.current = false;
+
+    // Locked (hands-free) recording — lifting the finger must NOT stop it.
+    // The user now controls the recording only via the locked bar's explicit
+    // trash / checkmark buttons (onLockedCancel / onLockedFinish below).
+    if (lockedRef.current) {
+      slideX.setValue(0);
+      slideY.setValue(0);
+      return;
+    }
+
     // Stop pulsing
     micPulse.stopAnimation();
     micPulse.setValue(1);
@@ -846,6 +922,7 @@ export default function ChatScreen() {
     setHoldElapsed(0);
     // Reset slide position
     slideX.setValue(0);
+    slideY.setValue(0);
 
     // Check if the recording was cancelled by sliding
     if (slideCancelledRef.current) {
@@ -873,19 +950,82 @@ export default function ChatScreen() {
     if (recording || nativeSTTHandleRef.current || webRecorderRef.current) {
       stopRecording();
     }
-  }, [recording, stopRecording, recorder, slideX, micPulse]);
+  }, [recording, stopRecording, recorder, slideX, slideY, micPulse]);
 
-  // PanResponder for WhatsApp slide-to-cancel gesture on the mic button
+  /** Trash button on the locked hands-free bar — discards the recording
+   * without transcribing or sending anything. */
+  const onLockedCancel = useCallback(() => {
+    lockedRef.current = false;
+    setLocked(false);
+    micPulse.stopAnimation();
+    micPulse.setValue(1);
+    if (holdTimerRef.current) {
+      clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    setHoldElapsed(0);
+    setRecording(false);
+    if (Platform.OS === 'web') {
+      try { webRecorderRef.current?.stop(); } catch {}
+      try { webStreamRef.current?.getTracks()?.forEach((t: any) => t.stop()); } catch {}
+      webRecorderRef.current = null;
+      webStreamRef.current = null;
+      webChunksRef.current = [];
+    } else {
+      try { recorder.stop(); } catch {}
+      try { setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false }); } catch {}
+    }
+  }, [recorder, micPulse]);
+
+  /** Checkmark button on the locked hands-free bar — finishes the recording
+   * and goes to the normal transcribe → confirm flow, same as a slide-free
+   * hold-and-release would. */
+  const onLockedFinish = useCallback(() => {
+    lockedRef.current = false;
+    setLocked(false);
+    micPulse.stopAnimation();
+    micPulse.setValue(1);
+    stopRecording();
+  }, [stopRecording, micPulse]);
+
+  // PanResponder for the WhatsApp slide-to-cancel / slide-up-to-lock gestures
+  // on the mic button.
   const micPanResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_: GestureResponderEvent, gs: PanResponderGestureState) => Math.abs(gs.dx) > 5,
+    onMoveShouldSetPanResponder: (_: GestureResponderEvent, gs: PanResponderGestureState) =>
+      Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5,
     onPanResponderGrant: () => {
       try { onMicPressIn(); } catch (err) { console.warn('mic press-in failed:', err); }
     },
     onPanResponderMove: (_: GestureResponderEvent, gs: PanResponderGestureState) => {
+      // Once locked, the gesture is done — ignore any further finger movement.
+      if (lockedRef.current) return;
+
+      const { dx, dy } = gs;
+      // A predominantly-upward drag locks the recording hands-free; a
+      // predominantly-leftward drag cancels it. Whichever axis the user is
+      // actually moving on wins, exactly like WhatsApp's own mic gesture.
+      if (dy < -10 && Math.abs(dy) > Math.abs(dx)) {
+        const clampedY = Math.max(-70, dy);
+        slideY.setValue(clampedY);
+        slideX.setValue(0);
+        if (slideCancelledRef.current) {
+          slideCancelledRef.current = false;
+          setSlideCancelled(false);
+        }
+        if (clampedY <= LOCK_THRESHOLD) {
+          lockedRef.current = true;
+          setLocked(true);
+          slideY.setValue(0);
+          slideX.setValue(0);
+        }
+        return;
+      }
+
       // Only allow sliding left (negative dx)
-      const clampedX = Math.min(0, Math.max(-160, gs.dx));
+      const clampedX = Math.min(0, Math.max(-160, dx));
       slideX.setValue(clampedX);
+      slideY.setValue(0);
       // Check if past cancel threshold
       if (clampedX <= CANCEL_THRESHOLD && !slideCancelledRef.current) {
         slideCancelledRef.current = true;
@@ -901,7 +1041,7 @@ export default function ChatScreen() {
     onPanResponderTerminate: () => {
       try { onMicPressOut(); } catch (err) { console.warn('mic terminate failed:', err); }
     },
-  }), [onMicPressIn, onMicPressOut, slideX]);
+  }), [onMicPressIn, onMicPressOut, slideX, slideY]);
 
   const cancelTranscript = useCallback(() => {
     setShowTranscriptModal(false);
@@ -987,6 +1127,26 @@ export default function ChatScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* Usage meter — glanceable so the daily free limit never surprises the
+          user mid-conversation. Numbers come from /auth/me, refreshed after
+          every message. */}
+      {!!user && (
+        <View style={styles.usageRow} testID="usage-meter">
+          <View style={styles.usagePill} testID="usage-pill-questions">
+            <Ionicons name="chatbubble-ellipses-outline" size={12} color={theme.colors.brand} />
+            <Text style={styles.usagePillText}>
+              {user.daily_questions_left ?? '—'}/{user.daily_questions_cap ?? '—'} questions today
+            </Text>
+          </View>
+          <View style={styles.usagePill} testID="usage-pill-voice">
+            <Ionicons name="mic-outline" size={12} color={theme.colors.brand} />
+            <Text style={styles.usagePillText}>
+              {user.daily_voice_left ?? '—'}/{user.daily_voice_cap ?? '—'} voice today
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Pro-mode toggle row */}
       <View style={styles.modeRow} testID="mode-row">
@@ -1217,95 +1377,148 @@ export default function ChatScreen() {
         </ScrollView>
 
         {/* Unified input / recording bar — mic button always mounted for gesture continuity */}
-        <View style={recording ? styles.recordingBar : styles.inputBar} testID={recording ? 'rec-bar' : 'input-bar'}>
-          {recording ? (
-            <>
-              {/* Timer + red dot on the left */}
-              <View style={styles.recLeft}>
-                <Animated.View style={[styles.recDot, { transform: [{ scale: micPulse }] }]} />
-                <Text style={styles.recTimer}>
-                  {String(Math.floor(holdElapsed / 60)).padStart(2, '0')}:
-                  {String(holdElapsed % 60).padStart(2, '0')}
-                </Text>
-              </View>
+        {locked && recording ? (
+          /* Hands-free locked recording bar — replaces the composer entirely.
+             The user released their finger after dragging up; recording keeps
+             going until they tap trash (discard) or the checkmark (finish). */
+          <View style={styles.lockedBar} testID="locked-rec-bar">
+            <View style={styles.recLeft}>
+              <Animated.View style={[styles.recDot, { transform: [{ scale: micPulse }] }]} />
+              <Text style={styles.recTimer}>
+                {String(Math.floor(holdElapsed / 60)).padStart(2, '0')}:
+                {String(holdElapsed % 60).padStart(2, '0')}
+              </Text>
+            </View>
+            <Waveform />
+            <Pressable testID="locked-cancel-btn" style={styles.lockedIconBtn} onPress={onLockedCancel} hitSlop={10}>
+              <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+            </Pressable>
+            <Pressable testID="locked-finish-btn" style={styles.lockedSendBtn} onPress={onLockedFinish} hitSlop={10}>
+              <Ionicons name="checkmark" size={22} color={theme.colors.onBrandPrimary} />
+            </Pressable>
+          </View>
+        ) : (
+          <View style={recording ? styles.recordingBar : styles.inputBar} testID={recording ? 'rec-bar' : 'input-bar'}>
+            {recording ? (
+              <>
+                {/* Timer + red dot + live waveform on the left */}
+                <View style={styles.recLeft}>
+                  <Animated.View style={[styles.recDot, { transform: [{ scale: micPulse }] }]} />
+                  <Text style={styles.recTimer}>
+                    {String(Math.floor(holdElapsed / 60)).padStart(2, '0')}:
+                    {String(holdElapsed % 60).padStart(2, '0')}
+                  </Text>
+                  <View style={styles.waveformInline} testID="voice-waveform">
+                    {waveBars.map((bar, i) => (
+                      <Animated.View
+                        key={i}
+                        style={[
+                          styles.waveBar,
+                          { height: bar.interpolate({ inputRange: [0, 1], outputRange: [4, 18] }) },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                </View>
 
-              {/* Slide to cancel indicator */}
-              <Animated.View style={[
-                styles.recCenter,
-                {
-                  opacity: slideX.interpolate({
-                    inputRange: [-160, -40, 0],
-                    outputRange: [0.2, 0.7, 1],
-                    extrapolate: 'clamp',
-                  }),
-                }
-              ]}>
-                {slideCancelled ? (
-                  <View style={styles.cancelActive}>
-                    <Ionicons name="trash" size={18} color={theme.colors.error} />
-                    <Text style={styles.cancelActiveText}>Release to cancel</Text>
-                  </View>
+                {/* Slide to cancel indicator */}
+                <Animated.View style={[
+                  styles.recCenter,
+                  {
+                    opacity: slideX.interpolate({
+                      inputRange: [-160, -40, 0],
+                      outputRange: [0.2, 0.7, 1],
+                      extrapolate: 'clamp',
+                    }),
+                  }
+                ]}>
+                  {slideCancelled ? (
+                    <View style={styles.cancelActive}>
+                      <Ionicons name="trash" size={18} color={theme.colors.error} />
+                      <Text style={styles.cancelActiveText}>Release to cancel</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.slideHint}>
+                      <Ionicons name="chevron-back" size={14} color={theme.colors.onSurfaceTertiary} />
+                      <Text style={styles.slideHintText}>Slide to cancel</Text>
+                    </View>
+                  )}
+                </Animated.View>
+
+                {/* Lock affordance — drag the mic straight up into this pill
+                    to keep recording hands-free, exactly like WhatsApp. */}
+                <Animated.View
+                  testID="lock-hint"
+                  pointerEvents="none"
+                  style={[
+                    styles.lockHint,
+                    {
+                      opacity: slideY.interpolate({ inputRange: [-70, -10, 0], outputRange: [1, 0.6, 0], extrapolate: 'clamp' }),
+                      transform: [{
+                        translateY: slideY.interpolate({ inputRange: [-70, 0], outputRange: [-6, 0], extrapolate: 'clamp' }),
+                      }],
+                    },
+                  ]}
+                >
+                  <Ionicons name="lock-closed" size={13} color={theme.colors.brand} />
+                  <Ionicons name="chevron-up" size={12} color={theme.colors.brand} />
+                </Animated.View>
+              </>
+            ) : (
+              <>
+                <TextInput
+                  testID="chat-input"
+                  style={styles.input}
+                  value={input}
+                  onChangeText={setInput}
+                  placeholder={`Ask in ${language.native}…`}
+                  placeholderTextColor={theme.colors.onSurfaceTertiary}
+                  multiline
+                  editable={!streaming && !transcribing}
+                />
+              </>
+            )}
+
+            {/* Right side: mic or send — mic always renders with PanResponder for
+                gesture continuity across the recording-state transition */}
+            {(!recording && input.trim().length > 0) ? (
+              <Pressable
+                testID="send-button"
+                onPress={() => send(input)}
+                disabled={streaming}
+                style={styles.send}
+              >
+                <Ionicons name="arrow-up" size={24} color={theme.colors.onBrandPrimary} />
+              </Pressable>
+            ) : (
+              <Animated.View
+                testID="mic-button"
+                style={[
+                  recording ? styles.micRecording : styles.mic,
+                  recording && {
+                    transform: [
+                      { translateX: slideX },
+                      { translateY: slideY },
+                      { scale: micPulse },
+                    ],
+                    backgroundColor: slideCancelled ? theme.colors.error : theme.colors.brandSecondary,
+                  },
+                ]}
+                {...micPanResponder.panHandlers}
+              >
+                {transcribing ? (
+                  <ActivityIndicator color={theme.colors.onBrandPrimary} />
                 ) : (
-                  <View style={styles.slideHint}>
-                    <Ionicons name="chevron-back" size={14} color={theme.colors.onSurfaceTertiary} />
-                    <Text style={styles.slideHintText}>Slide to cancel</Text>
-                  </View>
+                  <Ionicons
+                    name={recording && slideCancelled ? 'trash' : 'mic'}
+                    size={26}
+                    color={theme.colors.onBrandPrimary}
+                  />
                 )}
               </Animated.View>
-            </>
-          ) : (
-            <>
-              <TextInput
-                testID="chat-input"
-                style={styles.input}
-                value={input}
-                onChangeText={setInput}
-                placeholder={`Ask in ${language.native}…`}
-                placeholderTextColor={theme.colors.onSurfaceTertiary}
-                multiline
-                editable={!streaming && !transcribing}
-              />
-            </>
-          )}
-
-          {/* Right side: mic or send — mic always renders with PanResponder for
-              gesture continuity across the recording-state transition */}
-          {(!recording && input.trim().length > 0) ? (
-            <Pressable
-              testID="send-button"
-              onPress={() => send(input)}
-              disabled={streaming}
-              style={styles.send}
-            >
-              <Ionicons name="arrow-up" size={24} color={theme.colors.onBrandPrimary} />
-            </Pressable>
-          ) : (
-            <Animated.View
-              testID="mic-button"
-              style={[
-                recording ? styles.micRecording : styles.mic,
-                recording && {
-                  transform: [
-                    { translateX: slideX },
-                    { scale: micPulse },
-                  ],
-                  backgroundColor: slideCancelled ? theme.colors.error : theme.colors.brandSecondary,
-                },
-              ]}
-              {...micPanResponder.panHandlers}
-            >
-              {transcribing ? (
-                <ActivityIndicator color={theme.colors.onBrandPrimary} />
-              ) : (
-                <Ionicons
-                  name={recording && slideCancelled ? 'trash' : 'mic'}
-                  size={26}
-                  color={theme.colors.onBrandPrimary}
-                />
-              )}
-            </Animated.View>
-          )}
-        </View>
+            )}
+          </View>
+        )}
       </KeyboardAvoidingView>
 
       {/* Transcript confirmation modal — shown after voice input is transcribed */}
@@ -1439,6 +1652,26 @@ const styles = StyleSheet.create({
     minHeight: 32,
   },
   newChatText: { color: theme.colors.brand, fontSize: 12, fontWeight: '700' },
+  usageRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.xl,
+    paddingTop: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    flexWrap: 'wrap',
+  },
+  usagePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  usagePillText: { color: theme.colors.onSurfaceSecondary, fontSize: 11, fontWeight: '600' },
   modeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1693,11 +1926,77 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5F5',
     minHeight: 68,
   },
+  // Hands-free locked recording bar — shown once the user drags the mic up
+  // past LOCK_THRESHOLD and releases their finger.
+  lockedBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: theme.spacing.md,
+    gap: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.error,
+    backgroundColor: '#FFF5F5',
+    minHeight: 68,
+  },
+  lockedIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  lockedSendBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.brandSecondary,
+  },
+  // Live "is listening" waveform — plain Animated bars, no native metering
+  // dependency, so it looks and behaves identically on every phone.
+  waveformRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    height: 24,
+  },
+  waveBar: {
+    width: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.error,
+  },
+  waveformInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    height: 20,
+  },
+  // Floating "slide up to lock" pill above the mic button
+  lockHint: {
+    position: 'absolute',
+    right: 6,
+    bottom: 62,
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
   recLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    minWidth: 70,
+    minWidth: 108,
   },
   recDot: {
     width: 12,
