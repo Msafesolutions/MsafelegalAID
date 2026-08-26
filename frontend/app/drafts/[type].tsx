@@ -110,6 +110,14 @@ export default function DraftForm() {
               <Ionicons name="time-outline" size={16} color={theme.colors.error} />
               <Text style={styles.deadlineText}>{spec.deadline}</Text>
             </View>
+            {/* Mandatory legal disclosure above every generated notice */}
+            <View style={styles.legalDisclaimer} testID="draft-legal-disclaimer">
+              <Ionicons name="information-circle-outline" size={16} color={theme.colors.onSurfaceSecondary} />
+              <Text style={styles.legalDisclaimerText}>
+                This is a template for your use. Review all details before submitting.{' '}
+                DHARA does not create an advocate-client relationship.
+              </Text>
+            </View>
             <View style={styles.output} testID="draft-output">
               <Text style={styles.outputText} selectable>{generated}</Text>
             </View>
@@ -131,6 +139,14 @@ export default function DraftForm() {
             <View style={styles.deadlineCard}>
               <Ionicons name="time-outline" size={16} color={theme.colors.error} />
               <Text style={styles.deadlineText}>{spec.deadline}</Text>
+            </View>
+            {/* Pre-generation legal disclosure */}
+            <View style={styles.legalDisclaimer}>
+              <Ionicons name="information-circle-outline" size={16} color={theme.colors.onSurfaceSecondary} />
+              <Text style={styles.legalDisclaimerText}>
+                This is a template for your use. Review all details before submitting.{' '}
+                DHARA does not create an advocate-client relationship.
+              </Text>
             </View>
             {spec.fields.map((f) => (
               <View key={f.key} style={styles.fieldWrap}>
@@ -218,4 +234,21 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: { color: theme.colors.brand, fontWeight: '800', fontSize: 15 },
   missing: { padding: theme.spacing.xl, color: theme.colors.onSurface },
+  legalDisclaimer: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    alignItems: 'flex-start',
+    backgroundColor: '#F8F9FA',
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  legalDisclaimerText: {
+    flex: 1,
+    color: theme.colors.onSurfaceSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    fontStyle: 'italic',
+  },
 });

@@ -46,8 +46,113 @@ type Pricing = {
 };
 
 export default function Upgrade() {
-  const { token, user, refreshUser } = useAuth();
+  const { token, user, refreshUser, language } = useAuth();
   const router = useRouter();
+
+  // Static translations for key upgrade screen strings.
+  // Covers the 10 largest Indian languages by speaker count (in addition to English).
+  const T: Record<string, {
+    headerTitle: string;
+    heroTitle: string;
+    heroSub: string;
+    whatYouGet: string;
+    alreadyPro: string;
+    disclaimer: string;
+  }> = {
+    hi: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'वकील-स्तरीय गहराई',
+      heroSub: 'संरचित, कार्रवाई योग्य, ड्राफ़्ट सहित।',
+      whatYouGet: 'आपको क्या मिलता है',
+      alreadyPro: 'आप पहले से Pro सदस्य हैं',
+      disclaimer: 'Pro अधिक विस्तृत AI उत्तर देता है। यह कानूनी सलाह नहीं है और अधिवक्ता-मुवक्किल संबंध नहीं बनाता।',
+    },
+    ta: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'வழக்கறிஞர் ஆழமான பதில்கள்',
+      heroSub: 'கட்டமைக்கப்பட்டது, செயல்பாட்டு, வரைவுகள் உட்பட.',
+      whatYouGet: 'நீங்கள் என்ன பெறுவீர்கள்',
+      alreadyPro: 'நீங்கள் ஏற்கனவே Pro உறுப்பினர்',
+      disclaimer: 'Pro மேம்பட்ட AI பதில்களை வழங்குகிறது. இது சட்ட ஆலோசனை அல்ல.',
+    },
+    te: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'న్యాయవాది స్థాయి లోతైన సమాధానాలు',
+      heroSub: 'నిర్మాణాత్మకమైన, చర్య యోగ్యమైన, డ్రాఫ్ట్‌లు సహా.',
+      whatYouGet: 'మీకు ఏమి లభిస్తుంది',
+      alreadyPro: 'మీరు ఇప్పటికే Pro సభ్యుడు',
+      disclaimer: 'Pro మరింత వివరణాత్మక AI సమాధానాలు అందిస్తుంది. ఇది న్యాయ సలహా కాదు.',
+    },
+    mr: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'वकील-दर्जाची सखोल उत्तरे',
+      heroSub: 'संरचित, कृतियोग्य, मसुदे समाविष्ट.',
+      whatYouGet: 'आपल्याला काय मिळते',
+      alreadyPro: 'आपण आधीपासून Pro सदस्य आहात',
+      disclaimer: 'Pro अधिक तपशीलवार AI उत्तरे प्रदान करतो. हे कायदेशीर सल्ला नाही.',
+    },
+    bn: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'আইনজীবী মানের গভীর উত্তর',
+      heroSub: 'কাঠামোবদ্ধ, কার্যকর, খসড়া সহ।',
+      whatYouGet: 'আপনি কী পাবেন',
+      alreadyPro: 'আপনি ইতিমধ্যে Pro সদস্য',
+      disclaimer: 'Pro আরও বিস্তারিত AI উত্তর দেয়। এটি আইনি পরামর্শ নয়।',
+    },
+    gu: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'વકીલ-સ્તરીય ઊંડા જવાબો',
+      heroSub: 'માળખાગત, ક્રિયાયોગ્ય, ડ્રાફ્ટ સહિત.',
+      whatYouGet: 'તમને શું મળશે',
+      alreadyPro: 'તમે પહેલેથી Pro સભ્ય છો',
+      disclaimer: 'Pro વધુ વિગતવાર AI જવાબો પ્રદાન કરે છે. આ કાનૂની સલાહ નથી.',
+    },
+    kn: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'ವಕೀಲ ಮಟ್ಟದ ಆಳವಾದ ಉತ್ತರಗಳು',
+      heroSub: 'ರಚನಾತ್ಮಕ, ಕ್ರಿಯಾತ್ಮಕ, ಡ್ರಾಫ್ಟ್‌ಗಳು ಸೇರಿ.',
+      whatYouGet: 'ನಿಮಗೇನು ಸಿಗುತ್ತದೆ',
+      alreadyPro: 'ನೀವು ಈಗಾಗಲೇ Pro ಸದಸ್ಯರು',
+      disclaimer: 'Pro ಹೆಚ್ಚು ವಿವರವಾದ AI ಉತ್ತರಗಳನ್ನು ನೀಡುತ್ತದೆ. ಇದು ಕಾನೂನು ಸಲಹೆ ಅಲ್ಲ.',
+    },
+    ml: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'അഭിഭാഷക നിലവാരത്തിലുള്ള ആഴമുള്ള ഉത്തരങ്ങൾ',
+      heroSub: 'ഘടനാപരം, പ്രവർത്തനക്ഷമം, ഡ്രാഫ്റ്റുകൾ ഉൾപ്പെടെ.',
+      whatYouGet: 'നിങ്ങൾക്ക് എന്ത് ലഭിക്കും',
+      alreadyPro: 'നിങ്ങൾ ഇതിനകം Pro അംഗമാണ്',
+      disclaimer: 'Pro കൂടുതൽ വിശദമായ AI ഉത്തരങ്ങൾ നൽകുന്നു. ഇത് നിയമ ഉപദേശമല്ല.',
+    },
+    pa: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'ਵਕੀਲ ਪੱਧਰੀ ਡੂੰਘੇ ਜਵਾਬ',
+      heroSub: 'ਢਾਂਚਾਗਤ, ਕਾਰਜਯੋਗ, ਖਰੜੇ ਸਮੇਤ।',
+      whatYouGet: 'ਤੁਹਾਨੂੰ ਕੀ ਮਿਲਦਾ ਹੈ',
+      alreadyPro: 'ਤੁਸੀਂ ਪਹਿਲਾਂ ਤੋਂ Pro ਮੈਂਬਰ ਹੋ',
+      disclaimer: 'Pro ਵਧੇਰੇ ਵਿਸਤ੍ਰਿਤ AI ਜਵਾਬ ਦਿੰਦਾ ਹੈ। ਇਹ ਕਾਨੂੰਨੀ ਸਲਾਹ ਨਹੀਂ ਹੈ।',
+    },
+    ur: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'وکیل کی سطح کے گہرے جوابات',
+      heroSub: 'منظم، قابل عمل، مسودے شامل۔',
+      whatYouGet: 'آپ کو کیا ملتا ہے',
+      alreadyPro: 'آپ پہلے سے Pro رکن ہیں',
+      disclaimer: 'Pro زیادہ تفصیلی AI جوابات فراہم کرتا ہے۔ یہ قانونی مشورہ نہیں ہے۔',
+    },
+    or: {
+      headerTitle: 'Dhara Pro',
+      heroTitle: 'ଓକିଲ ସ୍ତରୀୟ ଗଭୀର ଉତ୍ତର',
+      heroSub: 'ସଂରଚିତ, କ୍ରିୟାଯୋଗ୍ୟ, ଡ୍ରାଫ୍ଟ ସହ।',
+      whatYouGet: 'ଆପଣ କ\'ଣ ପାଇବେ',
+      alreadyPro: 'ଆପଣ ପୂର୍ବରୁ Pro ସଦସ୍ୟ',
+      disclaimer: 'Pro ଅଧିକ ବିସ୍ତୃତ AI ଉତ୍ତର ଦେଇଥାଏ। ଏହା ଆଇନ ପରାମର୍ଶ ନୁହେଁ।',
+    },
+  };
+
+  // Pick translations for current language, fall back to English strings
+  const langCode = language?.code || 'en';
+  const t = T[langCode] || null;
+
   const params = useLocalSearchParams<{ status?: string; session_id?: string }>();
   const [pricing, setPricing] = useState<Pricing | null>(null);
   const [loadingStripe, setLoadingStripe] = useState(false);
@@ -185,7 +290,7 @@ export default function Upgrade() {
         <Pressable onPress={() => router.back()} testID="upgrade-back" hitSlop={10}>
           <Ionicons name="arrow-back" size={26} color={theme.colors.onBrandPrimary} />
         </Pressable>
-        <Text style={styles.headerTitle}>Dhara Pro</Text>
+        <Text style={styles.headerTitle}>{t?.headerTitle || 'Dhara Pro'}</Text>
         <View style={{ width: 26 }} />
       </View>
 
@@ -194,8 +299,8 @@ export default function Upgrade() {
           <View style={styles.crown}>
             <Ionicons name="star" size={32} color={theme.colors.brandSecondary} />
           </View>
-          <Text style={styles.heroTitle}>Lawyer-consultation depth</Text>
-          <Text style={styles.heroSub}>Structured, actionable, drafts included.</Text>
+          <Text style={styles.heroTitle}>{t?.heroTitle || 'Lawyer-consultation depth'}</Text>
+          <Text style={styles.heroSub}>{t?.heroSub || 'Structured, actionable, drafts included.'}</Text>
           {pricing && (
             <View style={styles.priceRow}>
               <Text testID="pro-price" style={styles.price}>
@@ -212,7 +317,14 @@ export default function Upgrade() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.section}>What you get</Text>
+          <Text style={styles.section}>{t?.whatYouGet || 'What you get'}</Text>
+          {/* Show language indicator if translated */}
+          {t && (
+            <View style={styles.langIndicator}>
+              <Ionicons name="language-outline" size={14} color={theme.colors.brand} />
+              <Text style={styles.langIndicatorText}>Showing in {language.native}</Text>
+            </View>
+          )}
           {(pricing?.features || []).map((f, i) => (
             <View key={i} style={styles.feature} testID={`feature-${i}`}>
               <Ionicons name="checkmark-circle" size={20} color={theme.colors.success} />
@@ -234,16 +346,16 @@ export default function Upgrade() {
         <View style={styles.disclaimerBox}>
           <Ionicons name="information-circle" size={18} color={theme.colors.warning} />
           <Text style={styles.disclaimerText}>
-            Pro provides more detailed AI answers. It is NOT legal advice and does NOT create an
-            advocate-client relationship. For actual legal matters consult a Bar Council-registered
-            advocate. © Callistus Moses · Msafe.
+            {t?.disclaimer ||
+              'Pro provides more detailed AI answers. It is NOT legal advice and does NOT create an advocate-client relationship. For actual legal matters consult a Bar Council-registered advocate.'}{' '}
+            © Callistus Moses · Msafe.
           </Text>
         </View>
 
         {user?.is_pro ? (
           <View style={styles.alreadyPro} testID="already-pro">
             <Ionicons name="star" size={22} color={theme.colors.brandSecondary} />
-            <Text style={styles.alreadyProText}>You are already a Pro member</Text>
+            <Text style={styles.alreadyProText}>{t?.alreadyPro || 'You are already a Pro member'}</Text>
           </View>
         ) : (
           <>
@@ -485,6 +597,18 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   featureText: { flex: 1, color: theme.colors.onSurface, lineHeight: 20 },
+  langIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: theme.spacing.sm,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderRadius: theme.radius.pill,
+    alignSelf: 'flex-start',
+  },
+  langIndicatorText: { color: theme.colors.brand, fontSize: 12, fontWeight: '600' },
   compareRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

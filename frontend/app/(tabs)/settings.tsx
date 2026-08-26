@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform, Switch } from 'react-native';
+import { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform, Switch, Animated } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,18 @@ export default function Settings() {
   const [showLang, setShowLang] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [termsText, setTermsText] = useState('');
+  // Brief visual confirmation when language changes
+  const [langConfirm, setLangConfirm] = useState<string | null>(null);
+  const langFadeAnim = useRef(new Animated.Value(0)).current;
+
+  const flashLangConfirm = (name: string) => {
+    setLangConfirm(name);
+    Animated.sequence([
+      Animated.timing(langFadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(1800),
+      Animated.timing(langFadeAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start(() => setLangConfirm(null));
+  };
 
   useEffect(() => {
     fetch(`${API_BASE}/api/reference/languages`).then(r => r.json()).then(setLangs);
@@ -141,22 +153,23 @@ export default function Settings() {
 
         <Text style={styles.section}>Today&apos;s free usage</Text>
         <View style={styles.helpCard} testID="usage-card">
-          <View style={styles.helpRow}>
-            <Text style={styles.helpLabel}>Questions left today</Text>
-            <View style={styles.helpNumBadge}>
-              <Text style={styles.helpNum}>
-                {user?.daily_questions_left ?? '—'} / {user?.daily_questions_cap ?? '—'}
-              </Text>
+          {user?.is_pro ? (
+            <View style={[styles.helpRow, { borderBottomWidth: 0 }]}>
+              <Text style={styles.helpLabel}>Daily questions</Text>
+              <View style={[styles.helpNumBadge, { backgroundColor: theme.colors.brandTertiary }]}>
+                <Text style={[styles.helpNum, { color: theme.colors.onBrandPrimary }]}>Unlimited · Pro</Text>
+              </View>
             </View>
-          </View>
-          <View style={[styles.helpRow, { borderBottomWidth: 0 }]}>
-            <Text style={styles.helpLabel}>Voice actions left today</Text>
-            <View style={styles.helpNumBadge}>
-              <Text style={styles.helpNum}>
-                {user?.daily_voice_left ?? '—'} / {user?.daily_voice_cap ?? '—'}
-              </Text>
+          ) : (
+            <View style={[styles.helpRow, { borderBottomWidth: 0 }]}>
+              <Text style={styles.helpLabel}>Questions left today (voice + text)</Text>
+              <View style={styles.helpNumBadge}>
+                <Text style={styles.helpNum}>
+                  {user?.daily_queries_left ?? user?.daily_questions_left ?? '—'} / {user?.daily_queries_cap ?? user?.daily_questions_cap ?? 30}
+                </Text>
+              </View>
             </View>
-          </View>
+          )}
         </View>
 
         <Text style={styles.section}>Tools</Text>
@@ -239,8 +252,20 @@ export default function Settings() {
         onClose={() => setShowLang(false)}
         items={langs.map(l => ({ id: l.code, label: `${l.native} · ${l.name}`, data: l }))}
         selectedId={language.code}
-        onSelect={(item) => { setLanguage(item.data); setShowLang(false); }}
+        onSelect={(item) => {
+          setLanguage(item.data);
+          setShowLang(false);
+          flashLangConfirm(item.data.native);
+        }}
       />
+
+      {/* Language-change confirmation toast */}
+      {langConfirm !== null && (
+        <Animated.View style={[styles.langToast, { opacity: langFadeAnim }]} pointerEvents="none">
+          <Ionicons name="checkmark-circle" size={16} color={theme.colors.onBrandPrimary} />
+          <Text style={styles.langToastText}>Language set to {langConfirm}</Text>
+        </Animated.View>
+      )}
 
       <Modal visible={showTerms} animationType="slide" onRequestClose={() => setShowTerms(false)} testID="settings-terms-modal">
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.surface }} edges={['top', 'bottom']}>
@@ -350,4 +375,22 @@ const styles = StyleSheet.create({
   optSel: { backgroundColor: theme.colors.surfaceSecondary },
   optText: { color: theme.colors.onSurface, fontSize: 15 },
   optTextSel: { color: theme.colors.brand, fontWeight: '700' },
+  langToast: {
+    position: 'absolute',
+    bottom: 40,
+    left: 24,
+    right: 24,
+    backgroundColor: theme.colors.brand,
+    borderRadius: theme.radius.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  langToastText: { color: theme.colors.onBrandPrimary, fontWeight: '700', fontSize: 14, flex: 1 },
 });

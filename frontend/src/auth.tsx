@@ -9,7 +9,7 @@ const MODEL_KEY = 'gk_model';
 const AUTO_SPEAK_KEY = 'dhara_auto_speak';
 const TTS_VOLUME_KEY = 'dhara_tts_volume';
 
-export type User = { id: string; email: string; name: string; phone?: string; language: string; state?: string | null; state_name?: string; is_grandfathered?: boolean; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; drafts_used?: number; drafts_free_limit?: number; drafts_remaining?: number; daily_questions_cap?: number; daily_questions_left?: number; daily_voice_cap?: number; daily_voice_left?: number; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
+export type User = { id: string; email: string; name: string; phone?: string; language: string; state?: string | null; state_name?: string; is_grandfathered?: boolean; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; drafts_used?: number; drafts_free_limit?: number; drafts_remaining?: number; daily_queries_cap?: number | null; daily_queries_left?: number | null; daily_questions_cap?: number | null; daily_questions_left?: number | null; daily_voice_cap?: number | null; daily_voice_left?: number | null; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
 export type Language = { code: string; name: string; native: string; tts: string };
 export type ModelChoice = { provider: string; name: string; label: string; recommended?: boolean };
 

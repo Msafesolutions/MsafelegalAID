@@ -13,6 +13,7 @@ export default function Signup() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [terms, setTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +72,29 @@ export default function Signup() {
             <TextInput testID="signup-phone-input" style={styles.input} value={phone} onChangeText={setPhone} placeholder="+91 98xxxxxxxx" placeholderTextColor={theme.colors.onSurfaceTertiary} keyboardType="phone-pad" />
 
             <Text style={styles.label}>Password</Text>
-            <TextInput testID="signup-password-input" style={styles.input} value={password} onChangeText={setPassword} placeholder="At least 6 characters" placeholderTextColor={theme.colors.onSurfaceTertiary} secureTextEntry />
+            <View style={styles.pwWrap}>
+              <TextInput
+                testID="signup-password-input"
+                style={styles.pwInput}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="At least 6 characters"
+                placeholderTextColor={theme.colors.onSurfaceTertiary}
+                secureTextEntry={!showPassword}
+              />
+              <Pressable
+                testID="toggle-signup-password"
+                onPress={() => setShowPassword(v => !v)}
+                hitSlop={8}
+                style={styles.eyeBtn}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={theme.colors.onSurfaceTertiary}
+                />
+              </Pressable>
+            </View>
 
             <Pressable testID="terms-checkbox" style={styles.termsRow} onPress={() => setTerms(t => !t)}>
               <View style={[styles.checkbox, terms && styles.checkboxOn]}>
@@ -133,6 +156,9 @@ const styles = StyleSheet.create({
   sub: { color: theme.colors.onSurfaceSecondary, marginTop: 4 },
   label: { color: theme.colors.onSurfaceSecondary, marginTop: theme.spacing.lg, marginBottom: theme.spacing.sm, fontWeight: '600' },
   input: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing.md, fontSize: 16, color: theme.colors.onSurface, backgroundColor: theme.colors.surfaceSecondary },
+  pwWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceSecondary },
+  pwInput: { flex: 1, padding: theme.spacing.md, fontSize: 16, color: theme.colors.onSurface },
+  eyeBtn: { paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md, justifyContent: 'center', alignItems: 'center' },
   termsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.sm, marginTop: theme.spacing.lg, padding: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border },
   checkbox: { width: 22, height: 22, borderRadius: 4, borderWidth: 2, borderColor: theme.colors.brand, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   checkboxOn: { backgroundColor: theme.colors.brand },

@@ -91,6 +91,51 @@ STATE_CORPUS = [
             "bihar liquor fine", "bihar first time offender liquor", "alcohol ban bihar",
         ],
     },
+    # -------------------- BIHAR — rent / tenancy --------------------
+    {
+        "key": "br_rent_premises",
+        "state": "BR",
+        "citation": "Bihar Premises (Control of Rent and Eviction) Act 1947 — Tenant protection and eviction grounds",
+        "short_label": "Bihar Rent Control Act",
+        "act": "Bihar Premises (Control of Rent and Eviction) Act",
+        "text_kind": "official_summary",
+        "require_any": [
+            "rent", "tenant", "tenancy", "landlord", "evict", "eviction", "vacate",
+            "deposit", "advance", "lease", "sublet", "sub-let", "house owner",
+            "paying guest", "pg", "premises",
+        ],
+        "official_text": (
+            "The Bihar Premises (Control of Rent and Eviction) Act, 1947 applies to urban "
+            "premises in the State. Under this Act, no landlord can evict a tenant except "
+            "through an order of the Rent Controller on one of the specified grounds, which "
+            "include: non-payment of rent; sub-letting without the landlord's consent; using "
+            "the premises for a purpose other than that for which they were let; conduct "
+            "amounting to nuisance; and bona fide requirement of the landlord for personal "
+            "occupation.\n\n"
+            "Important: Bihar does NOT yet have a modern rent-regulation law on the lines of "
+            "the Central Model Tenancy Act 2021 (which Bihar has not adopted as of mid-2026). "
+            "The 1947 Act is quite old and its coverage and procedures vary by district. For "
+            "any tenancy dispute in Bihar the best first step is to approach the Rent Controller "
+            "(usually the Civil Court of the concerned district) or contact NALSA on 15100 for "
+            "free legal aid."
+        ),
+        "source_url": "https://law.bihar.gov.in",
+        "verified_at": "2026-06-01",
+        "scope_note": (
+            "Bihar tenants are protected by the 1947 Act, but the law is old and the procedures "
+            "can be slow. For a landlord to evict you, they must get an order from the Rent "
+            "Controller. A landlord who locks you out without a court order is acting illegally. "
+            "Bihar has NOT adopted the Model Tenancy Act 2021, so there is no 2-month deposit "
+            "cap or mandatory written agreement under state law yet — your written agreement "
+            "and proof of rent payment are your main protection."
+        ),
+        "keywords": [
+            "bihar rent", "patna rent", "bihar tenant", "bihar landlord", "bihar eviction",
+            "bihar rent control", "landlord evicting me bihar", "bihar vacate notice",
+            "bihar rent dispute", "gaya rent", "muzaffarpur rent", "bhagalpur rent",
+            "bihar security deposit", "bihar rent advance", "patna landlord eviction",
+        ],
+    },
     # -------------------- DELHI — rent --------------------
     {
         "key": "dl_rent_14",
