@@ -28,6 +28,7 @@ import {
   createAudioPlayer,
   type AudioPlayer,
 } from 'expo-audio';
+import { ChunkedSpeaker } from '@/src/voice/tts';
 import { File, Paths } from 'expo-file-system';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
@@ -128,6 +129,11 @@ export default function ChatScreen() {
   const [slideCancelled, setSlideCancelled] = useState<boolean>(false);
   // TTS playback speed — cycles 1x → 1.5x → 2x → back
   const [speechRate, setSpeechRate] = useState<number>(1.0);
+  // Loading state for TTS fetch (network request in-flight) — separate from speakingId
+  // so the UI can show a spinner before audio is ready, and stop is always reliable.
+  const [ttsLoadingId, setTtsLoadingId] = useState<string | null>(null);
+  // AbortController to cancel an in-flight TTS fetch when the user taps stop
+  const ttsAbortRef = useRef<AbortController | null>(null);
   const holdTimerRef = useRef<any>(null);
   // Animated values for WhatsApp-style mic gesture
   const slideX = useRef(new Animated.Value(0)).current;
@@ -162,6 +168,8 @@ export default function ChatScreen() {
   // message / navigates away).
   const ttsPlayerRef = useRef<AudioPlayer | null>(null);
   const ttsPlayerReleaseTimerRef = useRef<any>(null);
+  /** Active chunked speaker, so stopCloudTTS() can tear the whole queue down. */
+  const speakerRef = useRef<ChunkedSpeaker | null>(null);
   // Mirror `speakingId` in a ref so async cleanup callbacks can see the
   // latest value without stale-closure issues.
   const speakingIdRef = useRef<string | null>(null);
@@ -532,6 +540,19 @@ export default function ChatScreen() {
    * Xiaomi, etc.) that ship non-Google TTS engines by default.
    */
   const stopCloudTTS = useCallback(() => {
+    // Kill the whole chunk queue first — otherwise the next clip starts playing
+    // after the user has asked for silence (or opened the mic).
+    try {
+      speakerRef.current?.stop();
+    } catch {}
+    speakerRef.current = null;
+    // Cancel any in-flight TTS network request so it can't sneak through
+    // after the user has tapped stop.
+    if (ttsAbortRef.current) {
+      ttsAbortRef.current.abort();
+      ttsAbortRef.current = null;
+    }
+    setTtsLoadingId(null);
     // Debounce / cleanup helper for the AudioPlayer ref.
     try {
       const p = ttsPlayerRef.current;
@@ -550,12 +571,12 @@ export default function ChatScreen() {
 
   const speak = useCallback(
     async (msgId: string, text: string) => {
-      // Toggle: tapping speaker of currently-speaking message stops playback
-      if (speakingId === msgId) {
+      // Toggle: tapping speaker while loading OR playing immediately stops
+      if (speakingId === msgId || ttsLoadingId === msgId) {
         stopCloudTTS();
         return;
       }
-      // Any other playback → stop it first
+      // Any other playback -> stop it first
       stopCloudTTS();
 
       if (!text || !text.trim() || !token) return;
@@ -571,146 +592,147 @@ export default function ChatScreen() {
         }
       } catch {}
 
-      setSpeakingId(msgId);
+      // Show loading indicator BEFORE the first request so the tap feels registered.
+      setTtsLoadingId(msgId);
 
-      try {
-        // 1. Ask backend to synthesise speech (OpenAI TTS → MP3 bytes)
-        const res = await fetch(`${API_BASE}/api/voice/tts`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            text: text.slice(0, 3800), // safety cap; backend also truncates
-            language: language?.code || 'en',
-            voice: 'alloy',
-          }),
-        });
-        if (!res.ok) {
-          const errTxt = await res.text().catch(() => '');
-          if (res.status === 429) {
-            let msg = 'You have reached your daily voice limit. Please try again tomorrow.';
-            try { msg = JSON.parse(errTxt)?.detail?.message || msg; } catch {}
-            setSpeakingId(null);
-            Alert.alert('Daily voice limit reached', msg);
+      // The answer is split into sentences and requested piece by piece: the first
+      // piece is short so speech starts in ~2s instead of after the whole answer has
+      // been synthesised (measured 7.3s for a 494-char reply, 13.1s for 990 chars).
+      // Every request carries group=msgId so the backend still charges the answer as
+      // ONE question rather than one per piece.
+      const speaker = new ChunkedSpeaker({
+        apiBase: API_BASE,
+        token,
+        language: language?.code || 'en',
+        group: msgId,
+        rate: speechRate,
+
+        // Persist one clip. Same base64 route as before: avoids pulling in a Blob
+        // polyfill, and RN's global.btoa is inconsistent across versions.
+        writeAudio: async (buf, index) => {
+          const arr = new Uint8Array(buf);
+          let bin = '';
+          const CHUNK = 0x8000;
+          for (let i = 0; i < arr.length; i += CHUNK) {
+            bin += String.fromCharCode.apply(null, Array.from(arr.subarray(i, i + CHUNK)) as any);
+          }
+          const g: any = globalThis;
+          const b64 = g.btoa ? g.btoa(bin) : Buffer.from(bin, 'binary').toString('base64');
+          const file = new File(Paths.cache, `dhara-tts-${msgId}-${index}.mp3`);
+          try { file.delete(); } catch {}
+          file.create();
+          file.write(b64, { encoding: 'base64' });
+          return {
+            uri: file.uri,
+            cleanup: () => { try { file.delete(); } catch {} },
+          };
+        },
+
+        // One clip -> one player, preserving the decode-race handling that was here
+        // before: play() straight after createAudioPlayer() silently no-ops on some
+        // Android OEMs because the native player has not finished decoding
+        // (github.com/expo/expo/discussions/18869), so wait for isLoaded with a hard
+        // fallback timer, and never let a missing finish event stall the queue.
+        createPlayer: (uri) => {
+          const player = createAudioPlayer({ uri });
+          try { player.setPlaybackRate(speechRate, 'high'); } catch {}
+          try { player.volume = ttsVolume; } catch {}
+
+          let started = false;
+          let finished = false;
+          let onDone: (() => void) | null = null;
+          let finishedBeforeSubscribe = false;
+
+          const fireFinish = () => {
+            if (finished) return;
+            finished = true;
+            if (onDone) onDone();
+            else finishedBeforeSubscribe = true; // resolved as soon as onFinish lands
+          };
+          const tryStart = () => {
+            if (started) return;
+            started = true;
+            try {
+              player.play();
+            } catch {
+              // Some Android OEMs throw on the very first play() after decode.
+              setTimeout(() => { try { player.play(); } catch {} }, 150);
+            }
+          };
+
+          try {
+            (player as any).addListener?.('playbackStatusUpdate', (st: any) => {
+              if (!started && st?.isLoaded) tryStart();
+              if (st?.didJustFinish || (st?.duration > 0 && st?.currentTime >= st?.duration - 0.05)) {
+                fireFinish();
+              }
+            });
+          } catch {}
+
+          // Some platforms flip isLoaded synchronously for small local files,
+          // before the first status event ever fires.
+          if ((player as any).isLoaded) tryStart();
+          setTimeout(() => { if (!started) tryStart(); }, 2500);
+
+          // Backstop: a clip that never reports completion must not wedge the queue.
+          const guard = setTimeout(fireFinish, 90_000);
+
+          return {
+            play: () => tryStart(),
+            remove: () => {
+              clearTimeout(guard);
+              try { player.pause(); } catch {}
+              try { player.remove(); } catch {}
+            },
+            onFinish: (cb) => {
+              onDone = () => { clearTimeout(guard); cb(); };
+              if (finishedBeforeSubscribe) onDone();
+            },
+          };
+        },
+
+        onSpeakingChange: (isSpeaking) => {
+          if (isSpeaking) {
+            setTtsLoadingId(null);
+            setSpeakingId(msgId);
             return;
           }
-          throw new Error(`TTS server returned ${res.status}: ${errTxt.slice(0, 120)}`);
-        }
-        // 2. Read the MP3 payload as a base64 string so we can persist it to
-        // a temp file without pulling in a Blob polyfill.
-        const arrayBuf = await res.arrayBuffer();
-        if (!arrayBuf || arrayBuf.byteLength === 0) {
-          throw new Error('TTS server returned empty audio.');
-        }
-        // Convert ArrayBuffer → base64 without depending on Buffer / btoa
-        // (RN's global.btoa exists on newer versions but is inconsistent).
-        const bytes = new Uint8Array(arrayBuf);
-        let bin = '';
-        const CHUNK = 0x8000;
-        for (let i = 0; i < bytes.length; i += CHUNK) {
-          bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)) as any);
-        }
-        const g: any = globalThis;
-        const b64 = g.btoa
-          ? g.btoa(bin)
-          : Buffer.from(bin, 'binary').toString('base64');
-
-        // 3. Persist to the app cache directory (auto-cleared by OS)
-        const file = new File(Paths.cache, `dhara-tts-${Date.now()}.mp3`);
-        // File may already exist from a very rapid double-tap — safe overwrite
-        try { file.delete(); } catch {}
-        file.create();
-        file.write(b64, { encoding: 'base64' });
-
-        // 4. Race guard: user may have tapped stop / played something else
-        // while we were awaiting the network + disk write. If the state has
-        // moved on, silently discard this playback.
-        if (msgId !== speakingIdRef.current) {
-          try { file.delete(); } catch {}
-          return;
-        }
-
-        // 5. Create the player, wire up load-readiness + completion handling.
-        //
-        // KNOWN RACE CONDITION (github.com/expo/expo/discussions/18869):
-        // calling player.play() immediately after createAudioPlayer() can
-        // silently no-op on some Android OEMs because the native player has
-        // not finished decoding the source yet. This is the root cause of
-        // the "sound sometimes plays, sometimes doesn't" bug reported in
-        // the built APK. Fix: only call play() once the player reports
-        // isLoaded === true (via the status event, or immediately if it is
-        // already true), with a short hard-fallback timer as a safety net.
-        const player = createAudioPlayer({ uri: file.uri });
-        ttsPlayerRef.current = player;
-        try {
-          player.setPlaybackRate(speechRate, 'high');
-        } catch {}
-        try {
-          player.volume = ttsVolume;
-        } catch {}
-
-        let hasStartedPlayback = false;
-        const tryStartPlayback = () => {
-          if (hasStartedPlayback) return;
-          if (ttsPlayerRef.current !== player) return; // superseded by newer playback
-          hasStartedPlayback = true;
-          try {
-            player.play();
-          } catch {
-            // Retry once — some Android OEMs throw on the very first play()
-            // call right after decode completes.
-            setTimeout(() => {
-              try { player.play(); } catch {}
-            }, 150);
+          // Only clear if we are still the active speaker; a newer speak() may own the UI.
+          if (speakerRef.current === speaker) {
+            setSpeakingId(null);
+            setTtsLoadingId(null);
+            speakerRef.current = null;
           }
-        };
+        },
 
-        try {
-          (player as any).addListener?.('playbackStatusUpdate', (s: any) => {
-            if (!hasStartedPlayback && s?.isLoaded) {
-              tryStartPlayback();
-            }
-            if (s?.didJustFinish || (s?.duration > 0 && s?.currentTime >= s?.duration - 0.05)) {
-              stopCloudTTS();
-              try { file.delete(); } catch {}
-            }
-          });
-        } catch {}
+        onError: (message) => {
+          if (speakerRef.current !== speaker) return;
+          setTtsLoadingId(null);
+          setSpeakingId(null);
+          speakerRef.current = null;
+          if (message.includes('429')) {
+            Alert.alert(
+              'Daily limit reached',
+              "You have used all your free questions for today. Free help: NALSA 15100 (legal aid) - Consumer Helpline 1800-11-4000.",
+            );
+            return;
+          }
+          Alert.alert(
+            'Speaker unavailable',
+            message.includes('Network')
+              ? 'Could not reach the speech server. Please check your internet connection.'
+              : 'Could not play audio right now. Please try again in a moment.',
+          );
+        },
+      });
 
-        // Some platforms flip `isLoaded` synchronously for small local
-        // files, before the first status event ever fires — check directly.
-        if ((player as any).isLoaded) {
-          tryStartPlayback();
-        }
-
-        // Hard fallback: if we never see isLoaded become true (missed
-        // native event) within 2.5s, force-start anyway so a tap never
-        // results in permanent silence.
-        setTimeout(() => {
-          if (!hasStartedPlayback) tryStartPlayback();
-        }, 2500);
-
-        // Fallback cleanup — if we somehow never get the finish event, release
-        // after 90s max (long enough for a 3000-char reply at slow speech).
-        ttsPlayerReleaseTimerRef.current = setTimeout(() => {
-          stopCloudTTS();
-          try { file.delete(); } catch {}
-        }, 90_000);
-      } catch (e: any) {
-        setSpeakingId(null);
-        Alert.alert(
-          'Speaker unavailable',
-          e?.message?.includes('Network')
-            ? 'Could not reach the speech server. Please check your internet connection.'
-            : 'Could not play audio right now. Please try again in a moment.',
-        );
-      }
+      speakerRef.current = speaker;
+      // The whole answer is already on screen, so hand it over in one go: takeChunks
+      // still keeps the FIRST request short, which is where the latency win comes from.
+      speaker.end(text.slice(0, 3800));
     },
-    [speakingId, language, speechRate, ttsVolume, token, stopCloudTTS],
+    [speakingId, ttsLoadingId, language, speechRate, ttsVolume, token, stopCloudTTS],
   );
-  // Keep the forward-declared ref up to date whenever `speak` changes.
   speakRef.current = speak;
 
   /** Start listening — records audio and uploads to Whisper cloud STT.
@@ -1116,9 +1138,18 @@ export default function ChatScreen() {
               </View>
             )}
           </View>
-          <Text style={styles.subtitle}>
-            {language.native}
-          </Text>
+          {/* Language indicator chip — shows current language so user always
+              knows what language Dhara is speaking in. Tapping navigates
+              directly to the language picker in Settings. */}
+          <Pressable
+            testID="header-lang-chip"
+            style={styles.langChip}
+            onPress={() => router.push('/(tabs)/settings')}
+            hitSlop={6}
+          >
+            <Ionicons name="language-outline" size={12} color={theme.colors.brand} />
+            <Text style={styles.langChipText}>{language.native}</Text>
+          </Pressable>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, flexShrink: 1 }}>
           <Pressable testID="new-chat-button" style={styles.newChatBtn} onPress={startNewChat}>
@@ -1128,23 +1159,33 @@ export default function ChatScreen() {
         </View>
       </View>
 
-      {/* Usage meter — glanceable so the daily free limit never surprises the
-          user mid-conversation. Numbers come from /auth/me, refreshed after
-          every message. */}
+      {/* Usage meter — single unified pill (voice + text share 30/day for free,
+          Pro users see "Unlimited"). Numbers come from /auth/me, refreshed
+          after every message. */}
       {!!user && (
         <View style={styles.usageRow} testID="usage-meter">
-          <View style={styles.usagePill} testID="usage-pill-questions">
-            <Ionicons name="chatbubble-ellipses-outline" size={12} color={theme.colors.brand} />
-            <Text style={styles.usagePillText}>
-              {user.daily_questions_left ?? '—'}/{user.daily_questions_cap ?? '—'} questions today
-            </Text>
-          </View>
-          <View style={styles.usagePill} testID="usage-pill-voice">
-            <Ionicons name="mic-outline" size={12} color={theme.colors.brand} />
-            <Text style={styles.usagePillText}>
-              {user.daily_voice_left ?? '—'}/{user.daily_voice_cap ?? '—'} voice today
-            </Text>
-          </View>
+          {user.daily_queries_left !== undefined && user.daily_queries_left !== null ? (
+            <View style={styles.usagePill} testID="usage-pill-queries">
+              <Ionicons name="chatbubble-ellipses-outline" size={12} color={theme.colors.brand} />
+              <Text style={styles.usagePillText}>
+                {user.daily_queries_left}/{user.daily_queries_cap ?? 30} free questions today
+              </Text>
+            </View>
+          ) : isPro ? (
+            <View style={[styles.usagePill, { backgroundColor: '#FFF8E7' }]} testID="usage-pill-pro">
+              <Ionicons name="star" size={12} color={theme.colors.brandSecondary} />
+              <Text style={[styles.usagePillText, { color: theme.colors.brandSecondary }]}>
+                Unlimited · Pro
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.usagePill} testID="usage-pill-questions">
+              <Ionicons name="chatbubble-ellipses-outline" size={12} color={theme.colors.brand} />
+              <Text style={styles.usagePillText}>
+                {user.daily_questions_left ?? '—'}/{user.daily_questions_cap ?? 30} questions today
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -1172,7 +1213,7 @@ export default function ChatScreen() {
               setPaywall({
                 samples_used: user?.pro_samples_limit ?? 5,
                 samples_limit: user?.pro_samples_limit ?? 5,
-                pro_price_label: '₹50',
+                pro_price_label: '₹99',
                 pro_price_usd_label: '$5',
                 message:
                   "You've used all your free Pro-quality samples. Upgrade to Pro to unlock unlimited lawyer-style deep answers, drafts, action plans and escalation paths.",
@@ -1192,7 +1233,7 @@ export default function ChatScreen() {
           onPress={() => router.push('/upgrade')}
         >
           <Ionicons name="star" size={16} color={theme.colors.onBrandSecondary} />
-          <Text style={styles.upgradeBannerText}>Upgrade to Pro — ₹50 / $5 — unlimited depth</Text>
+          <Text style={styles.upgradeBannerText}>Upgrade to Pro — ₹99 / $5 — unlimited depth</Text>
           <Ionicons name="chevron-forward" size={16} color={theme.colors.onBrandSecondary} />
         </Pressable>
       )}
@@ -1292,11 +1333,15 @@ export default function ChatScreen() {
                         </Text>
                       </Pressable>
                       <Pressable testID={`speak-${m.id}`} onPress={() => speak(m.id, m.content)} hitSlop={10}>
-                        <Ionicons
-                          name={speakingId === m.id ? 'stop-circle' : 'volume-high-outline'}
-                          size={24}
-                          color={theme.colors.brand}
-                        />
+                        {ttsLoadingId === m.id ? (
+                          <ActivityIndicator size="small" color={theme.colors.brand} />
+                        ) : (
+                          <Ionicons
+                            name={speakingId === m.id ? 'stop-circle' : 'volume-high-outline'}
+                            size={24}
+                            color={theme.colors.brand}
+                          />
+                        )}
                       </Pressable>
                     </View>
                   )}
@@ -1632,6 +1677,21 @@ const styles = StyleSheet.create({
   },
   title: { fontFamily: theme.fonts.display, fontSize: 26, fontWeight: '700', color: theme.colors.brand },
   subtitle: { color: theme.colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
+  // Language indicator chip below the title — tappable so users can switch language directly
+  langChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSecondary,
+    alignSelf: 'flex-start',
+  },
+  langChipText: { color: theme.colors.brand, fontSize: 12, fontWeight: '600' },
   badge: {
     backgroundColor: theme.colors.surfaceTertiary,
     borderRadius: theme.radius.pill,

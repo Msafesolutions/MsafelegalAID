@@ -62,8 +62,8 @@ RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
 RAZORPAY_ME_HANDLE = os.environ.get("RAZORPAY_ME_HANDLE", "calviltech")
 RAZORPAY_ME_URL = os.environ.get("RAZORPAY_ME_URL", "https://razorpay.me/@calviltech")
-PRO_PRICE_INR = int(os.environ.get("PRO_PRICE_INR", "5000"))  # paise
-PRO_PRICE_LABEL = os.environ.get("PRO_PRICE_LABEL", "₹50")
+PRO_PRICE_INR = int(os.environ.get("PRO_PRICE_INR", "9900"))  # paise (₹99)
+PRO_PRICE_LABEL = os.environ.get("PRO_PRICE_LABEL", "₹99")
 PRO_PRICE_USD = int(os.environ.get("PRO_PRICE_USD", "500"))  # cents
 PRO_PRICE_USD_LABEL = os.environ.get("PRO_PRICE_USD_LABEL", "$5")
 PRO_FREE_SAMPLES = int(os.environ.get("PRO_FREE_SAMPLES", "5"))
@@ -71,15 +71,16 @@ PRO_FREE_SAMPLES = int(os.environ.get("PRO_FREE_SAMPLES", "5"))
 DRAFTS_FREE = int(os.environ.get("DRAFTS_FREE", "1"))
 
 # ---------------------------------------------------------------------------
-# LLM spend caps. Every chat answer, transcription and spoken reply costs money
-# on the Emergent key, so usage is metered per user per day AND app-wide as a
-# backstop. Refusals never reach the model, so they are not counted.
+# LLM spend caps. Voice is an accessibility floor (not a premium feature), so
+# free users get ONE unified daily bucket of 30 queries covering both text and
+# voice together. Pro users are unlimited on a per-user basis (only the
+# app-wide backstop applies to them).
 # ---------------------------------------------------------------------------
-FREE_DAILY_QUESTIONS = int(os.environ.get("FREE_DAILY_QUESTIONS", "10"))
-FREE_DAILY_VOICE = int(os.environ.get("FREE_DAILY_VOICE", "15"))
-PRO_DAILY_QUESTIONS = int(os.environ.get("PRO_DAILY_QUESTIONS", "60"))
-PRO_DAILY_VOICE = int(os.environ.get("PRO_DAILY_VOICE", "90"))
+FREE_DAILY_QUERIES = int(os.environ.get("FREE_DAILY_QUERIES", "30"))   # unified text + voice
 APP_DAILY_LLM_CALLS = int(os.environ.get("APP_DAILY_LLM_CALLS", "3000"))
+# Legacy env vars kept for backward compat but no longer used for limits.
+_LEGACY_FREE_Q = int(os.environ.get("FREE_DAILY_QUESTIONS", "30"))
+_LEGACY_FREE_V = int(os.environ.get("FREE_DAILY_VOICE", "9999"))
 JWT_ALG = "HS256"
 JWT_EXP_DAYS = 30
 
@@ -152,6 +153,10 @@ class TTSIn(BaseModel):
     text: str
     language: str = "en"
     voice: str = "alloy"
+    # Stable id for the answer this text belongs to (the assistant message id).
+    # Chunked playback sends several requests per answer; they all carry the same
+    # group so the answer is metered once. Absent => metered per request, as before.
+    group: Optional[str] = None
 
 class CheckoutIn(BaseModel):
     return_url: str
@@ -467,20 +472,32 @@ async def reset_password(body: ResetPasswordIn):
 @api.get("/auth/me")
 async def me(user: dict = Depends(current_user)):
     out = public_user(user)
-    # Today's LLM allowance, so the UI can show what is left instead of
-    # surprising the user with a limit message.
+    # Today's LLM allowance. Free users share ONE 30-query/day bucket across
+    # both text and voice — voice is an accessibility floor, not a premium
+    # feature. Pro users are unlimited (no per-user cap).
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     is_pro = bool(user.get("is_pro"))
-    q_cap = PRO_DAILY_QUESTIONS if is_pro else FREE_DAILY_QUESTIONS
-    v_cap = PRO_DAILY_VOICE if is_pro else FREE_DAILY_VOICE
-    q_doc = await db.usage_daily.find_one({"scope": "user", "user_id": user["id"], "day": day, "kind": "question"})
-    v_doc = await db.usage_daily.find_one({"scope": "user", "user_id": user["id"], "day": day, "kind": "voice"})
-    q_used = int((q_doc or {}).get("count", 0))
-    v_used = int((v_doc or {}).get("count", 0))
-    out["daily_questions_cap"] = q_cap
-    out["daily_questions_left"] = max(0, q_cap - q_used)
-    out["daily_voice_cap"] = v_cap
-    out["daily_voice_left"] = max(0, v_cap - v_used)
+    if is_pro:
+        # Unlimited — surface None so UI knows to hide the meter
+        out["daily_queries_cap"] = None
+        out["daily_queries_left"] = None
+        # Backward-compat fields (some older clients may still read these)
+        out["daily_questions_cap"] = None
+        out["daily_questions_left"] = None
+        out["daily_voice_cap"] = None
+        out["daily_voice_left"] = None
+    else:
+        cap = FREE_DAILY_QUERIES
+        q_doc = await db.usage_daily.find_one({"scope": "user", "user_id": user["id"], "day": day, "kind": "query"})
+        used = int((q_doc or {}).get("count", 0))
+        left = max(0, cap - used)
+        out["daily_queries_cap"] = cap
+        out["daily_queries_left"] = left
+        # Backward-compat fields kept so older clients don't break
+        out["daily_questions_cap"] = cap
+        out["daily_questions_left"] = left
+        out["daily_voice_cap"] = cap
+        out["daily_voice_left"] = left
     return out
 
 @api.patch("/auth/language")
@@ -523,18 +540,17 @@ async def meter_llm_use(user: dict, kind: str) -> None:
     """Count one paid LLM call for this user and for the app as a whole.
 
     kind is "question" (chat answer) or "voice" (transcription / spoken reply).
-    Raises HTTP 429 with a plain-language message when a cap is reached. Called
-    ONLY on paths that actually hit the model, so refused questions and cached
-    UI actions never eat a user's allowance.
+
+    Free users share a single 30-query/day bucket ("query" kind) covering both
+    text and voice — voice is an accessibility floor, not a premium feature.
+    Pro users are unlimited on a per-user basis; only the app-wide backstop
+    applies to them.
+
+    Raises HTTP 429 with a plain-language message + helplines when capped.
+    Called ONLY on paths that actually hit the model.
     """
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     is_pro = bool(user.get("is_pro"))
-    if kind == "question":
-        cap = PRO_DAILY_QUESTIONS if is_pro else FREE_DAILY_QUESTIONS
-        noun = "questions"
-    else:
-        cap = PRO_DAILY_VOICE if is_pro else FREE_DAILY_VOICE
-        noun = "voice actions"
 
     # App-wide backstop first — protects the key even if a single account is
     # compromised or many users spike on the same day.
@@ -554,8 +570,14 @@ async def meter_llm_use(user: dict, kind: str) -> None:
             },
         )
 
+    # Pro users have no per-user cap — only the app-wide backstop applies.
+    if is_pro:
+        return
+
+    # Free users: unified "query" bucket for both text and voice.
+    cap = FREE_DAILY_QUERIES
     doc = await db.usage_daily.find_one_and_update(
-        {"scope": "user", "user_id": user["id"], "day": day, "kind": kind},
+        {"scope": "user", "user_id": user["id"], "day": day, "kind": "query"},
         {"$inc": {"count": 1}},
         upsert=True,
         return_document=True,
@@ -567,15 +589,21 @@ async def meter_llm_use(user: dict, kind: str) -> None:
             detail={
                 "limit": True,
                 "scope": "user",
-                "kind": kind,
+                "kind": "query",
                 "used": used - 1,
                 "cap": cap,
-                "is_pro": is_pro,
+                "is_pro": False,
                 "message": (
-                    f"You have used your {cap} {noun} for today. "
-                    + ("Your allowance resets tomorrow." if is_pro else
-                       "Upgrade to Pro for a much higher daily limit, or come back tomorrow.")
+                    f"You've used all {cap} free questions for today. "
+                    "Upgrade to Pro for unlimited access, or come back tomorrow.\n\n"
+                    "In an emergency, free help is available:\n"
+                    "• NALSA Legal Aid: 15100 (free)\n"
+                    "• Consumer Helpline: 1800-11-4000 (toll-free)"
                 ),
+                "helplines": [
+                    {"name": "NALSA Legal Aid", "number": "15100"},
+                    {"name": "Consumer Helpline", "number": "1800-11-4000"},
+                ],
             },
         )
 
@@ -1228,7 +1256,34 @@ async def tts(body: TTSIn, user: dict = Depends(current_user)):
     # disk, causing createAudioPlayer to fail silently.
     if not body.text or not body.text.strip():
         raise HTTPException(400, "Text is required to synthesise speech.")
-    await meter_llm_use(user, "voice")
+
+    # The client splits an answer into sentences and requests them separately, so
+    # the first words start playing in ~2s instead of after the whole answer has
+    # been synthesised (which measured 13s for a 990-char reply). Metering every
+    # request would then charge a free user ~6 of their 30 daily questions for a
+    # single answer, so an answer costs one: only the first chunk of a `group`
+    # meters, the rest ride along.
+    #
+    # Reuses usage_daily deliberately — it is already partitioned by day like the
+    # counters, so this needs no new collection and no TTL index (there is no
+    # index-creation or startup hook in this service to hang one off).
+    should_meter = True
+    if body.group:
+        _day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _res = await db.usage_daily.update_one(
+            {
+                "scope": "user",
+                "user_id": user["id"],
+                "day": _day,
+                "kind": f"voice_group:{body.group[:64]}",
+            },
+            {"$setOnInsert": {"count": 1}},
+            upsert=True,
+        )
+        # Inserted => first chunk of this answer => charge. Matched => already paid.
+        should_meter = _res.upserted_id is not None
+    if should_meter:
+        await meter_llm_use(user, "voice")
     try:
         oc = openai_client()
         resp = await oc.audio.speech.create(
