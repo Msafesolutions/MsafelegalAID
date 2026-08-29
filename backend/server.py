@@ -45,6 +45,7 @@ from corpus import (
     top_candidate_debug,
     classify_topic,
 )
+from corpus_db import retrieve_db as db_retrieve, lookup_section as db_lookup_section, STATE_CODE_TO_JURISDICTION
 from states import STATES, STATE_BY_CODE, is_valid_state, state_name
 from langpolicy import needs_language_repair, repair_prompt, needs_retrieval_translation
 
@@ -179,15 +180,17 @@ def make_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 def public_user(u: dict) -> dict:
+    state_code = u.get("state") or ""
     return {
         "id": u["id"],
         "email": u["email"],
         "name": u["name"],
         "phone": u.get("phone", ""),
         "language": u.get("language", "en"),
-        "state": u.get("state"),
-        "state_name": state_name(u.get("state") or ""),
-        "is_pro": u.get("is_pro", False),
+        "state": state_code or None,
+        "state_name": state_name(state_code),
+        # is_pro — always present, default False for safety
+        "is_pro": bool(u.get("is_pro", False)),
         "pro_since": u.get("pro_since"),
         "pro_samples_used": int(u.get("pro_samples_used", 0)),
         "pro_samples_limit": PRO_FREE_SAMPLES,
@@ -195,7 +198,14 @@ def public_user(u: dict) -> dict:
         "drafts_used": int(u.get("drafts_used", 0)),
         "drafts_free_limit": DRAFTS_FREE,
         "drafts_remaining": max(0, DRAFTS_FREE - int(u.get("drafts_used", 0))),
-        "is_grandfathered": u.get("is_grandfathered", True),
+        # is_grandfathered — early users keep access even if paywalled later
+        "is_grandfathered": bool(u.get("is_grandfathered", True)),
+        # state_jurisdiction — full corpus jurisdiction string derived from state code
+        # e.g. "MH" → "Maharashtra".  Used by /api/retrieve to prioritise state Acts.
+        "state_jurisdiction": (
+            u.get("state_jurisdiction")
+            or STATE_CODE_TO_JURISDICTION.get(state_code.upper(), "")
+        ),
         "terms_accepted": u.get("terms_accepted", False),
         "terms_version": u.get("terms_version"),
         "terms_accepted_at": u.get("terms_accepted_at"),
@@ -332,6 +342,7 @@ async def register(body: RegisterIn):
         "pro_since": None,
         "pro_samples_used": 0,
         "is_grandfathered": True,
+        "state_jurisdiction": STATE_CODE_TO_JURISDICTION.get((body.state or "").upper(), ""),
         "terms_accepted": True,
         "terms_version": body.terms_version,
         "terms_accepted_at": now,
@@ -1613,6 +1624,59 @@ async def get_states():
 @api.get("/reference/models")
 async def get_models():
     return MODELS
+
+# ── /api/retrieve — standalone corpus search ────────────────────────────────
+# Searches the MongoDB legal_sections corpus with optional state jurisdiction
+# prioritisation.  The answer pipeline (chat/stream) also calls corpus_db
+# internally; this endpoint exposes it for external clients and front-end
+# debug tooling.
+#
+# Request body:
+#   query          (str, required)  — user's natural-language question
+#   state_code     (str, optional)  — 2-letter code e.g. "MH"; boosts state Acts
+#   limit          (int, optional)  — max results returned, default 5, max 10
+#   mode           (str, optional)  — "text" (default) | "exact"
+#   section_number (str, optional)  — required when mode="exact"
+#   act_hint       (str, optional)  — act name substring for exact lookup
+class RetrieveIn(BaseModel):
+    query: str
+    state_code: Optional[str] = None
+    limit: int = 5
+    mode: str = "text"
+    section_number: Optional[str] = None
+    act_hint: Optional[str] = None
+
+@api.post("/retrieve")
+async def retrieve(body: RetrieveIn, user: dict = Depends(current_user)):
+    """Search the legal corpus.  Returns up to `limit` matching sections,
+    ranked by full-text relevance and boosted by the user's state jurisdiction.
+
+    Safety guards (G1 dead-law, G2 judicial join, G3 badge) are applied
+    automatically inside corpus_db.retrieve_db / lookup_section.
+    Falls back gracefully if the corpus collection is empty or the text index
+    is still building."""
+    limit = max(1, min(int(body.limit), 10))
+
+    if body.mode == "exact" and body.section_number:
+        result = await db_lookup_section(db, body.section_number, body.act_hint)
+        results = [result] if result else []
+    else:
+        # Use the user's own state_jurisdiction if the caller didn't specify
+        state_code = body.state_code or user.get("state") or None
+        try:
+            results = await db_retrieve(db, body.query, state_code=state_code, limit=limit)
+        except Exception:
+            results = []
+
+    return {
+        "query": body.query,
+        "count": len(results),
+        "results": results,
+        "corpus_source": "mongodb",
+        "state_priority": (
+            STATE_CODE_TO_JURISDICTION.get((body.state_code or user.get("state") or "").upper(), None)
+        ),
+    }
 
 @api.get("/reference/topics")
 async def get_topics():
