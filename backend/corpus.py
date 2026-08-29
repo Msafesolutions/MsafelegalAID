@@ -2130,13 +2130,17 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
       +6  if a multi-word keyword appears as a contiguous substring
       +   weighted token overlap (rare tokens 4, common tokens 1)
 
-    A result is only returned if it scores >= RETRIEVAL_MIN_SCORE, i.e. it
+    
+, i.e. it
     needs either a label hit, a phrase hit, or at least one reasonably
     specific word in common — a single generic word like "police" is not
     enough on its own.
     """
-    scored = [(s, it) for s, it in _score_all(question) if s >= RETRIEVAL_MIN_SCORE]
-    if not scored:
+    if not scored:scored = [] q_tokens_set = set(_tokens(question)) for s,  
+    it in _score_all(question): it_tokens = set().union(*[_tokens(kw) for kw in it.get('keywords', 
+    [])]) - _STOP distinct_token_hits = len(q_tokens_set & it_tokens) is_strong_label_match = any(token in question.lower()
+     for token in [it.get('short_label', '').lower()]) if s >= RETRIEVAL_MIN_SCORE and 
+    (is_strong_label_match or distinct_token_hits >= 2): scored.append((s, it))
         return []
     # Relative cutoff. A clear winner used to drag along weakly-related entries
     # (e.g. a cheque-bounce question also returned an RTI reply-deadline chip
