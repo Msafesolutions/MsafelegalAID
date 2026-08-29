@@ -82,11 +82,12 @@ export default function LanguageSelect() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.brand },
+  safe: { flex: 1, backgroundColor: theme.dhara.navy },
   header: { paddingHorizontal: theme.spacing.xl, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.md },
   brand: { fontFamily: theme.fonts.display, fontSize: 34, color: theme.colors.onBrandPrimary, fontWeight: '700', textAlign: 'center' },
   title: { color: theme.colors.onBrandPrimary, fontSize: 18, fontWeight: '700', textAlign: 'center', marginTop: theme.spacing.md },
-  sub: { color: theme.colors.brandSecondary, fontSize: 12, textAlign: 'center', marginTop: 6 },
+  // Sub-header: gold-on-navy — 6.29:1 ✅  — brandSecondary (#9A6E00) on navy was 2.50:1 ❌
+  sub: { color: theme.dhara.gold, fontSize: 12, textAlign: 'center', marginTop: 6 },
   list: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.lg, gap: theme.spacing.sm },
   row: {
     flexDirection: 'row',
@@ -100,9 +101,11 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   rowActive: { borderColor: theme.colors.brandSecondary },
-  native: { color: theme.colors.onSurface, fontSize: 17, fontWeight: '700' },
+  // Unselected card: native script uses brand navy (textPrimary) for brand alignment
+  native: { color: theme.dhara.textPrimary, fontSize: 17, fontWeight: '700' },
   nativeActive: { color: theme.colors.brand },
-  name: { color: theme.colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
+  // English translation: textSecondary on surface — 6.81:1 ✅; weight 500 for Indic script legibility
+  name: { color: theme.dhara.textSecondary, fontSize: 12, marginTop: 2, fontWeight: '500' },
   footer: { padding: theme.spacing.lg, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)' },
   btn: { backgroundColor: theme.colors.brandSecondary, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: 'center', minHeight: 52 },
   btnText: { color: theme.colors.onBrandSecondary, fontWeight: '700', fontSize: 16 },

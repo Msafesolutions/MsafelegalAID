@@ -92,14 +92,14 @@ const BASIC_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionic
   { text: 'My cheque bounced — what is the notice deadline?', icon: 'card-outline' },
   { text: 'Money gone in a UPI fraud — what do I do first?', icon: 'warning-outline' },
   { text: 'What is the fine for riding without a helmet?', icon: 'car-outline' },
-  { text: 'What is the helmet law for a child on a bike?', icon: 'shield-checkmark-outline' },
+  { text: 'What is the helmet law for a child riding pillion?', icon: 'shield-checkmark-outline' },
 ];
 
 const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
   { text: 'Draft a first appeal for an unanswered RTI', icon: 'create-outline' },
-  { text: 'Step-by-step complaint against a defective online product', icon: 'list-outline' },
+  { text: 'Complain about a defective online product — full steps', icon: 'list-outline' },
   { text: 'Draft an RTI asking for a certified FIR copy', icon: 'file-tray-outline' },
-  { text: 'Full escalation path for a domestic violence case', icon: 'trending-up-outline' },
+  { text: 'Escalation path for a domestic violence case', icon: 'trending-up-outline' },
 ];
 
 export default function ChatScreen() {
@@ -1268,7 +1268,7 @@ export default function ChatScreen() {
               </View>
               <Text style={styles.emptyTitle}>Ask any question about your rights</Text>
               <Text style={styles.emptySub}>
-                Bharatiya Nyaya Sanhita · Constitution · Supreme Court judgments — quoted exactly.
+                Bharatiya Nyaya Sanhita · Constitution · Supreme Court judgments — quoted directly from government sources.
               </Text>
               <View style={{ marginTop: theme.spacing.xl, gap: theme.spacing.sm, alignSelf: 'stretch', width: '100%' }}>
                 {activeSuggestions.map((s, i) => (
@@ -1279,7 +1279,7 @@ export default function ChatScreen() {
                     onPress={() => send(s.text)}
                   >
                     <Ionicons name={s.icon} size={20} color={theme.colors.brand} />
-                    <Text style={styles.suggestionText} numberOfLines={2}>{s.text}</Text>
+                    <Text style={styles.suggestionText} numberOfLines={3}>{s.text}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -1744,6 +1744,43 @@ const styles = StyleSheet.create({
   },
   modeLabel: { color: theme.colors.brand, fontWeight: '700', fontSize: 13 },
   modeSub: { color: theme.colors.onSurfaceSecondary, fontSize: 11, marginTop: 2 },
+  // ── Compact controls bar (single row below header: mode toggle + upgrade chip) ──
+  controlsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.divider,
+    gap: theme.spacing.md,
+  },
+  modeLabelCompact: {
+    color: theme.colors.brand,
+    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  modeSubCompact: {
+    color: theme.colors.onSurfaceSecondary,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  upgradeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.colors.brandSecondary,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 6,
+    minHeight: 32,
+  },
+  upgradeChipText: {
+    color: theme.colors.onBrandSecondary,
+    fontWeight: '800',
+    fontSize: 12,
+  },
   scroll: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
   empty: { flex: 1, alignItems: 'center', paddingTop: theme.spacing.xxl, paddingHorizontal: theme.spacing.md },
   emblem: {

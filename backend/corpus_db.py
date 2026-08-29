@@ -58,6 +58,7 @@ Returned dict shape (per result)
 
 from __future__ import annotations
 
+import asyncio
 import re
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -197,20 +198,64 @@ async def lookup_section(
 ) -> dict | None:
     """Exact section lookup by section_number + optional act name hint.
 
-    Uses the ix_actname_section compound index for O(log n) lookup.
-    Includes dead sections (so the pipeline can display the dead-law warning).
+    **JI check is decoupled from section-lookup success.**  Sections most
+    likely to need a judicial-invalidation warning are sometimes exactly the
+    ones absent from legal_sections — because they were repealed or superseded
+    (e.g. IPC §377 replaced by BNS).  Both lookups run in parallel; the JI
+    warning surfaces regardless of whether statutory text was found.
 
-    Returns None if no match found.
+    Return values:
+    - None → section not in corpus AND no JI record
+    - full result dict → section found (± JI flag)
+    - no-text result (no_current_text=True) → JI record found, section absent
     """
     query: dict = {"section_number": section_number}
     if act_hint:
         query["act_name"] = re.compile(re.escape(act_hint[:60]), re.IGNORECASE)
 
-    doc = await db.legal_sections.find_one(query)
-    if not doc:
-        return None
+    # Run both lookups in parallel — JI must not wait for section success.
+    doc, ji_rec = await asyncio.gather(
+        db.legal_sections.find_one(query),
+        db.judicial_invalidations.find_one(query),
+    )
 
-    jflag = await _judicial_flag(db, doc.get("act_name", ""), section_number)
+    # Build JI flag from the independent JI lookup (regardless of doc)
+    jflag: str | None = None
+    ji_act_name: str = ""
+    if ji_rec and (ji_rec.get("status") or "").upper() != "UPHELD":
+        jflag = (
+            ji_rec.get("user_warning")
+            or "⚠️ This provision has been subject to judicial proceedings. "
+               "Please verify current status with an advocate."
+        )
+        ji_act_name = ji_rec.get("act_name", "")
+
+    if not doc:
+        if not jflag:
+            return None
+        # JI warning exists but no statutory text — return an honest no-text
+        # result.  server.py detects no_current_text=True and adds an honest
+        # "text not available; may be repealed" note to corpus_context and SSE.
+        return {
+            "act_name": ji_act_name,
+            "section_number": section_number,
+            "section_heading": "",
+            "section_text": None,
+            "jurisdiction": "CENTRAL",
+            "source_url": "",
+            "verify_tier": 2,
+            "badge": "Sourced from Government of India",
+            "is_dead_law": False,
+            "dead_warning": None,
+            "judicial_flag": jflag,
+            "_score": 0.0,
+            "ministry": "",
+            "act_year": None,
+            "act_id": "",
+            "dead_law_reason": None,
+            "no_current_text": True,
+        }
+
     return _shape(doc, 0.0, jflag)
 
 
@@ -323,6 +368,69 @@ async def retrieve_db(
             pass
 
     return results
+
+
+async def check_orphan_invalidation(
+    db: AsyncIOMotorDatabase,
+    section_number: str,
+    act_hint: str | None = None,
+) -> dict | None:
+    """Look up judicial_invalidations directly, even when the section has NO
+    matching entry in legal_sections.
+
+    Handles cases like IPC §377 (IPC replaced by BNS and absent from
+    legal_sections) where a Supreme Court ruling IS tracked in
+    judicial_invalidations but the full statutory text is not in the corpus.
+
+    Returns None if no record exists or if status == "UPHELD".
+    Returns a plain dict otherwise.
+    """
+    query: dict = {"section_number": section_number}
+    if act_hint:
+        query["act_name"] = re.compile(re.escape(act_hint[:60]), re.IGNORECASE)
+
+    rec = await db.judicial_invalidations.find_one(query)
+    if not rec:
+        return None
+    if (rec.get("status") or "").upper() == "UPHELD":
+        return None
+    return {
+        "act_name": rec.get("act_name", ""),
+        "section_number": section_number,
+        "status": rec.get("status", ""),
+        "user_warning": (
+            rec.get("user_warning")
+            or "⚠️ This provision has been subject to judicial proceedings. "
+               "Please verify current status with an advocate."
+        ),
+    }
+
+
+async def check_query_for_orphan_warnings(
+    db: AsyncIOMotorDatabase,
+    question: str,
+) -> dict | None:
+    """Extract section number + act hint from `question`, then check
+    judicial_invalidations for an orphan ruling (section cited but not in
+    legal_sections).  Returns None when nothing found.
+
+    Designed as the last-resort check AFTER retrieve_db returns empty — it
+    prevents a silent "no results" for queries like "IPC section 377" where
+    the act no longer appears in the corpus but a Supreme Court ruling is
+    tracked.
+    """
+    sec_match = _SEC_RE.search(question)
+    if not sec_match:
+        return None
+
+    sec_num = sec_match.group(1).upper()
+    act_hint: str | None = None
+    for hint_name, pattern in _ACT_HINTS.items():
+        if pattern.search(question):
+            act_hint = hint_name
+            break
+
+    return await check_orphan_invalidation(db, sec_num, act_hint)
 
 
 async def lookup_act_sections(

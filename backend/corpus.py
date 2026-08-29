@@ -2136,12 +2136,8 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
     specific word in common — a single generic word like "police" is not
     enough on its own.
     """
-    if not scored:scored = [] q_tokens_set = set(_tokens(question)) for s,  
-    it in _score_all(question): it_tokens = set().union(*[_tokens(kw) for kw in it.get('keywords', 
-    [])]) - _STOP distinct_token_hits = len(q_tokens_set & it_tokens) is_strong_label_match = any(token in question.lower()
-     for token in [it.get('short_label', '').lower()]) if s >= RETRIEVAL_MIN_SCORE and 
-    (is_strong_label_match or distinct_token_hits >= 2): scored.append((s, it))
-        return []
+    scored = [(s, it) for s, it in _score_all(question) if s >= RETRIEVAL_MIN_SCORE and (any(token in question.lower() for token in [it.get('short_label', '').lower()]) or len(set(_tokens(question)) & (set().union(*[_tokens(kw) for kw in it.get('keywords', [])]) - _STOP)) >= 2)] 
+    if not scored: return [] 
     # Relative cutoff. A clear winner used to drag along weakly-related entries
     # (e.g. a cheque-bounce question also returned an RTI reply-deadline chip
     # because both mention "notice" and "30 days"). Anything scoring less than

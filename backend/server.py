@@ -45,7 +45,12 @@ from corpus import (
     top_candidate_debug,
     classify_topic,
 )
-from corpus_db import retrieve_db as db_retrieve, lookup_section as db_lookup_section, STATE_CODE_TO_JURISDICTION
+from corpus_db import (
+    retrieve_db as db_retrieve,
+    lookup_section as db_lookup_section,
+    check_query_for_orphan_warnings as db_orphan_check,
+    STATE_CODE_TO_JURISDICTION,
+)
 from states import STATES, STATE_BY_CODE, is_valid_state, state_name
 from langpolicy import needs_language_repair, repair_prompt, needs_retrieval_translation
 
@@ -54,6 +59,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
+CORPUS_DB_NAME = os.environ.get("CORPUS_DB_NAME", "dhara")
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 JWT_SECRET = os.environ["JWT_SECRET"]
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
@@ -97,6 +103,7 @@ if razorpay and RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
+corpus_db = client[CORPUS_DB_NAME]   # separate DB holding 70,397 legal sections
 
 app = FastAPI(title="Dhara API")
 api = APIRouter(prefix="/api")
@@ -783,8 +790,35 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
                 # Query names an identifier we don't cover → void retrieval so user sees refusal only
                 retrieved = []
 
-    # (c) If no retrieval hit AND no early refusal, we still refuse (no verified source)
-    if not early_refusal and not retrieved and not state_hits:
+    # (b2) MongoDB corpus — 70,397 sections across CENTRAL + 12 states.
+    # Runs ALONGSIDE the Python corpus, not instead of it. Python corpus
+    # contributes scope_notes and citizen-language explanations; MongoDB
+    # contributes verbatim government text and breadth (2,120 Acts).
+    # Three safety guards enforced in code (not prompts):
+    #   G1 — dead_warning  : serve_warning prepended for is_dead_law sections
+    #   G2 — judicial_flag : user_warning from judicial_invalidations (status != UPHELD)
+    #   G3 — badge         : verify_tier==1 + verified_by → "Advocate Verified"
+    db_hits: list[dict] = []
+    if not early_refusal:
+        try:
+            db_hits = await db_retrieve(corpus_db, retrieval_text, state_code=user_state or None, limit=3)
+        except Exception:
+            db_hits = []   # MongoDB unavailable — Python corpus handles it
+
+    # Orphan-invalidation check — sections in judicial_invalidations but NOT
+    # in legal_sections (e.g. IPC §377: IPC replaced by BNS, absent from corpus
+    # but Supreme Court ruling is tracked).  Fires only when db_hits is empty.
+    db_orphan: dict | None = None
+    if not early_refusal and not db_hits:
+        try:
+            db_orphan = await db_orphan_check(corpus_db, retrieval_text)
+        except Exception:
+            db_orphan = None
+
+    # (c) If no retrieval hit AND no early refusal, we still refuse (no verified source).
+    # db_hits = MongoDB verbatim sections; db_orphan = standalone judicial ruling
+    # for an act not in the corpus.  Either of these counts as a verified source.
+    if not early_refusal and not retrieved and not state_hits and not db_hits and not db_orphan:
         early_refusal = REFUSAL_NO_CORPUS
 
     # (c1) Merge the state rules into the citation list the user will see. State
@@ -852,6 +886,49 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             )
             for it in retrieved
         ])
+
+    # Merge MongoDB corpus hits into context.  Safety guards (G1 dead-law, G2
+    # judicial-invalidation) are encoded as SAFETY WARNING / JUDICIAL ALERT
+    # lines BEFORE the statutory text so the LLM reads them first.
+    if db_hits:
+        db_parts: list[str] = []
+        for hit in db_hits:
+            lines: list[str] = []
+            if hit.get("dead_warning"):
+                lines.append(f"SAFETY WARNING (DEAD LAW): {hit['dead_warning']}")
+            if hit.get("judicial_flag"):
+                lines.append(f"JUDICIAL ALERT: {hit['judicial_flag']}")
+            sec_heading = hit.get("section_heading", "")
+            act_label = f"{hit.get('act_name', '')}, Section {hit.get('section_number', '')}"
+            if sec_heading:
+                act_label += f" — {sec_heading}"
+            lines.append(f"Source: {act_label}")
+            if hit.get("no_current_text"):
+                lines.append(
+                    "NOTE: Current statutory text for this section is not available "
+                    "in the corpus — the act may have been repealed or replaced by "
+                    "successor legislation (e.g. IPC superseded by BNS). "
+                    "Tell the user plainly that this section may no longer be in force "
+                    "and advise them to consult an advocate for the current legal position."
+                )
+            else:
+                sec_text = (hit.get("section_text") or "")[:600]
+                if sec_text:
+                    lines.append(f"Text: {sec_text}")
+            db_parts.append("\n".join(lines))
+        db_block = "\n---\n".join(db_parts)
+        corpus_context = (corpus_context + "\n---\n" + db_block) if corpus_context else db_block
+
+    # Orphan judicial warnings (section in judicial_invalidations but NOT in
+    # legal_sections — e.g. IPC §377).  No statutory text available, but the
+    # ruling itself is the verified source.
+    if db_orphan:
+        orphan_line = (
+            f"JUDICIAL ALERT [{db_orphan.get('status', '')}]: {db_orphan.get('user_warning', '')}\n"
+            f"Note: '{db_orphan.get('act_name', '')}' may no longer be in force in its original form "
+            "(e.g. replaced by a successor code). Advise the user to consult an advocate for current law."
+        )
+        corpus_context = (corpus_context + "\n---\n" + orphan_line) if corpus_context else orphan_line
     # Tell the model, in plain words, when the local rule is the missing piece so
     # it never presents the central position as the complete answer.
     if state_topic and not state_hits:
@@ -965,6 +1042,70 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         # own reply; the source of truth is here (from corpus.py).
         for it in retrieved:
             yield sse({"type": "citation", "citation": public_citation(it)})
+
+        # Emit MongoDB-corpus citations.  G1/G2 safety warnings are prepended to
+        # official_text so they appear at the top of the citation card in the UI.
+        for hit in db_hits:
+            dead_warn = hit.get("dead_warning") or ""
+            ji_warn = hit.get("judicial_flag") or ""
+            warning_prefix = "\n\n".join(filter(None, [dead_warn, ji_warn]))
+            if hit.get("no_current_text"):
+                no_text_notice = (
+                    "⚠️ Current statutory text is not available for this section. "
+                    "This may reflect a repeal or replacement by successor legislation. "
+                    "Please consult an advocate for the current legal position."
+                )
+                official = (warning_prefix + "\n\n" + no_text_notice) if warning_prefix else no_text_notice
+            else:
+                raw_text = (hit.get("section_text") or "")[:2000]
+                official = (warning_prefix + "\n\n" + raw_text) if warning_prefix else raw_text
+            sec_heading = hit.get("section_heading", "")
+            act_label = (
+                f"{hit.get('act_name', '')}, Section {hit.get('section_number', '')}"
+                + (f" — {sec_heading}" if sec_heading else "")
+            )
+            yield sse({
+                "type": "citation",
+                "citation": {
+                    "key": f"{hit.get('act_name', '')} § {hit.get('section_number', '')}",
+                    "citation": act_label,
+                    "short_label": f"§ {hit.get('section_number', '')}",
+                    "act": hit.get("act_name", ""),
+                    "official_text": official,
+                    "source_url": hit.get("source_url") or "",
+                    "verified_at": hit.get("badge") or "Sourced from Government of India",
+                    "text_kind": "verbatim" if not hit.get("no_current_text") else "judicial_ruling",
+                    "state": None if (hit.get("jurisdiction") or "CENTRAL") == "CENTRAL" else hit.get("jurisdiction"),
+                    "is_dead_law": hit.get("is_dead_law", False),
+                    "dead_warning": hit.get("dead_warning"),
+                    "judicial_flag": hit.get("judicial_flag"),
+                    "no_current_text": hit.get("no_current_text", False),
+                },
+            })
+
+        # Orphan judicial-invalidation warning (section in judicial_invalidations
+        # but NOT in legal_sections — e.g. IPC §377 replaced by BNS).
+        if db_orphan:
+            yield sse({
+                "type": "citation",
+                "citation": {
+                    "key": f"{db_orphan.get('act_name', '')} § {db_orphan.get('section_number', '')}",
+                    "citation": (
+                        f"{db_orphan.get('act_name', '')}, Section {db_orphan.get('section_number', '')}"
+                        f" [{db_orphan.get('status', '')}]"
+                    ),
+                    "short_label": f"§ {db_orphan.get('section_number', '')}",
+                    "act": db_orphan.get("act_name", ""),
+                    "official_text": db_orphan.get("user_warning", ""),
+                    "source_url": "",
+                    "verified_at": "Judicial Ruling",
+                    "text_kind": "judicial_ruling",
+                    "state": None,
+                    "is_dead_law": False,
+                    "judicial_flag": db_orphan.get("user_warning"),
+                    "status": db_orphan.get("status"),
+                },
+            })
 
         # State-jurisdiction signalling. Two distinct cases, both honest:
         #  - the user has no state set → ask for it once, in context
@@ -1658,13 +1799,13 @@ async def retrieve(body: RetrieveIn, user: dict = Depends(current_user)):
     limit = max(1, min(int(body.limit), 10))
 
     if body.mode == "exact" and body.section_number:
-        result = await db_lookup_section(db, body.section_number, body.act_hint)
+        result = await db_lookup_section(corpus_db, body.section_number, body.act_hint)
         results = [result] if result else []
     else:
         # Use the user's own state_jurisdiction if the caller didn't specify
         state_code = body.state_code or user.get("state") or None
         try:
-            results = await db_retrieve(db, body.query, state_code=state_code, limit=limit)
+            results = await db_retrieve(corpus_db, body.query, state_code=state_code, limit=limit)
         except Exception:
             results = []
 

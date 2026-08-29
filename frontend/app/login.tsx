@@ -113,12 +113,13 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.brand },
+  safe: { flex: 1, backgroundColor: theme.dhara.navy },
   scroll: { flexGrow: 1, padding: theme.spacing.xl, justifyContent: 'center' },
   // Fixed square dimensions + resizeMode="contain" — the logo can never stretch.
   logo: { width: 84, height: 84, alignSelf: 'center', borderRadius: 20, marginBottom: 12 },
   brand: { fontFamily: theme.fonts.display, fontSize: 44, color: theme.colors.onBrandPrimary, textAlign: 'center', fontWeight: '700' },
-  tag: { color: theme.colors.brandSecondary, textAlign: 'center', marginTop: 8, fontSize: 15 },
+  // Tagline: gold-on-navy — 6.29:1 ✅ WCAG AA
+  tag: { color: theme.dhara.gold, textAlign: 'center', marginTop: 8, fontSize: 15, fontWeight: '600' },
   card: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, padding: theme.spacing.xl, marginTop: theme.spacing.xxl },
   heading: { fontFamily: theme.fonts.display, fontSize: 24, color: theme.colors.onSurface, fontWeight: '700' },
   sub: { color: theme.colors.onSurfaceSecondary, marginTop: 4 },
@@ -130,10 +131,14 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: theme.colors.brand, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: 'center', marginTop: theme.spacing.xl, minHeight: 52 },
   btnText: { color: theme.colors.onBrandPrimary, fontWeight: '700', fontSize: 16 },
   row: { flexDirection: 'row', justifyContent: 'center', marginTop: theme.spacing.lg },
-  link: { color: theme.colors.brandSecondary, fontWeight: '700' },
+  // "Create an account" link: navy-on-cream — 11.92:1 ✅ + underline for link affordance
+  link: { color: theme.dhara.textPrimary, fontWeight: '700', textDecorationLine: 'underline' },
   forgotWrap: { alignItems: 'center', marginTop: theme.spacing.md, padding: 6 },
-  forgotLink: { color: theme.colors.brand, fontWeight: '600', fontSize: 14, textDecorationLine: 'underline' },
+  // "Forgot password?": navy-on-cream — 11.92:1 ✅ (already had underline)
+  forgotLink: { color: theme.dhara.textPrimary, fontWeight: '600', fontSize: 14, textDecorationLine: 'underline' },
   error: { color: theme.colors.error, marginTop: theme.spacing.md },
-  footer: { textAlign: 'center', color: theme.colors.brandSecondary, marginTop: theme.spacing.xxl, letterSpacing: 2 },
-  copyright: { textAlign: 'center', color: '#8A93A6', marginTop: theme.spacing.md, fontSize: 11, letterSpacing: 0.5 },
+  // Footer Sanskrit: gold-on-navy — 6.29:1 ✅
+  footer: { textAlign: 'center', color: theme.dhara.gold, marginTop: theme.spacing.xxl, letterSpacing: 2 },
+  // Copyright: textOnNavyMuted (gold) on navy — 6.29:1 ✅  — NOT a raw gray (#8A93A6 fails)
+  copyright: { textAlign: 'center', color: theme.dhara.textOnNavyMuted, marginTop: theme.spacing.md, fontSize: 11, letterSpacing: 0.5 },
 });

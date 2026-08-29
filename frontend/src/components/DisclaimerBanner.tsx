@@ -6,6 +6,9 @@ import { theme } from '@/src/theme';
  * Non-dismissible legal disclaimer banner.
  * Rendered globally above the tab bar via (tabs)/_layout.tsx.
  * Wording is FIXED — do not change without legal review.
+ *
+ * Contrast: dhara.textSecondary (#4A5A6E) on FFF6E5 = 6.60:1 ✅ WCAG AA
+ *           (previously #5A3A00 — adequate but not a brand token)
  */
 export const DISCLAIMER_TEXT =
   'DHARA provides legal information, not legal advice. This does not create an advocate-client relationship. Verify with a qualified advocate before acting. © Callistus Moses · MSafe Solutions.';
@@ -36,9 +39,11 @@ const styles = StyleSheet.create({
   },
   text: {
     flex: 1,
-    color: '#5A3A00',
-    fontSize: 10,
-    lineHeight: 13,
+    // dhara.textSecondary (#4A5A6E) on amber bg (#FFF6E5) = 6.60:1 ✅ WCAG AA
+    // Legal text: 12px minimum — not fine-print size — this copy has legal function.
+    color: theme.dhara.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '500',
   },
 });

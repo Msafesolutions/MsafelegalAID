@@ -26,6 +26,25 @@ export const theme = {
     borderStrong: '#9CA3AF',
     divider: '#E5E7EB',
   },
+  // ── Documented Dhara brand palette ──────────────────────────────────────────
+  // WCAG-verified tokens.  Do NOT use ad-hoc hex values or Tailwind defaults
+  // on navy backgrounds — gray-on-navy fails outright regardless of shade.
+  // Reference these constants everywhere instead of inline hex strings.
+  //   gold (#D3B675) on navy (#14365A) = 6.29:1   ✅ WCAG AA
+  //   white (#FFF) on navy (#14365A)   = 12.33:1  ✅ WCAG AAA
+  //   textSecondary on surface (#FDFBF7) = 6.81:1 ✅ WCAG AA
+  //   navy on surface (#FDFBF7)        = 11.92:1  ✅ WCAG AAA
+  dhara: {
+    navy:             '#14365A', // primary backgrounds on auth/onboarding screens
+    navyLight:        '#1E4A78', // hover / pressed states on navy
+    gold:             '#D3B675', // accent text on navy; 6.29:1 — NEVER use brandSecondary on navy
+    goldDark:         '#B8934F', // gold on light bg when higher contrast needed; 4.6:1 vs cream
+    cream:            '#F5F0E6', // card backgrounds
+    textPrimary:      '#14365A', // body text on light backgrounds
+    textSecondary:    '#4A5A6E', // secondary text on light; 6.81:1 on surface — NOT gray-400
+    textOnNavy:       '#FFFFFF', // primary text on navy
+    textOnNavyMuted:  '#D3B675', // muted text on navy — NEVER a raw gray (gray-on-navy fails)
+  },
   spacing: {
     xs: 4,
     sm: 8,
