@@ -1127,9 +1127,11 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']} testID="chat-screen">
+      {/* ── HEADER — title · lang chip · usage pill · New Chat ─────────────── */}
       <View style={styles.header}>
-        <View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {/* Left: branding + language chip */}
+        <View style={{ flexShrink: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={styles.title}>Dhara</Text>
             {isPro && (
               <View testID="pro-badge" style={styles.proBadge}>
@@ -1138,9 +1140,6 @@ export default function ChatScreen() {
               </View>
             )}
           </View>
-          {/* Language indicator chip — shows current language so user always
-              knows what language Dhara is speaking in. Tapping navigates
-              directly to the language picker in Settings. */}
           <Pressable
             testID="header-lang-chip"
             style={styles.langChip}
@@ -1151,7 +1150,35 @@ export default function ChatScreen() {
             <Text style={styles.langChipText}>{language.native}</Text>
           </Pressable>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, flexShrink: 1 }}>
+
+        {/* Right: usage pill (inline) + New Chat */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {!!user && (
+            <>
+              {user.daily_queries_left !== undefined && user.daily_queries_left !== null ? (
+                <View style={styles.usagePill} testID="usage-pill-queries">
+                  <Ionicons name="chatbubble-ellipses-outline" size={11} color={theme.colors.brand} />
+                  <Text style={styles.usagePillText}>
+                    {user.daily_queries_left}/{user.daily_queries_cap ?? 30}
+                  </Text>
+                </View>
+              ) : isPro ? (
+                <View style={[styles.usagePill, { backgroundColor: '#FFF8E7' }]} testID="usage-pill-pro">
+                  <Ionicons name="star" size={11} color={theme.colors.brandSecondary} />
+                  <Text style={[styles.usagePillText, { color: theme.colors.brandSecondary }]}>
+                    ∞ Pro
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.usagePill} testID="usage-pill-questions">
+                  <Ionicons name="chatbubble-ellipses-outline" size={11} color={theme.colors.brand} />
+                  <Text style={styles.usagePillText}>
+                    {user.daily_questions_left ?? '—'}/{user.daily_questions_cap ?? 30}
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
           <Pressable testID="new-chat-button" style={styles.newChatBtn} onPress={startNewChat}>
             <Ionicons name="add" size={16} color={theme.colors.brand} />
             <Text style={styles.newChatText}>New Chat</Text>
@@ -1159,84 +1186,57 @@ export default function ChatScreen() {
         </View>
       </View>
 
-      {/* Usage meter — single unified pill (voice + text share 30/day for free,
-          Pro users see "Unlimited"). Numbers come from /auth/me, refreshed
-          after every message. */}
-      {!!user && (
-        <View style={styles.usageRow} testID="usage-meter">
-          {user.daily_queries_left !== undefined && user.daily_queries_left !== null ? (
-            <View style={styles.usagePill} testID="usage-pill-queries">
-              <Ionicons name="chatbubble-ellipses-outline" size={12} color={theme.colors.brand} />
-              <Text style={styles.usagePillText}>
-                {user.daily_queries_left}/{user.daily_queries_cap ?? 30} free questions today
-              </Text>
-            </View>
-          ) : isPro ? (
-            <View style={[styles.usagePill, { backgroundColor: '#FFF8E7' }]} testID="usage-pill-pro">
-              <Ionicons name="star" size={12} color={theme.colors.brandSecondary} />
-              <Text style={[styles.usagePillText, { color: theme.colors.brandSecondary }]}>
-                Unlimited · Pro
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.usagePill} testID="usage-pill-questions">
-              <Ionicons name="chatbubble-ellipses-outline" size={12} color={theme.colors.brand} />
-              <Text style={styles.usagePillText}>
-                {user.daily_questions_left ?? '—'}/{user.daily_questions_cap ?? 30} questions today
-              </Text>
-            </View>
-          )}
+      {/* ── COMPACT CONTROLS BAR — mode toggle + upgrade chip (single row) ── */}
+      <View style={styles.controlsBar} testID="controls-bar">
+        {/* Mode toggle */}
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Switch
+            testID="pro-mode-switch"
+            value={proMode}
+            onValueChange={(v) => {
+              setProMode(v);
+              if (v && !isPro && remaining <= 0) {
+                setPaywall({
+                  samples_used: user?.pro_samples_limit ?? 5,
+                  samples_limit: user?.pro_samples_limit ?? 5,
+                  pro_price_label: '₹99',
+                  pro_price_usd_label: '$5',
+                  message:
+                    "You've used all your free Pro-quality samples. Upgrade to Pro to unlock unlimited lawyer-style deep answers, drafts, action plans and escalation paths.",
+                });
+              }
+            }}
+            trackColor={{ true: theme.colors.brandSecondary, false: theme.colors.borderStrong }}
+            thumbColor={theme.colors.surface}
+            style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
+          />
+          <View>
+            <Text style={styles.modeLabelCompact}>
+              {proMode ? '⚖️ Pro mode' : '📖 Basic mode'}
+            </Text>
+            <Text style={styles.modeSubCompact}>
+              {proMode
+                ? isPro
+                  ? 'Deep answers'
+                  : `${remaining} samples left`
+                : 'Free forever'}
+            </Text>
+          </View>
         </View>
-      )}
 
-      {/* Pro-mode toggle row */}
-      <View style={styles.modeRow} testID="mode-row">
-        <View style={{ flex: 1 }}>
-          <Text style={styles.modeLabel}>
-            {proMode ? '⚖️  Pro answer mode' : '📖  Basic mode (unlimited)'}
-          </Text>
-          <Text style={styles.modeSub}>
-            {proMode
-              ? isPro
-                ? 'Lawyer-style deep answers, drafts, action plans.'
-                : `Free samples remaining: ${remaining} of ${user?.pro_samples_limit ?? 5}`
-              : 'Free forever. Simple answers with law citations.'}
-          </Text>
-        </View>
-        <Switch
-          testID="pro-mode-switch"
-          value={proMode}
-          onValueChange={(v) => {
-            setProMode(v);
-            if (v && !isPro && remaining <= 0) {
-              // Preemptively show paywall
-              setPaywall({
-                samples_used: user?.pro_samples_limit ?? 5,
-                samples_limit: user?.pro_samples_limit ?? 5,
-                pro_price_label: '₹99',
-                pro_price_usd_label: '$5',
-                message:
-                  "You've used all your free Pro-quality samples. Upgrade to Pro to unlock unlimited lawyer-style deep answers, drafts, action plans and escalation paths.",
-              });
-            }
-          }}
-          trackColor={{ true: theme.colors.brandSecondary, false: theme.colors.borderStrong }}
-          thumbColor={theme.colors.surface}
-        />
+        {/* Upgrade chip — inline, only for non-Pro on basic mode */}
+        {!isPro && !proMode && (
+          <Pressable
+            testID="chat-upgrade-cta"
+            style={styles.upgradeChip}
+            onPress={() => router.push('/upgrade')}
+          >
+            <Ionicons name="star" size={13} color={theme.colors.onBrandSecondary} />
+            <Text style={styles.upgradeChipText}>Pro ₹99</Text>
+            <Ionicons name="chevron-forward" size={13} color={theme.colors.onBrandSecondary} />
+          </Pressable>
+        )}
       </View>
-
-      {/* Static upgrade hint for non-Pro users */}
-      {!isPro && !proMode && (
-        <Pressable
-          testID="chat-upgrade-cta"
-          style={styles.upgradeBanner}
-          onPress={() => router.push('/upgrade')}
-        >
-          <Ionicons name="star" size={16} color={theme.colors.onBrandSecondary} />
-          <Text style={styles.upgradeBannerText}>Upgrade to Pro — ₹99 / $5 — unlimited depth</Text>
-          <Ionicons name="chevron-forward" size={16} color={theme.colors.onBrandSecondary} />
-        </Pressable>
-      )}
 
       {/*
         keyboardVerticalOffset MUST be 0 here — it is not "the height of the chrome
