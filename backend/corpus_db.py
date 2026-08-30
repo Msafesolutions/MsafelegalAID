@@ -198,6 +198,13 @@ _SIG_STOPWORDS: set[str] = {
 }
 _MIN_COROBORATION_WORDS = 2
 
+# Wide candidate pool fetched from MongoDB before corroboration re-ranking.
+# The old value was `limit * 4 = 20` — too narrow when relevant sections score
+# low on section_heading (weight=10) but high on section_text (weight=1).
+# 300 ensures we capture deep-in-the-list genuine matches (e.g. MV Act §129
+# where "helmet" sits in section_text, not the heading).
+_CANDIDATE_POOL_SIZE = 300
+
 
 def _significant_words(text: str) -> set[str]:
     """Lowercased alphabetic tokens (len>=3) minus stopwords — the real
@@ -208,15 +215,36 @@ def _significant_words(text: str) -> set[str]:
 
 
 def _corroborates(question_sig: set[str], doc: dict, act_hint: str | None) -> bool:
-    """Corroboration Rule gate for a single $text search candidate."""
+    """Corroboration Rule gate — boolean version (kept for external callers)."""
+    return _corroboration_score(question_sig, doc, act_hint) >= _MIN_COROBORATION_WORDS
+
+
+def _corroboration_score(question_sig: set[str], doc: dict, act_hint: str | None) -> int:
+    """Numeric corroboration score used to RE-RANK $text candidates.
+
+    Returns 9999  → act-label match (act_hint found verbatim in doc's act_name).
+                     Always surfaces; sorted first regardless of text-index score.
+    Returns N ≥ 0 → count of significant-word overlap between query and the
+                     doc's act_name + section_heading + section_text[:800].
+
+    Threshold for inclusion: score >= _MIN_COROBORATION_WORDS (= 2).
+
+    Why this beats raw textScore for ranking:
+      MongoDB's textScore weights section_heading (×10) and act_name (×5) far
+      above section_text (×1).  A section whose topic appears only in body text
+      (e.g. MV Act §129 "helmet" in text, not heading) gets a low textScore and
+      can fall outside the old `limit*4 = 20` candidate window entirely.
+      Corroboration scoring looks at the full section_text so those sections
+      bubble back up.
+    """
     doc_act_name = doc.get("act_name") or ""
     if act_hint and act_hint.lower() in doc_act_name.lower():
-        return True
+        return 9999  # Explicit act-label match → always surface
     doc_sig = _significant_words(
         doc_act_name + " " + (doc.get("section_heading") or "") + " "
         + (doc.get("section_text") or "")[:800]
     )
-    return len(question_sig & doc_sig) >= _MIN_COROBORATION_WORDS
+    return len(question_sig & doc_sig)
 
 
 def _badge(doc: dict) -> str:
@@ -349,13 +377,28 @@ async def retrieve_db(
 ) -> list[dict]:
     """Situational full-text search against the legal_sections corpus.
 
-    Priority ordering:
+    Two-phase retrieval (fixes the heading-weight ranking bias):
+    ─────────────────────────────────────────────────────────────
+    PHASE A — Wide fetch
+      Fetch up to _CANDIDATE_POOL_SIZE (300) docs per jurisdiction from the
+      $text index.  MongoDB's textScore unfairly favours section_heading
+      (weight=10) over section_text (weight=1), so limiting to `limit*4=20`
+      candidates meant that sections where the topic lives in body text (e.g.
+      MV Act §129 "helmet") were never seen by the corroboration filter.
+
+    PHASE B — Corroboration re-rank, then slice
+      Score every candidate with _corroboration_score() (significant-word
+      overlap count; 9999 for an explicit act-label match).  Filter out scores
+      below _MIN_COROBORATION_WORDS (= 2), sort descending, and take the top
+      `limit`.  State-jurisdiction candidates beat central ones at equal scores.
+
+    Priority ordering (unchanged):
       1. Exact section lookup (if question cites a section number + act hint).
-      2. Full-text search scoped to user's state jurisdiction (if set).
-      3. Full-text search on CENTRAL jurisdiction.
+      2. Re-ranked results from state jurisdiction (if set).
+      3. Re-ranked results from CENTRAL jurisdiction.
 
     Dead sections are EXCLUDED from situational search results (G1).
-    Results from step 2 are prepended to results from step 3, deduped by _id.
+    JI flags are fetched in parallel only for the final top-`limit` results.
 
     Returns up to `limit` result dicts (may be fewer if corpus is sparse).
     """
@@ -367,8 +410,7 @@ async def retrieve_db(
     if state_code:
         state_jurisdiction = STATE_CODE_TO_JURISDICTION.get(state_code.upper())
 
-    # ── Act hint + significant-word set — computed ONCE, used by both the
-    # exact-lookup path below AND the Corroboration Rule gate on $text hits.
+    # ── Act hint + significant-word set — computed ONCE ───────────────────────
     act_hint: str | None = None
     for hint_name, pattern in _ACT_HINTS.items():
         if pattern.search(question):
@@ -382,10 +424,25 @@ async def retrieve_db(
         sec_num = sec_match.group(1).upper()
         exact = await lookup_section(db, sec_num, act_hint)
         if exact:
-            seen_ids.add(exact["act_id"] + "|" + exact["section_number"])
+            seen_ids.add(exact.get("act_id", "") + "|" + exact["section_number"])
             results.append(exact)
 
-    # ── 2. Full-text search — state jurisdiction (if set) ────────────────────
+    # ── Shared projection for both text-search queries ────────────────────────
+    _PROJ = {
+        "score": {"$meta": "textScore"},
+        "act_name": 1, "section_number": 1, "section_heading": 1,
+        "section_text": 1, "source_url": 1, "verify_tier": 1,
+        "verified_by": 1, "is_dead_law": 1, "dead_law_reason": 1,
+        "serve_warning": 1, "jurisdiction": 1, "ministry": 1,
+        "act_year": 1, "act_id": 1,
+    }
+
+    # ── PHASE A: wide candidate collection ───────────────────────────────────
+    # Each entry: (corr_score, jurisdiction_priority, text_score, key, doc)
+    # jurisdiction_priority: 1 = state, 0 = central  →  state wins ties.
+    candidates: list[tuple[int, int, float, str, dict]] = []
+
+    # 2a. State jurisdiction candidates
     if state_jurisdiction:
         try:
             cursor = db.legal_sections.find(
@@ -394,72 +451,64 @@ async def retrieve_db(
                     "jurisdiction": state_jurisdiction,
                     "is_dead_law": False,
                 },
-                {
-                    "score": {"$meta": "textScore"},
-                    "act_name": 1, "section_number": 1, "section_heading": 1,
-                    "section_text": 1, "source_url": 1, "verify_tier": 1,
-                    "verified_by": 1, "is_dead_law": 1, "dead_law_reason": 1,
-                    "serve_warning": 1, "jurisdiction": 1, "ministry": 1,
-                    "act_year": 1, "act_id": 1,
-                },
-            ).sort([("score", {"$meta": "textScore"})]).limit(limit * 4)
+                _PROJ,
+            ).sort([("score", {"$meta": "textScore"})]).limit(_CANDIDATE_POOL_SIZE)
 
             async for doc in cursor:
-                if len(results) >= limit:
-                    break
                 key = doc.get("act_id", "") + "|" + doc.get("section_number", "")
                 if key in seen_ids:
                     continue
-                # Corroboration Rule (P0) — reject $text hits that only share
-                # a generic word with the query and aren't the named Act.
-                if not _corroborates(question_sig, doc, act_hint):
-                    continue
-                seen_ids.add(key)
-                score = doc.get("score", 0.0)
-                jflag = await _judicial_flag(
-                    db, doc.get("act_name", ""), doc.get("section_number", "")
-                )
-                results.append(_shape(doc, float(score), jflag))
+                corr = _corroboration_score(question_sig, doc, act_hint)
+                if corr >= _MIN_COROBORATION_WORDS:
+                    candidates.append((corr, 1, float(doc.get("score", 0.0)), key, doc))
         except Exception:
             pass  # Corpus may not have this jurisdiction yet — fall through
 
-    # ── 3. Full-text search — CENTRAL jurisdiction ────────────────────────────
-    remaining = limit - len(results)
-    if remaining > 0:
-        try:
-            cursor = db.legal_sections.find(
-                {
-                    "$text": {"$search": question},
-                    "jurisdiction": "CENTRAL",
-                    "is_dead_law": False,
-                },
-                {
-                    "score": {"$meta": "textScore"},
-                    "act_name": 1, "section_number": 1, "section_heading": 1,
-                    "section_text": 1, "source_url": 1, "verify_tier": 1,
-                    "verified_by": 1, "is_dead_law": 1, "dead_law_reason": 1,
-                    "serve_warning": 1, "jurisdiction": 1, "ministry": 1,
-                    "act_year": 1, "act_id": 1,
-                },
-            ).sort([("score", {"$meta": "textScore"})]).limit(remaining * 4)
+    # 2b. CENTRAL jurisdiction candidates
+    try:
+        cursor = db.legal_sections.find(
+            {
+                "$text": {"$search": question},
+                "jurisdiction": "CENTRAL",
+                "is_dead_law": False,
+            },
+            _PROJ,
+        ).sort([("score", {"$meta": "textScore"})]).limit(_CANDIDATE_POOL_SIZE)
 
-            async for doc in cursor:
-                if len(results) >= limit:
-                    break
-                key = doc.get("act_id", "") + "|" + doc.get("section_number", "")
-                if key in seen_ids:
-                    continue
-                # Corroboration Rule (P0) — same gate as the state-jurisdiction loop.
-                if not _corroborates(question_sig, doc, act_hint):
-                    continue
-                seen_ids.add(key)
-                score = doc.get("score", 0.0)
-                jflag = await _judicial_flag(
-                    db, doc.get("act_name", ""), doc.get("section_number", "")
-                )
-                results.append(_shape(doc, float(score), jflag))
-        except Exception:
-            pass
+        async for doc in cursor:
+            key = doc.get("act_id", "") + "|" + doc.get("section_number", "")
+            if key in seen_ids:
+                continue
+            corr = _corroboration_score(question_sig, doc, act_hint)
+            if corr >= _MIN_COROBORATION_WORDS:
+                candidates.append((corr, 0, float(doc.get("score", 0.0)), key, doc))
+    except Exception:
+        pass
+
+    # ── PHASE B: re-rank by corroboration score, dedupe, slice ───────────────
+    # Sort: corr_score DESC → jurisdiction_priority DESC → text_score DESC
+    candidates.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+
+    # Collect top-limit unique candidates (respecting already-seen exact hits)
+    top_candidates: list[tuple[float, dict]] = []
+    for corr, _jprio, text_score, key, doc in candidates:
+        if len(top_candidates) >= limit - len(results):
+            break
+        if key in seen_ids:
+            continue
+        seen_ids.add(key)
+        top_candidates.append((text_score, doc))
+
+    # Fetch JI flags in parallel for the final slice only (not all 300)
+    if top_candidates:
+        jflags = await asyncio.gather(
+            *[
+                _judicial_flag(db, doc.get("act_name", ""), doc.get("section_number", ""))
+                for _, doc in top_candidates
+            ]
+        )
+        for (text_score, doc), jflag in zip(top_candidates, jflags):
+            results.append(_shape(doc, text_score, jflag))
 
     return results
 

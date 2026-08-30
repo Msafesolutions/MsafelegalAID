@@ -31,8 +31,14 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# Environment values are injected during production builds.
+.env
+.env.*
+!.env.example
+
+# Generated tooling caches
+.ruff_cache/
+__pycache__/
 
 # typescript
 *.tsbuildinfo

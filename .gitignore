@@ -30,8 +30,12 @@ next-env.d.ts
 dist/
 dist
 
-# Environment files (comprehensive coverage)
-
+# Environment files — production values are injected by the deployment environment.
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
 *token.json*
 *credentials.json*
 
@@ -48,6 +52,7 @@ dump.rdb
 
 # Python
 __pycache__/
+**/__pycache__/
 *pyc*
 venv/
 .venv/
@@ -75,16 +80,14 @@ agenthub/agents/youtube/db
 
 # Build caches
 .cache/
+.ruff_cache/
+**/.ruff_cache/
 
 memory/test_credentials.md
+*.jsonl
 
 # Mobile development
 android-sdk/
-# NOTE: Do NOT ignore .env files — Emergent deployment relies on them being
-# available in the app context (backend/.env, frontend/.env are required at
-# runtime/build time). Individual secrets live in emergent's env pipeline.
 credentials.json
 *.key
 .credentials
-# Only ignore local-override env files, keep committed backend/.env & frontend/.env
-.env*.local
