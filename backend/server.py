@@ -126,6 +126,7 @@ class RegisterIn(BaseModel):
     password: str = Field(min_length=6)
     name: str = Field(min_length=1)
     phone: str = Field(min_length=6, max_length=20)
+    state: Optional[str] = None
     terms_accepted: bool
     terms_version: str = TERMS_VERSION
 
