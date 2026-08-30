@@ -137,6 +137,88 @@ _ACT_HINTS: dict[str, re.Pattern] = {
 }
 
 
+# ── Corroboration Rule (P0) ───────────────────────────────────────────────
+# MongoDB's $text search scores a hit if it shares ANY indexed token with the
+# query — including generic words ("fine", "penalty", "notice", "court") that
+# appear in thousands of unrelated sections. Left unchecked, this lets noise
+# like the Insolvency & Bankruptcy Code or the Forest Act surface in the
+# citation list for a query that has nothing to do with them, purely because
+# they share one common word. This rule requires a text-search hit to prove
+# real topical overlap before it is trusted:
+#
+#   PASS if EITHER
+#     (a) the query names this hit's Act by name/abbreviation (a strong
+#         label match — the same act_hint used for exact section lookup), OR
+#     (b) the query shares >= _MIN_COROBORATION_WORDS significant words with
+#         the hit's act_name + section_heading + section_text.
+#
+# Exact section lookups (lookup_section) are untouched — they are already
+# deterministic (act + section number), not a fuzzy text-search guess.
+_SIG_STOPWORDS: set[str] = {
+    "the", "a", "an", "is", "are", "was", "were", "of", "and", "or", "for",
+    "in", "on", "at", "to", "by", "my", "me", "i", "we", "you", "your",
+    "can", "may", "do", "does", "did", "have", "has", "had", "be", "been",
+    "will", "would", "should", "could", "shall", "any", "all", "some",
+    "what", "why", "how", "when", "where", "who", "which", "this", "that",
+    "without", "with", "not", "no", "from", "than", "then", "into", "about",
+    "if", "as", "but", "so", "there", "their", "them", "his", "her", "its",
+    "am", "get", "got", "make", "made", "tell", "know", "want", "need",
+    "please", "sir", "madam", "against", "per", "under",
+    "act", "acts", "section", "sections", "rule", "rules", "code", "codes",
+    "law", "laws", "sanhita", "adhiniyam",
+    # Legal-boilerplate machinery words — these appear in the vast majority
+    # of Bare Act sections regardless of subject matter ("fine", "penalty",
+    # "shall", "rupees"...) so two documents sharing ONLY these words are not
+    # actually on the same topic. This is exactly the failure mode reported:
+    # unrelated Acts (Insolvency & Bankruptcy Code, Forest Act, Customs Act)
+    # surfacing purely because they both mention "fine".
+    "fine", "fines", "penalty", "penalties", "punishment", "punishable",
+    "imprisonment", "extend", "extending", "extended", "liable", "liability",
+    "rupees", "amount", "payment", "pay", "paid", "notice", "prescribed",
+    "provided", "government", "authority", "officer", "officers", "court",
+    "courts", "person", "persons", "such", "said", "aforesaid", "thereof",
+    "herein", "thereto", "shall", "whoever", "confiscation", "lieu",
+    "option", "compensation", "offence", "offences", "contravention",
+    "contravenes", "regard", "respect", "matter", "matters", "case", "cases",
+    "name", "names", "address", "addresses", "give", "giving", "given",
+    "arrested", "arrest",
+    # Generic time/manner connectors — nearly every Bare Act mentions a time
+    # period, date or "manner as prescribed", so these carry almost no
+    # topical signal on their own (this is what let an unrelated "Salary and
+    # Allowances of Leaders of Opposition" Act match a wages query on the
+    # single shared pair "salary" + "time").
+    "time", "times", "period", "periods", "date", "dates", "days", "month",
+    "months", "year", "years", "limit", "limits", "manner", "necessary",
+    "reasonable", "required", "specified", "concerned", "applicable",
+    "otherwise", "accordance", "force", "forthwith", "immediately",
+    # Structural/administrative headings repeated verbatim across thousands
+    # of unrelated Acts ("Procedure on application", "Application of Act").
+    "procedure", "procedures", "application", "applications", "provisions",
+    "provision", "general", "particular", "purposes", "purpose",
+}
+_MIN_COROBORATION_WORDS = 2
+
+
+def _significant_words(text: str) -> set[str]:
+    """Lowercased alphabetic tokens (len>=3) minus stopwords — the real
+    topical signal in a string, stripped of function words and generic
+    legal-domain filler that would otherwise over-match everything."""
+    words = re.findall(r"[a-zA-Z]{3,}", (text or "").lower())
+    return {w for w in words if w not in _SIG_STOPWORDS}
+
+
+def _corroborates(question_sig: set[str], doc: dict, act_hint: str | None) -> bool:
+    """Corroboration Rule gate for a single $text search candidate."""
+    doc_act_name = doc.get("act_name") or ""
+    if act_hint and act_hint.lower() in doc_act_name.lower():
+        return True
+    doc_sig = _significant_words(
+        doc_act_name + " " + (doc.get("section_heading") or "") + " "
+        + (doc.get("section_text") or "")[:800]
+    )
+    return len(question_sig & doc_sig) >= _MIN_COROBORATION_WORDS
+
+
 def _badge(doc: dict) -> str:
     """G3 — Badge logic (code, not prompts)."""
     if doc.get("verify_tier") == 1 and doc.get("verified_by"):
@@ -285,16 +367,19 @@ async def retrieve_db(
     if state_code:
         state_jurisdiction = STATE_CODE_TO_JURISDICTION.get(state_code.upper())
 
+    # ── Act hint + significant-word set — computed ONCE, used by both the
+    # exact-lookup path below AND the Corroboration Rule gate on $text hits.
+    act_hint: str | None = None
+    for hint_name, pattern in _ACT_HINTS.items():
+        if pattern.search(question):
+            act_hint = hint_name
+            break
+    question_sig = _significant_words(question)
+
     # ── 1. Attempt exact section lookup first ─────────────────────────────────
     sec_match = _SEC_RE.search(question)
     if sec_match:
         sec_num = sec_match.group(1).upper()
-        act_hint: str | None = None
-        for hint_name, pattern in _ACT_HINTS.items():
-            if pattern.search(question):
-                act_hint = hint_name
-                break
-
         exact = await lookup_section(db, sec_num, act_hint)
         if exact:
             seen_ids.add(exact["act_id"] + "|" + exact["section_number"])
@@ -317,11 +402,17 @@ async def retrieve_db(
                     "serve_warning": 1, "jurisdiction": 1, "ministry": 1,
                     "act_year": 1, "act_id": 1,
                 },
-            ).sort([("score", {"$meta": "textScore"})]).limit(limit)
+            ).sort([("score", {"$meta": "textScore"})]).limit(limit * 4)
 
             async for doc in cursor:
+                if len(results) >= limit:
+                    break
                 key = doc.get("act_id", "") + "|" + doc.get("section_number", "")
                 if key in seen_ids:
+                    continue
+                # Corroboration Rule (P0) — reject $text hits that only share
+                # a generic word with the query and aren't the named Act.
+                if not _corroborates(question_sig, doc, act_hint):
                     continue
                 seen_ids.add(key)
                 score = doc.get("score", 0.0)
@@ -350,13 +441,16 @@ async def retrieve_db(
                     "serve_warning": 1, "jurisdiction": 1, "ministry": 1,
                     "act_year": 1, "act_id": 1,
                 },
-            ).sort([("score", {"$meta": "textScore"})]).limit(remaining * 2)
+            ).sort([("score", {"$meta": "textScore"})]).limit(remaining * 4)
 
             async for doc in cursor:
                 if len(results) >= limit:
                     break
                 key = doc.get("act_id", "") + "|" + doc.get("section_number", "")
                 if key in seen_ids:
+                    continue
+                # Corroboration Rule (P0) — same gate as the state-jurisdiction loop.
+                if not _corroborates(question_sig, doc, act_hint):
                     continue
                 seen_ids.add(key)
                 score = doc.get("score", 0.0)
