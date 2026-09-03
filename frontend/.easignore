@@ -1,0 +1,43 @@
+# .easignore governs what EAS Build actually archives and uploads for this
+# project (frontend/ is the real EAS project root - app.json/package.json
+# live here). It overrides frontend/.gitignore for archiving purposes only;
+# git tracking of these paths is unaffected.
+#
+# frontend/.env is intentionally NOT excluded: it holds only EXPO_PUBLIC_*
+# build config (no secrets), and the build pipeline's own "Configuring
+# backend URL" step patches it with the production URL right before this
+# archive is uploaded. Without this file, EAS fell back to
+# frontend/.gitignore, whose blanket ".env" rule silently dropped it from
+# every build since 2026-08-30 (commit a0bbda2e), which is why the app kept
+# shipping with a dead/preview backend URL baked in.
+
+node_modules/
+.expo/
+.metro-cache/
+dist/
+web-build/
+expo-env.d.ts
+
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+.metro-health-check*
+
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+.DS_Store
+*.pem
+
+.ruff_cache/
+__pycache__/
+
+*.tsbuildinfo
+
+app-example
