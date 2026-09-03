@@ -9,7 +9,8 @@ backend/.env
 .env
 .env.*
 !.env.example
-!frontend/.env  # EXPO_PUBLIC_* build config only, no secrets - needed for mobile builds
+# frontend/.env holds only EXPO_PUBLIC_* build config, no secrets - required for mobile builds
+!frontend/.env
 memory/test_credentials.md
 *.jsonl
 __pycache__/
