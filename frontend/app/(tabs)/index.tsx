@@ -610,6 +610,19 @@ export default function ChatScreen() {
         // Persist one clip. Same base64 route as before: avoids pulling in a Blob
         // polyfill, and RN's global.btoa is inconsistent across versions.
         writeAudio: async (buf, index) => {
+          // Web: expo-file-system's File/Paths API is native-only and throws in
+          // a browser (file.create/file.write), which silently killed TTS on the
+          // web build. Persist the clip as an in-memory Blob URL instead — the
+          // web player (expo-audio → HTMLAudioElement) plays blob: URLs directly.
+          // Native path below is deliberately left exactly as-is.
+          if (Platform.OS === 'web') {
+            const blob = new Blob([buf], { type: 'audio/mpeg' });
+            const url = (globalThis as any).URL.createObjectURL(blob);
+            return {
+              uri: url,
+              cleanup: () => { try { (globalThis as any).URL.revokeObjectURL(url); } catch {} },
+            };
+          }
           const arr = new Uint8Array(buf);
           let bin = '';
           const CHUNK = 0x8000;
