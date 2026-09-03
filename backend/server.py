@@ -1820,6 +1820,56 @@ async def retrieve(body: RetrieveIn, user: dict = Depends(current_user)):
         ),
     }
 
+# ── TEMPORARY debug endpoint — production guard verification ────────────────
+# Read-only. Gated by the DEBUG_VERIFY_TOKEN secret (set it in Deployment Panel
+# → Secrets to enable; if the env var is unset the route 404s and does not
+# exist for callers). Runs INSIDE the deployed backend so it uses the real
+# production corpus DB connection — no JWT / user session needed. Calls only
+# existing read functions; performs no writes. REMOVE after one verification.
+@api.get("/_debug/verify-guards")
+async def _debug_verify_guards(x_debug_token: Optional[str] = Header(None)):
+    expected = os.environ.get("DEBUG_VERIFY_TOKEN")
+    if not expected:
+        raise HTTPException(404, "Not found")
+    if not x_debug_token or x_debug_token != expected:
+        raise HTTPException(403, "Forbidden")
+
+    # (1) Corpus reachability + population counts (proves prod reads the corpus DB)
+    try:
+        ls = corpus_db.legal_sections
+        total = await ls.estimated_document_count()
+        dead = await ls.count_documents({"is_dead_law": True})
+        tier1 = await ls.count_documents({"verify_tier": 1})
+        ji = await corpus_db.judicial_invalidations.estimated_document_count()
+        corpus_reachable = total > 0
+    except Exception as e:
+        return {"corpus_db": CORPUS_DB_NAME, "corpus_reachable": False, "error": str(e)}
+
+    # (2) §66A IT Act — dead-law + "struck down" guard must fire
+    r66 = await db_lookup_section(corpus_db, "66A", "Information Technology")
+    p66 = (bool(r66) and bool(r66.get("is_dead_law")) and bool(r66.get("dead_warning"))
+           and ("struck down" in (r66.get("judicial_flag") or "").lower()))
+
+    # (3) IPC §377 — judicial-invalidation guard must fire, no fabricated text
+    r377 = await db_lookup_section(corpus_db, "377", "Indian Penal Code")
+    p377 = (bool(r377) and bool(r377.get("judicial_flag")) and bool(r377.get("no_current_text"))
+            and not r377.get("section_text"))
+
+    return {
+        "corpus_db": CORPUS_DB_NAME,
+        "corpus_reachable": corpus_reachable,
+        "counts": {
+            "legal_sections": total,
+            "is_dead_law_true": dead,       # expect 1509
+            "judicial_invalidations": ji,   # expect 16
+            "verify_tier_1": tier1,         # expect 3961
+        },
+        "check_66A_it_act": {"pass": p66, "result": r66},
+        "check_377_ipc": {"pass": p377, "result": r377},
+        "overall_pass": bool(corpus_reachable and p66 and p377),
+    }
+
+
 @api.get("/reference/topics")
 async def get_topics():
     return TOPICS
