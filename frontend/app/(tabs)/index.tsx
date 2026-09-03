@@ -170,6 +170,21 @@ export default function ChatScreen() {
   const ttsPlayerReleaseTimerRef = useRef<any>(null);
   /** Active chunked speaker, so stopCloudTTS() can tear the whole queue down. */
   const speakerRef = useRef<ChunkedSpeaker | null>(null);
+  /**
+   * Web only. `HTMLMediaElement.play()` returns a promise that the browser
+   * REJECTS with an AbortError ("The play() request was interrupted by a call
+   * to pause()") if pause() runs before that promise settles. expo-audio's web
+   * player (AudioModule.web.js: `play() { this.media.play(); ... }`) never
+   * captures that promise, so the rejection is unhandled and lands in the
+   * console as an uncaught error. It fires whenever WE intentionally cut
+   * playback short — mic pressed mid-speech, speaker tapped again mid-clip, or
+   * navigating away while a clip is still starting — which is expected browser
+   * behaviour, not a real failure. `createPlayer().remove()` below sets this to
+   * a near-future timestamp right before calling pause()/remove(); the listener
+   * only silences the AbortError while "now" is inside that window, so a
+   * genuine playback failure anywhere else in the app is never hidden.
+   */
+  const suppressAudioAbortUntilRef = useRef<number>(0);
   // Mirror `speakingId` in a ref so async cleanup callbacks can see the
   // latest value without stale-closure issues.
   const speakingIdRef = useRef<string | null>(null);
@@ -204,7 +219,12 @@ export default function ChatScreen() {
         clearInterval(holdTimerRef.current);
         holdTimerRef.current = null;
       }
-      // Stop any ongoing cloud TTS playback
+      // Stop any ongoing cloud TTS playback. The ChunkedSpeaker instance owns
+      // the actual player (see `speak` below) — without this, navigating away
+      // mid-answer left the clip playing in the background forever, since
+      // nothing here previously reached the real player at all.
+      try { speakerRef.current?.stop(); } catch {}
+      speakerRef.current = null;
       try {
         const p = ttsPlayerRef.current;
         if (p) {
@@ -217,6 +237,30 @@ export default function ChatScreen() {
         clearTimeout(ttsPlayerReleaseTimerRef.current);
         ttsPlayerReleaseTimerRef.current = null;
       }
+    };
+  }, []);
+
+  // Web only: silence the specific, expected AbortError described above the
+  // `suppressAudioAbortUntilRef` declaration — and ONLY that error, and ONLY
+  // inside the brief window our own teardown code flags. Every other
+  // unhandled rejection in the app is left completely untouched.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onUnhandledRejection = (event: any) => {
+      const reason = event?.reason;
+      const isPlayPauseAbort =
+        !!reason &&
+        (reason.name === 'AbortError' ||
+          String(reason?.message || '')
+            .toLowerCase()
+            .includes('interrupted by a call to pause'));
+      if (isPlayPauseAbort && Date.now() <= suppressAudioAbortUntilRef.current) {
+        event.preventDefault?.();
+      }
+    };
+    (globalThis as any).addEventListener?.('unhandledrejection', onUnhandledRejection);
+    return () => {
+      (globalThis as any).removeEventListener?.('unhandledrejection', onUnhandledRejection);
     };
   }, []);
 
@@ -694,6 +738,14 @@ export default function ChatScreen() {
             play: () => tryStart(),
             remove: () => {
               clearTimeout(guard);
+              // Flag the brief window described above `suppressAudioAbortUntilRef`:
+              // if `player.play()` above hasn't actually started playback yet on
+              // web, the pause() call two lines down aborts that pending
+              // HTMLMediaElement.play() promise and the browser throws an
+              // unhandled AbortError. That is expected here (we ARE the
+              // intentional interruption), so silence only that specific,
+              // scoped case — this branch never touches native.
+              if (Platform.OS === 'web') suppressAudioAbortUntilRef.current = Date.now() + 1000;
               try { player.pause(); } catch {}
               try { player.remove(); } catch {}
             },
