@@ -1995,130 +1995,37 @@ NON_LEGAL_ADVICE_KEYWORDS = [
 ]
 
 
-def _norm(s: str) -> str:
-    import re
-    return re.sub(r"[^a-z0-9 ]", " ", (s or "").lower()).strip()
-
-
-def _tokens(s: str) -> set:
-    """Split a normalized string into a set of tokens (words)."""
-    return {t for t in _norm(s).split() if len(t) > 1}
-
-
-# Words too common to give retrieval signal (would over-match)
-_STOP = {
-    "the", "a", "an", "is", "are", "was", "were", "of", "and", "or", "for",
-    "in", "on", "at", "to", "by", "my", "me", "i", "we", "you", "your",
-    "can", "may", "do", "does", "did", "have", "has", "had", "be", "been",
-    "will", "would", "should", "could", "shall", "any", "all", "some",
-    "what", "why", "how", "when", "where", "who", "which", "this", "that",
-    # Pure function words — no legal signal. "without" in particular used to
-    # tie "driving without helmet" between BNSS 35 ("arrest without warrant")
-    # and MV 129 (helmet), pushing the wrong section to the top.
-    "without", "with", "not", "no", "from", "than", "then", "into", "about",
-    "if", "as", "but", "so", "there", "their", "them", "his", "her", "its",
-    "am", "get", "got", "make", "made", "tell", "know", "want", "need",
-    "please", "sir", "madam", "hai", "kya", "mera", "meri",
-    # Meta words ABOUT legislation, not diagnostic of WHICH legislation.
-    # Every statute in the corpus is named "___ Act" / "___ Sanhita" / "___
-    # Code" / has "sections" and "rules" — so these are near-universal in
-    # real queries ("divorce under Hindu Marriage ACT") yet, because the
-    # hand-written keyword lists rarely spell the bare word out, they were
-    # scoring as RARE/high-weight tokens (poor-man's-IDF inverted itself).
-    # This is what caused "divorce ... Marriage Act" to false-match IPC 294
-    # ("obscene act public") on the single shared token "act".
-    "act", "acts", "section", "sections", "rule", "rules", "code", "codes",
-    "law", "laws", "sanhita", "adhiniyam", "under",
-}
+# Retrieval scoring + the ≥2-word corroboration rule are defined once in
+# retrieval_logic and shared with corpus_db.py — never duplicated here.
+from retrieval_logic import (  # noqa: E402
+    _norm,
+    _tokens,
+    BASE_STOPWORDS as _STOP,
+    RETRIEVAL_MIN_SCORE,
+    build_token_df,
+    make_token_weight,
+    score_items,
+    corroborated,
+)
 
 
 # ---------------------------------------------------------------------------
-# Token specificity (poor-man's IDF).
-#
-# Without this, a generic token like "police" or "punishment" scores exactly the
-# same as a highly diagnostic token like "helmet" or "anticipatory". As the
-# corpus grew (BNS + BNSS + Constitution + MV + CMVR + RTI + CPA + PWDVA + IPC +
-# CrPC) that made irrelevant entries out-rank the correct one, e.g. "driving
-# without helmet" returned BNSS 35 above MV 129. Rare tokens now carry 4x the
-# weight of tokens that appear across many entries.
+# Token specificity table (poor-man's IDF), built ONCE from the fully
+# assembled CORPUS. The scoring loop and token weighting live in
+# retrieval_logic (shared with corpus_db.py); here we only bind them to
+# this corpus's document frequencies.
 # ---------------------------------------------------------------------------
-def _build_token_df() -> dict:
-    df: dict = {}
-    for item in CORPUS:
-        toks: set = set()
-        for kw in item["keywords"]:
-            toks |= _tokens(kw)
-        toks |= _tokens(item["short_label"])
-        for t in toks:
-            df[t] = df.get(t, 0) + 1
-    return df
-
-
-_TOKEN_DF: dict = _build_token_df()
-
-
-def _token_weight(tok: str) -> int:
-    n = _TOKEN_DF.get(tok, 1)
-    if n <= 1:
-        return 4      # unique to one section — very strong signal
-    if n <= 3:
-        return 3
-    if n <= 6:
-        return 2
-    return 1          # appears everywhere — weak signal
-
-
-# 4, not 3: a single moderately-common token (weight 3) matching is not enough
-# evidence on its own — that is what put an unrelated 'notice of appearance'
-# section on top of a landlord-eviction question.
-RETRIEVAL_MIN_SCORE = 4
+_TOKEN_DF: dict = build_token_df(CORPUS)
+_token_weight = make_token_weight(_TOKEN_DF)
 
 
 def _score_all(question: str) -> list[tuple[int, dict]]:
     """Score every corpus entry against the question. Returns ALL entries that
     scored > 0, sorted descending — WITHOUT the RETRIEVAL_MIN_SCORE cutoff.
-    Shared by retrieve() (which applies the cutoff) and top_candidate_debug()
-    (which needs to see sub-threshold candidates for refusal analytics)."""
-    q_norm = _norm(question)
-    if not q_norm:
-        return []
-    q_tokens = _tokens(question) - _STOP
-
-    scored: list[tuple[int, dict]] = []
-    for item in CORPUS:
-        req = item.get("require_any")
-        if req and not any(_norm(r) in q_norm for r in req):
-            continue
-        score = 0
-        # (a) short label match — strongest signal
-        if _norm(item["short_label"]) in q_norm:
-            score += 12
-        # (b) multi-word keyword substrings — strong signal
-        # (c) weighted token overlap on all keyword words
-        kw_tokens: set = set()
-        for kw in item["keywords"]:
-            kw_norm = _norm(kw)
-            if " " in kw_norm and kw_norm in q_norm:
-                score += 6
-            kw_tokens |= _tokens(kw)
-        kw_tokens -= _STOP
-        for t in kw_tokens & q_tokens:
-            if t.isdigit():
-                # A bare section/rule NUMBER matching is weak evidence on its
-                # own — the same number is reused as a section number across
-                # unrelated acts (e.g. NI Act S.138 vs CMVR Rule 138, IPC 302
-                # vs any "302" elsewhere). Real number-based matches must
-                # come through the short_label check above (+12, which
-                # requires the act abbreviation AND number together, e.g.
-                # "cmvr 138") or the multi-word phrase check (+6, e.g. exact
-                # "section 138" appearing as a keyword substring) — not a
-                # standalone numeral floating free of its act context.
-                continue
-            score += _token_weight(t)
-        if score > 0:
-            scored.append((score, item))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return scored
+    Thin wrapper over the shared scorer in retrieval_logic; used by retrieve()
+    (which applies the cutoff) and top_candidate_debug() (which needs to see
+    sub-threshold candidates for refusal analytics)."""
+    return score_items(question, CORPUS, _token_weight)
 
 
 def retrieve(question: str, limit: int = 3) -> list[dict]:
@@ -2136,7 +2043,10 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
     specific word in common — a single generic word like "police" is not
     enough on its own.
     """
-    scored = [(s, it) for s, it in _score_all(question) if s >= RETRIEVAL_MIN_SCORE and (any(token in question.lower() for token in [it.get('short_label', '').lower()]) or len(set(_tokens(question)) & (set().union(*[_tokens(kw) for kw in it.get('keywords', [])]) - _STOP)) >= 2)] 
+    scored = [
+        (s, it) for s, it in _score_all(question)
+        if s >= RETRIEVAL_MIN_SCORE and corroborated(question, it)
+    ]
     if not scored: return [] 
     # Relative cutoff. A clear winner used to drag along weakly-related entries
     # (e.g. a cheque-bounce question also returned an RTI reply-deadline chip
@@ -2268,33 +2178,11 @@ from corpus_state import STATE_CORPUS, STATE_SENSITIVE_TOPICS  # noqa: E402
 
 
 def _score_items(question: str, items: list) -> list[tuple[int, dict]]:
-    q_norm = _norm(question)
-    if not q_norm:
-        return []
-    q_tokens = _tokens(question) - _STOP
-    scored: list[tuple[int, dict]] = []
-    for item in items:
-        req = item.get("require_any")
-        if req and not any(_norm(r) in q_norm for r in req):
-            continue
-        score = 0
-        if _norm(item["short_label"]) in q_norm:
-            score += 12
-        kw_tokens: set = set()
-        for kw in item["keywords"]:
-            kw_norm = _norm(kw)
-            if " " in kw_norm and kw_norm in q_norm:
-                score += 6
-            kw_tokens |= _tokens(kw)
-        kw_tokens -= _STOP
-        for t in kw_tokens & q_tokens:
-            if t.isdigit():
-                continue
-            score += _token_weight(t)
-        if score > 0:
-            scored.append((score, item))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return scored
+    """Score arbitrary items (e.g. the state corpus) against the question.
+    Thin wrapper over the shared scorer in retrieval_logic, using the
+    CORPUS-derived token weights so state entries are ranked on the same
+    IDF scale as central ones."""
+    return score_items(question, items, _token_weight)
 
 
 def retrieve_state(question: str, state: str, limit: int = 2) -> list[dict]:

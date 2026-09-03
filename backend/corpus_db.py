@@ -62,6 +62,18 @@ import asyncio
 import re
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+# Scoring + the ≥2-word Corroboration Rule are defined once in retrieval_logic
+# and shared with corpus.py — never duplicated here. The safety guards below
+# (is_dead_law / judicial_invalidations) are NOT in retrieval_logic; they stay
+# in this module, unchanged.
+from retrieval_logic import (
+    SIG_STOPWORDS as _SIG_STOPWORDS,  # noqa: F401  (kept for reference/back-compat)
+    MIN_COROBORATION_WORDS as _MIN_COROBORATION_WORDS,
+    significant_words as _significant_words,
+    corroboration_score as _corroboration_score,
+    corroborates as _corroborates,  # noqa: F401  (kept for external callers)
+)
+
 # ── State code → corpus jurisdiction string ──────────────────────────────────
 # The corpus `jurisdiction` field uses full English state names (as harvested
 # from indiacode.gov.in).  User profiles store the 2-letter ISO-like state
@@ -140,63 +152,21 @@ _ACT_HINTS: dict[str, re.Pattern] = {
 # ── Corroboration Rule (P0) ───────────────────────────────────────────────
 # MongoDB's $text search scores a hit if it shares ANY indexed token with the
 # query — including generic words ("fine", "penalty", "notice", "court") that
-# appear in thousands of unrelated sections. Left unchecked, this lets noise
-# like the Insolvency & Bankruptcy Code or the Forest Act surface in the
-# citation list for a query that has nothing to do with them, purely because
-# they share one common word. This rule requires a text-search hit to prove
-# real topical overlap before it is trusted:
+# appear in thousands of unrelated sections. To stop that noise, a text-search
+# hit must PROVE real topical overlap before it is trusted:
 #
 #   PASS if EITHER
-#     (a) the query names this hit's Act by name/abbreviation (a strong
-#         label match — the same act_hint used for exact section lookup), OR
+#     (a) the query names this hit's Act by name/abbreviation (a strong label
+#         match — the same act_hint used for exact section lookup), OR
 #     (b) the query shares >= _MIN_COROBORATION_WORDS significant words with
 #         the hit's act_name + section_heading + section_text.
 #
-# Exact section lookups (lookup_section) are untouched — they are already
-# deterministic (act + section number), not a fuzzy text-search guess.
-_SIG_STOPWORDS: set[str] = {
-    "the", "a", "an", "is", "are", "was", "were", "of", "and", "or", "for",
-    "in", "on", "at", "to", "by", "my", "me", "i", "we", "you", "your",
-    "can", "may", "do", "does", "did", "have", "has", "had", "be", "been",
-    "will", "would", "should", "could", "shall", "any", "all", "some",
-    "what", "why", "how", "when", "where", "who", "which", "this", "that",
-    "without", "with", "not", "no", "from", "than", "then", "into", "about",
-    "if", "as", "but", "so", "there", "their", "them", "his", "her", "its",
-    "am", "get", "got", "make", "made", "tell", "know", "want", "need",
-    "please", "sir", "madam", "against", "per", "under",
-    "act", "acts", "section", "sections", "rule", "rules", "code", "codes",
-    "law", "laws", "sanhita", "adhiniyam",
-    # Legal-boilerplate machinery words — these appear in the vast majority
-    # of Bare Act sections regardless of subject matter ("fine", "penalty",
-    # "shall", "rupees"...) so two documents sharing ONLY these words are not
-    # actually on the same topic. This is exactly the failure mode reported:
-    # unrelated Acts (Insolvency & Bankruptcy Code, Forest Act, Customs Act)
-    # surfacing purely because they both mention "fine".
-    "fine", "fines", "penalty", "penalties", "punishment", "punishable",
-    "imprisonment", "extend", "extending", "extended", "liable", "liability",
-    "rupees", "amount", "payment", "pay", "paid", "notice", "prescribed",
-    "provided", "government", "authority", "officer", "officers", "court",
-    "courts", "person", "persons", "such", "said", "aforesaid", "thereof",
-    "herein", "thereto", "shall", "whoever", "confiscation", "lieu",
-    "option", "compensation", "offence", "offences", "contravention",
-    "contravenes", "regard", "respect", "matter", "matters", "case", "cases",
-    "name", "names", "address", "addresses", "give", "giving", "given",
-    "arrested", "arrest",
-    # Generic time/manner connectors — nearly every Bare Act mentions a time
-    # period, date or "manner as prescribed", so these carry almost no
-    # topical signal on their own (this is what let an unrelated "Salary and
-    # Allowances of Leaders of Opposition" Act match a wages query on the
-    # single shared pair "salary" + "time").
-    "time", "times", "period", "periods", "date", "dates", "days", "month",
-    "months", "year", "years", "limit", "limits", "manner", "necessary",
-    "reasonable", "required", "specified", "concerned", "applicable",
-    "otherwise", "accordance", "force", "forthwith", "immediately",
-    # Structural/administrative headings repeated verbatim across thousands
-    # of unrelated Acts ("Procedure on application", "Application of Act").
-    "procedure", "procedures", "application", "applications", "provisions",
-    "provision", "general", "particular", "purposes", "purpose",
-}
-_MIN_COROBORATION_WORDS = 2
+# The stopword vocabulary (_SIG_STOPWORDS), the significant-word extractor
+# (_significant_words), the numeric re-rank score (_corroboration_score) and the
+# boolean gate (_corroborates) all now live in retrieval_logic and are imported
+# above — defined ONCE, shared with corpus.py. Exact section lookups
+# (lookup_section) are untouched — they are already deterministic (act + section
+# number), not a fuzzy text-search guess.
 
 # Wide candidate pool fetched from MongoDB before corroboration re-ranking.
 # The old value was `limit * 4 = 20` — too narrow when relevant sections score
@@ -204,47 +174,6 @@ _MIN_COROBORATION_WORDS = 2
 # 300 ensures we capture deep-in-the-list genuine matches (e.g. MV Act §129
 # where "helmet" sits in section_text, not the heading).
 _CANDIDATE_POOL_SIZE = 300
-
-
-def _significant_words(text: str) -> set[str]:
-    """Lowercased alphabetic tokens (len>=3) minus stopwords — the real
-    topical signal in a string, stripped of function words and generic
-    legal-domain filler that would otherwise over-match everything."""
-    words = re.findall(r"[a-zA-Z]{3,}", (text or "").lower())
-    return {w for w in words if w not in _SIG_STOPWORDS}
-
-
-def _corroborates(question_sig: set[str], doc: dict, act_hint: str | None) -> bool:
-    """Corroboration Rule gate — boolean version (kept for external callers)."""
-    return _corroboration_score(question_sig, doc, act_hint) >= _MIN_COROBORATION_WORDS
-
-
-def _corroboration_score(question_sig: set[str], doc: dict, act_hint: str | None) -> int:
-    """Numeric corroboration score used to RE-RANK $text candidates.
-
-    Returns 9999  → act-label match (act_hint found verbatim in doc's act_name).
-                     Always surfaces; sorted first regardless of text-index score.
-    Returns N ≥ 0 → count of significant-word overlap between query and the
-                     doc's act_name + section_heading + section_text[:800].
-
-    Threshold for inclusion: score >= _MIN_COROBORATION_WORDS (= 2).
-
-    Why this beats raw textScore for ranking:
-      MongoDB's textScore weights section_heading (×10) and act_name (×5) far
-      above section_text (×1).  A section whose topic appears only in body text
-      (e.g. MV Act §129 "helmet" in text, not heading) gets a low textScore and
-      can fall outside the old `limit*4 = 20` candidate window entirely.
-      Corroboration scoring looks at the full section_text so those sections
-      bubble back up.
-    """
-    doc_act_name = doc.get("act_name") or ""
-    if act_hint and act_hint.lower() in doc_act_name.lower():
-        return 9999  # Explicit act-label match → always surface
-    doc_sig = _significant_words(
-        doc_act_name + " " + (doc.get("section_heading") or "") + " "
-        + (doc.get("section_text") or "")[:800]
-    )
-    return len(question_sig & doc_sig)
 
 
 def _badge(doc: dict) -> str:
