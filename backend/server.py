@@ -4,6 +4,7 @@ import io
 import re
 import json
 import uuid
+import asyncio
 import hmac
 import hashlib
 import secrets
@@ -54,13 +55,14 @@ from corpus_db import (
 )
 from states import STATES, STATE_BY_CODE, is_valid_state, state_name
 from langpolicy import needs_language_repair, repair_prompt, needs_retrieval_translation
+from corpus_migration import run_corpus_migration
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
-CORPUS_DB_NAME = os.environ.get("CORPUS_DB_NAME", "dhara")
+CORPUS_DB_NAME = os.environ.get("CORPUS_DB_NAME", "bns-know-your-rights-gandhikar_db")
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 JWT_SECRET = os.environ["JWT_SECRET"]
 STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
@@ -2218,6 +2220,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def _startup():
+    # Fire-and-forget background task, NOT awaited: the corpus migration
+    # (see corpus_migration.py) starts automatically the instant this
+    # process boots, but must never delay the app from serving requests or
+    # answering the platform's health check while it inserts tens of
+    # thousands of documents on a cold/empty database. Every step logs
+    # through the "[CORPUS_MIGRATION]" prefix regardless of how long it
+    # takes; subsequent boots against an already-seeded database return
+    # almost instantly (see run_corpus_migration's per-collection count
+    # check) so this is never a startup cost after the first successful run.
+    asyncio.create_task(run_corpus_migration(corpus_db, CORPUS_DB_NAME))
+
 
 @app.on_event("shutdown")
 async def _shutdown():
