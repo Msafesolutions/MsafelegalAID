@@ -1876,7 +1876,9 @@ async def _debug_verify_guards(x_debug_token: Optional[str] = Header(None)):
         ji = await corpus_db.judicial_invalidations.estimated_document_count()
         corpus_reachable = total > 0
     except Exception as e:
-        return {"corpus_db": CORPUS_DB_NAME, "corpus_reachable": False, "error": str(e)}
+        # No connection details, no exception message (which can embed a URI on
+        # some drivers) — only the exception class name.
+        return {"corpus_reachable": False, "error": type(e).__name__}
 
     # (2) §66A IT Act — dead-law + "struck down" guard must fire
     r66 = await db_lookup_section(corpus_db, "66A", "Information Technology")
@@ -1888,8 +1890,12 @@ async def _debug_verify_guards(x_debug_token: Optional[str] = Header(None)):
     p377 = (bool(r377) and bool(r377.get("judicial_flag")) and bool(r377.get("no_current_text"))
             and not r377.get("section_text"))
 
+    # Response is intentionally minimal: pass/fail + aggregate counts only.
+    # No db name, no connection info, no raw document contents (act_name,
+    # section_text, source_url, etc. are withheld even though this data is
+    # already public-facing elsewhere in the app — this route's only job is
+    # a yes/no reachability + guard check).
     return {
-        "corpus_db": CORPUS_DB_NAME,
         "corpus_reachable": corpus_reachable,
         "counts": {
             "legal_sections": total,
@@ -1897,8 +1903,8 @@ async def _debug_verify_guards(x_debug_token: Optional[str] = Header(None)):
             "judicial_invalidations": ji,   # expect 16
             "verify_tier_1": tier1,         # expect 3961
         },
-        "check_66A_it_act": {"pass": p66, "result": r66},
-        "check_377_ipc": {"pass": p377, "result": r377},
+        "check_66A_it_act": {"pass": p66},
+        "check_377_ipc": {"pass": p377},
         "overall_pass": bool(corpus_reachable and p66 and p377),
     }
 
