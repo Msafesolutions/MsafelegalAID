@@ -64,6 +64,22 @@ function nextStepFor(citations?: { short_label: string }[]):
   return null;
 }
 
+/**
+ * Summary-first UX: surface a short "Verdict" (first ~2 sentences of the
+ * answer) up top, and tuck the longer reasoning + statutory sections behind a
+ * "View Legal Details" toggle. Keeps the first glance skimmable while the full
+ * grounded law text stays one tap away.
+ */
+function splitVerdict(text: string): { verdict: string; rest: string } {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return { verdict: '', rest: '' };
+  const sentences = trimmed.match(/[^.!?]+[.!?]+(?:\s|$)/g);
+  if (!sentences || sentences.length <= 2) return { verdict: trimmed, rest: '' };
+  const verdictRaw = sentences.slice(0, 2).join('');
+  return { verdict: verdictRaw.trim(), rest: trimmed.slice(verdictRaw.length).trim() };
+}
+
+
 type Citation = {
   key: string;
   citation: string;
@@ -106,6 +122,8 @@ export default function ChatScreen() {
   const { token, user, language, model, autoSpeak, ttsVolume, refreshUser } = useAuth();
   const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>([]);
+  // Per-message toggle for the "View Legal Details" summary-first disclosure.
+  const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
@@ -1513,9 +1531,83 @@ export default function ChatScreen() {
                     m.role === 'user' ? styles.userText : styles.aiText,
                   ]}
                 >
-                  {m.content || (streaming && m.role === 'assistant' ? '…' : '')}
+                  {(m.role === 'assistant' && !streaming && m.citations && m.citations.length > 0
+                    ? splitVerdict(m.content).verdict
+                    : m.content) ||
+                    (streaming && m.role === 'assistant' ? '…' : '')}
                 </Text>
-                {m.role === 'assistant' && m.citations && m.citations.length > 0 && (
+                {(() => {
+                  // Summary-first disclosure. Only legal answers (assistant reply
+                  // with verified citations, once streaming has finished) get the
+                  // collapse treatment; everything else renders in full above.
+                  const isLegalAnswer =
+                    m.role === 'assistant' &&
+                    !streaming &&
+                    !!m.citations &&
+                    m.citations.length > 0;
+                  if (!isLegalAnswer) return null;
+                  const { rest } = splitVerdict(m.content);
+                  const open = !!expandedDetails[m.id];
+                  return (
+                    <>
+                      <Pressable
+                        testID={`legal-details-toggle-${m.id}`}
+                        style={styles.detailsToggle}
+                        onPress={() =>
+                          setExpandedDetails((prev) => ({ ...prev, [m.id]: !prev[m.id] }))
+                        }
+                        hitSlop={8}
+                      >
+                        <Ionicons
+                          name={open ? 'chevron-up' : 'document-text-outline'}
+                          size={18}
+                          color={theme.colors.brand}
+                        />
+                        <Text style={styles.detailsToggleText}>
+                          {open ? 'Hide Legal Details' : 'View Legal Details'}
+                        </Text>
+                      </Pressable>
+                      {open && (
+                        <>
+                          {!!rest && (
+                            <Text style={[styles.msgText, styles.aiText, { marginTop: 6 }]}>
+                              {rest}
+                            </Text>
+                          )}
+                          <View style={styles.citationsWrap} testID={`citations-${m.id}`}>
+                            <Text style={styles.citationsHeader}>📚 Verified sources</Text>
+                            {m.citations!.map((c) => (
+                              <View key={c.key} style={styles.citationCard}>
+                                <View style={styles.citationHead}>
+                                  <View style={styles.citationChip}>
+                                    <Text style={styles.citationChipText}>{c.short_label}</Text>
+                                  </View>
+                                  <Text style={styles.citationVerified}>Verified {c.verified_at}</Text>
+                                </View>
+                                <Text style={styles.citationTitle}>{c.citation}</Text>
+                                <Text style={styles.citationText} numberOfLines={8}>
+                                  {c.official_text}
+                                </Text>
+                                <Text
+                                  style={styles.citationSource}
+                                  numberOfLines={1}
+                                  onPress={() => {
+                                    import('expo-linking').then((L) => L.openURL(c.source_url));
+                                  }}
+                                >
+                                  Source: indiacode.nic.in ↗
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+                {/* While an answer is still streaming, show its live citations in full
+                    (the summary-first collapse only kicks in once streaming ends). */}
+                {m.role === 'assistant' && streaming && m.citations && m.citations.length > 0 && (
                   <View style={styles.citationsWrap} testID={`citations-${m.id}`}>
                     <Text style={styles.citationsHeader}>📚 Verified sources</Text>
                     {m.citations.map((c) => (
@@ -2082,6 +2174,25 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.md,
     gap: theme.spacing.sm,
   },
+  detailsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: theme.spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.brand,
+    backgroundColor: theme.colors.surfaceSecondary,
+  },
+  detailsToggleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.colors.brand,
+  },
+
   citationsHeader: {
     fontSize: 11,
     fontWeight: '800',
