@@ -213,11 +213,36 @@ def significant_words(text: str, stopwords: set = SIG_STOPWORDS) -> set:
     return {w for w in words if w not in stopwords}
 
 
+def _act_name_leads_with(doc_act_name: str, act_hint: str) -> bool:
+    """True when `doc_act_name`, once its leading article is stripped, STARTS
+    WITH `act_hint`.
+
+    Was previously a bare substring check (`act_hint in doc_act_name`), which
+    let "Information Technology" match "The INDIAN INSTITUTES OF Information
+    Technology Act, 2014" — a completely unrelated Act about educational
+    institutes that merely happens to contain those two words. That bug gave
+    such docs a guaranteed corroboration_score of 9999 ("always surfaces,
+    sorted first"), so a query about the real IT Act's §66A came back with
+    two Indian Institutes of Information Technology Act sections outranking
+    it. Real Act names always lead with their own proper name (at most after
+    "The"/"An"/"A"), so anchoring to the start is a safe, general fix.
+    """
+    norm = (doc_act_name or "").lower().strip()
+    for article in ("the ", "an ", "a "):
+        if norm.startswith(article):
+            norm = norm[len(article):]
+            break
+    return norm.startswith(act_hint.lower())
+
+
 def corroboration_score(question_sig: set, doc: dict, act_hint: str | None) -> int:
     """Numeric corroboration score used to RE-RANK $text candidates.
 
-    Returns 9999  → act-label match (act_hint found verbatim in doc's act_name).
-                     Always surfaces; sorted first regardless of text-index score.
+    Returns 9999  → act-label match (doc's act_name LEADS WITH act_hint, i.e.
+                     it IS that Act, not merely an Act whose longer name
+                     happens to contain those words — see
+                     `_act_name_leads_with`). Always surfaces; sorted first
+                     regardless of text-index score.
     Returns N ≥ 0 → count of significant-word overlap between query and the
                      doc's act_name + section_heading + section_text[:800].
 
@@ -230,7 +255,7 @@ def corroboration_score(question_sig: set, doc: dict, act_hint: str | None) -> i
     section_text so those sections bubble back up.
     """
     doc_act_name = doc.get("act_name") or ""
-    if act_hint and act_hint.lower() in doc_act_name.lower():
+    if act_hint and _act_name_leads_with(doc_act_name, act_hint):
         return 9999  # Explicit act-label match → always surface
     doc_sig = significant_words(
         doc_act_name + " " + (doc.get("section_heading") or "") + " "

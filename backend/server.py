@@ -1,6 +1,7 @@
 """Dhara - AI Legal Empowerment Bot Backend."""
 import os
 import io
+import re
 import json
 import uuid
 import hmac
@@ -805,6 +806,38 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             db_hits = await db_retrieve(corpus_db, retrieval_text, state_code=user_state or None, limit=3)
         except Exception:
             db_hits = []   # MongoDB unavailable — Python corpus handles it
+
+    # (b3) Cross-corpus citation-conflict guard. Logged issue, now fixed:
+    # querying "Information Technology Act section 66A" surfaced the hand-
+    # curated Python-corpus entry "IT 43" FIRST (it scores on the generic
+    # phrase "information technology act", which the query obviously
+    # contains), ahead of MongoDB's own exact match for the section the user
+    # actually asked about. The (b1) integrity check above only recognises a
+    # closed whitelist of Act prefixes (BNS, IPC, MV, ...) and never covers
+    # this case since "Information Technology" isn't one of them.
+    #
+    # Generalised fix: whenever the query cites an explicit section number
+    # AND MongoDB found an EXACT match for that exact number, any Python-
+    # corpus hit whose OWN section number (parsed off the end of its
+    # short_label, e.g. "43" in "IT 43") is a DIFFERENT number is dropped —
+    # the user asked about one specific section, not "something in this Act
+    # family". Hits with no trailing number (e.g. "Cyber report 1930" is a
+    # helpline, not a section) are left untouched.
+    if retrieved and db_hits and not early_refusal:
+        _cited_sec_match = re.search(
+            r"(?:section|sections|sec|s\.|art(?:icle)?\.?)\s*(\d+[A-Za-z]{0,3})",
+            retrieval_text, re.IGNORECASE,
+        )
+        if _cited_sec_match:
+            _cited_sec = _cited_sec_match.group(1).upper()
+            if any((h.get("section_number") or "").upper() == _cited_sec for h in db_hits):
+                def _own_section_number(short_label: str) -> Optional[str]:
+                    m = re.search(r"(\d+[A-Za-z]{0,3})$", short_label or "")
+                    return m.group(1).upper() if m else None
+                retrieved = [
+                    it for it in retrieved
+                    if _own_section_number(it.get("short_label", "")) in (None, _cited_sec)
+                ]
 
     # Orphan-invalidation check — sections in judicial_invalidations but NOT
     # in legal_sections (e.g. IPC §377: IPC replaced by BNS, absent from corpus

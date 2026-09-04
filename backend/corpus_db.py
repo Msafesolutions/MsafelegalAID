@@ -176,6 +176,19 @@ _ACT_HINTS: dict[str, re.Pattern] = {
 _CANDIDATE_POOL_SIZE = 300
 
 
+def _act_name_prefix_regex(act_hint: str) -> re.Pattern:
+    """Regex matching act_name values that START WITH `act_hint` (after an
+    optional leading "The"/"An"/"A") — anchored, not a bare substring.
+
+    Used for exact section lookups so a short hint like "Information
+    Technology" cannot resolve to a completely different, longer-named Act
+    that merely contains those words (e.g. "Indian Institutes of Information
+    Technology Act"). Mirrors the same anchor used for ranking in
+    retrieval_logic.py's `_act_name_leads_with`.
+    """
+    return re.compile(r"^(the\s+|an?\s+)?" + re.escape(act_hint[:60]), re.IGNORECASE)
+
+
 def _badge(doc: dict) -> str:
     """G3 — Badge logic (code, not prompts)."""
     if doc.get("verify_tier") == 1 and doc.get("verified_by"):
@@ -250,7 +263,7 @@ async def lookup_section(
     """
     query: dict = {"section_number": section_number}
     if act_hint:
-        query["act_name"] = re.compile(re.escape(act_hint[:60]), re.IGNORECASE)
+        query["act_name"] = _act_name_prefix_regex(act_hint)
 
     # Run both lookups in parallel — JI must not wait for section success.
     doc, ji_rec = await asyncio.gather(
@@ -459,7 +472,7 @@ async def check_orphan_invalidation(
     """
     query: dict = {"section_number": section_number}
     if act_hint:
-        query["act_name"] = re.compile(re.escape(act_hint[:60]), re.IGNORECASE)
+        query["act_name"] = _act_name_prefix_regex(act_hint)
 
     rec = await db.judicial_invalidations.find_one(query)
     if not rec:

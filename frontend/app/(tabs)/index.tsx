@@ -140,6 +140,24 @@ export default function ChatScreen() {
   const slideY = useRef(new Animated.Value(0)).current;
   const micPulse = useRef(new Animated.Value(1)).current;
   const slideCancelledRef = useRef(false);
+  /**
+   * Web only. `Alert.alert` is a complete no-op on react-native-web — it
+   * never renders anything — so every mic/permission error on the web build
+   * used to vanish silently (the button just looked broken). This banner is
+   * the web fallback UI; native platforms keep using the real OS alert via
+   * `notify()` below.
+   */
+  const [voiceBanner, setVoiceBanner] = useState<{ title: string; message: string } | null>(null);
+  const voiceBannerTimerRef = useRef<any>(null);
+  const notify = useCallback((title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      if (voiceBannerTimerRef.current) clearTimeout(voiceBannerTimerRef.current);
+      setVoiceBanner({ title, message });
+      voiceBannerTimerRef.current = setTimeout(() => setVoiceBanner(null), 7000);
+    } else {
+      Alert.alert(title, message);
+    }
+  }, []);
   // Hands-free "locked" recording — set by dragging the mic straight up,
   // exactly like WhatsApp. Once locked, releasing the finger no longer stops
   // the recording; the user must tap the explicit stop/cancel buttons.
@@ -814,10 +832,42 @@ export default function ChatScreen() {
         // --- Web: use browser MediaRecorder ---
         const nav = globalThis.navigator as any;
         if (!nav?.mediaDevices?.getUserMedia) {
-          Alert.alert('Mic not available', 'Your browser does not support audio recording.');
+          notify('Mic not available', 'Your browser does not support audio recording.');
           return;
         }
-        const stream = await nav.mediaDevices.getUserMedia({ audio: true });
+        // Check the current permission state where the browser supports it
+        // (Chrome/Edge/Firefox; Safari does not expose 'microphone' via the
+        // Permissions API and returns undefined here, which we treat as
+        // "unknown" and just try getUserMedia directly below). A 'denied'
+        // state means the browser will reject immediately without ever
+        // showing its own prompt again — surfacing that clearly here, once,
+        // is the contextual "ask again" the permission contract calls for;
+        // repeating the same failed attempt after that would just repeat
+        // the same silent failure.
+        try {
+          const status = await nav.permissions?.query?.({ name: 'microphone' as any });
+          if (status?.state === 'denied') {
+            notify(
+              'Microphone blocked',
+              'Your browser is blocking microphone access for this site. Click the lock/site-info icon next to the address bar, allow Microphone, then tap the mic again.',
+            );
+            return;
+          }
+        } catch {}
+        let stream: MediaStream;
+        try {
+          stream = await nav.mediaDevices.getUserMedia({ audio: true });
+        } catch (permErr: any) {
+          if (permErr?.name === 'NotAllowedError' || permErr?.name === 'PermissionDeniedError') {
+            notify(
+              'Microphone blocked',
+              'Microphone access was denied. Click the lock/site-info icon next to the address bar, allow Microphone, then tap the mic again.',
+            );
+          } else {
+            notify('Mic unavailable', permErr?.message || 'Could not access the microphone.');
+          }
+          return;
+        }
         if (!isMicHeldRef.current) {
           stream.getTracks().forEach((t: any) => t.stop());
           return;
@@ -837,7 +887,7 @@ export default function ChatScreen() {
         setSttProviderLabel(fellBack ? `${provider.displayName} (fallback)` : provider.displayName);
         const perm = await AudioModule.requestRecordingPermissionsAsync();
         if (!perm.granted) {
-          Alert.alert('Microphone permission', 'Please enable microphone to speak your question.');
+          notify('Microphone permission', 'Please enable microphone to speak your question.');
           return;
         }
         if (!isMicHeldRef.current) return;
@@ -852,9 +902,9 @@ export default function ChatScreen() {
         setRecording(true);
       }
     } catch (e: any) {
-      Alert.alert('Recording failed', e?.message || 'Try again');
+      notify('Recording failed', e?.message || 'Try again');
     }
-  }, [recorder, token, stopCloudTTS]);
+  }, [recorder, token, stopCloudTTS, notify]);
 
   const stopRecording = useCallback(async () => {
     // Stop the elapsed-time ticker
@@ -920,7 +970,7 @@ export default function ChatScreen() {
           setTranscriptPreview(heardText);
           setShowTranscriptModal(true);
         } else {
-          Alert.alert('Could not transcribe', 'Please try again.');
+          notify('Could not transcribe', 'Please try again.');
         }
       } else {
         // --- Native: stop expo-audio recorder, upload file ---
@@ -938,14 +988,14 @@ export default function ChatScreen() {
           setTranscriptPreview(heardText);
           setShowTranscriptModal(true);
         } else {
-          Alert.alert('Could not transcribe', 'Please try again.');
+          notify('Could not transcribe', 'Please try again.');
         }
       }
     } catch (e: any) {
       setTranscribing(false);
-      Alert.alert('Transcription failed', e?.message || 'Try again');
+      notify('Transcription failed', e?.message || 'Try again');
     }
-  }, [recorder, token, language]);
+  }, [recorder, token, language, notify]);
 
   // WhatsApp-style hold-to-talk handlers
   const onMicPressIn = useCallback(() => {
@@ -977,13 +1027,13 @@ export default function ChatScreen() {
     try {
       startRecording()?.catch((err: any) => {
         setRecording(false);
-        Alert.alert('Mic unavailable', err?.message || 'Could not start recording.');
+        notify('Mic unavailable', err?.message || 'Could not start recording.');
       });
     } catch (err: any) {
       setRecording(false);
-      Alert.alert('Mic unavailable', err?.message || 'Could not start recording.');
+      notify('Mic unavailable', err?.message || 'Could not start recording.');
     }
-  }, [startRecording, slideX, slideY, micPulse]);
+  }, [startRecording, slideX, slideY, micPulse, notify]);
 
   const onMicPressOut = useCallback(() => {
     // Synchronously drop the held flag so any in-flight startRecording aborts.
@@ -1038,6 +1088,26 @@ export default function ChatScreen() {
       stopRecording();
     }
   }, [recording, stopRecording, recorder, slideX, slideY, micPulse]);
+
+  /**
+   * Web only. The mic button uses press-and-hold (PanResponder) on native,
+   * mirroring WhatsApp — but on desktop/mobile web that gesture is awkward:
+   * there is no reliable "hold" affordance with a mouse, and touch-and-hold
+   * on mobile browsers can trigger the OS text-selection/context menu
+   * instead of starting the recording. Web gets a simpler, standard
+   * click-to-start / click-to-stop-and-send toggle instead. Reuses
+   * onMicPressIn/onMicPressOut as-is (timer, pulse animation, and the
+   * getUserMedia + permission handling above) — only the gesture that
+   * triggers them changes.
+   */
+  const onWebMicPress = useCallback(() => {
+    if (transcribing) return; // previous clip still uploading — ignore taps
+    if (recording) {
+      onMicPressOut();
+    } else {
+      onMicPressIn();
+    }
+  }, [recording, transcribing, onMicPressIn, onMicPressOut]);
 
   /** Trash button on the locked hands-free bar — discards the recording
    * without transcribing or sending anything. */
@@ -1192,6 +1262,12 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']} testID="chat-screen">
+      {/* Web-only: centers the chat column on wide desktop viewports instead
+          of stretching mobile-width UI across the whole browser window.
+          `styles.safe` (the full-viewport backdrop) and this wrapper share
+          only their background color on native — Platform.OS gating below
+          keeps native layout completely untouched. */}
+      <View style={styles.webContentWrap}>
       {/* ── HEADER — title · lang chip · usage pill · New Chat ─────────────── */}
       <View style={styles.header}>
         {/* Left: branding + language chip */}
@@ -1250,6 +1326,26 @@ export default function ChatScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* Web-only fallback for Alert.alert (a no-op on react-native-web) —
+          surfaces mic/permission errors that would otherwise vanish silently. */}
+      {voiceBanner && (
+        <View style={styles.voiceBanner} testID="voice-banner">
+          <Ionicons name="mic-off-outline" size={18} color={theme.colors.brand} style={{ marginTop: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.voiceBannerTitle}>{voiceBanner.title}</Text>
+            <Text style={styles.voiceBannerMessage}>{voiceBanner.message}</Text>
+          </View>
+          <Pressable
+            testID="voice-banner-dismiss"
+            onPress={() => setVoiceBanner(null)}
+            hitSlop={10}
+            style={{ padding: 4 }}
+          >
+            <Ionicons name="close" size={18} color={theme.colors.onSurfaceTertiary} />
+          </Pressable>
+        </View>
+      )}
 
       {/* ── COMPACT CONTROLS BAR — mode toggle + upgrade chip (single row) ── */}
       <View style={styles.controlsBar} testID="controls-bar">
@@ -1550,7 +1646,9 @@ export default function ChatScreen() {
                   ) : (
                     <View style={styles.slideHint}>
                       <Ionicons name="chevron-back" size={14} color={theme.colors.onSurfaceTertiary} />
-                      <Text style={styles.slideHintText}>Slide to cancel</Text>
+                      <Text style={styles.slideHintText}>
+                        {Platform.OS === 'web' ? 'Tap mic to stop & send' : 'Slide to cancel'}
+                      </Text>
                     </View>
                   )}
                 </Animated.View>
@@ -1589,8 +1687,11 @@ export default function ChatScreen() {
               </>
             )}
 
-            {/* Right side: mic or send — mic always renders with PanResponder for
-                gesture continuity across the recording-state transition */}
+            {/* Right side: mic or send. Native keeps the WhatsApp-style
+                press-and-hold PanResponder; web uses a plain click-to-toggle
+                Pressable (see onWebMicPress) — press-and-hold has no
+                reliable equivalent with a mouse, and can trigger the
+                browser's own text-selection/context-menu on touch. */}
             {(!recording && input.trim().length > 0) ? (
               <Pressable
                 testID="send-button"
@@ -1599,6 +1700,18 @@ export default function ChatScreen() {
                 style={styles.send}
               >
                 <Ionicons name="arrow-up" size={24} color={theme.colors.onBrandPrimary} />
+              </Pressable>
+            ) : Platform.OS === 'web' ? (
+              <Pressable
+                testID="mic-button"
+                onPress={onWebMicPress}
+                style={recording ? styles.micRecording : styles.mic}
+              >
+                {transcribing ? (
+                  <ActivityIndicator color={theme.colors.onBrandPrimary} />
+                ) : (
+                  <Ionicons name={recording ? 'stop' : 'mic'} size={26} color={theme.colors.onBrandPrimary} />
+                )}
               </Pressable>
             ) : (
               <Animated.View
@@ -1630,6 +1743,7 @@ export default function ChatScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
+      </View>
 
       {/* Transcript confirmation modal — shown after voice input is transcribed */}
       <Modal
@@ -1729,7 +1843,20 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: theme.colors.surface },
+  safe: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+    // Web: the outer viewport gets a subtly different backdrop so the
+    // centered chat column (webContentWrap) reads as a distinct "page"
+    // instead of the mobile UI stretching edge-to-edge across a wide
+    // desktop browser window. Native is completely unaffected.
+    ...(Platform.OS === 'web' ? { alignItems: 'center', backgroundColor: theme.colors.surfaceSecondary } : {}),
+  },
+  webContentWrap: {
+    flex: 1,
+    width: '100%',
+    ...(Platform.OS === 'web' ? { maxWidth: 800, backgroundColor: theme.colors.surface } : {}),
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1797,6 +1924,21 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   usagePillText: { color: theme.colors.onSurfaceSecondary, fontSize: 11, fontWeight: '600' },
+  // ── Web-only mic/permission banner (Alert.alert is a no-op on react-native-web) ──
+  voiceBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.sm,
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+    padding: theme.spacing.md,
+    backgroundColor: '#FFF8E7',
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.warning,
+  },
+  voiceBannerTitle: { color: theme.colors.brand, fontWeight: '700', fontSize: 13 },
+  voiceBannerMessage: { color: theme.colors.onSurfaceSecondary, fontSize: 12, marginTop: 2, lineHeight: 17 },
   modeRow: {
     flexDirection: 'row',
     alignItems: 'center',
