@@ -100,6 +100,56 @@ async def _seed_collection(db, name: str) -> dict:
     return {"collection": name, "action": "seeded", "inserted": inserted, "elapsed_s": elapsed}
 
 
+async def _ensure_indexes(db) -> dict:
+    """Idempotently (re)create the indexes retrieval depends on.
+
+    WHY THIS EXISTS: a plain document copy (mongodump/restore or a raw
+    insert_many seed, as _seed_collection does above) carries NO index
+    definitions with it — MongoDB indexes are a property of the collection
+    on the destination server, not of the documents. `corpus_db.py`'s
+    situational search (`retrieve_db`) runs a `$text` query against
+    `legal_sections`; without a text index that query doesn't return zero
+    rows, it *throws* `OperationFailure: text index required for $text
+    query` — which every call site there wraps in `except Exception: pass`,
+    so the failure is silent and looks exactly like "no verified source
+    exists" to the end user. Any future restore of this corpus into a new
+    database (Atlas migration, disaster recovery, a fresh preview DB) would
+    reproduce the exact same silent outage unless index creation is part of
+    the same idempotent startup path as the data itself.
+
+    `create_index(...)` is a no-op (fast, checks existing definition) when
+    the same index already exists, so this is safe to call on every boot —
+    not just the first one — unlike `_seed_collection`'s count-gated skip.
+    """
+    results: dict = {}
+    try:
+        await db.legal_sections.create_index(
+            [("section_heading", "text"), ("act_name", "text"), ("section_text", "text")],
+            weights={"section_heading": 10, "act_name": 5, "section_text": 1},
+            name="legal_sections_text_idx",
+            default_language="english",
+        )
+        await db.legal_sections.create_index(
+            [("section_number", 1), ("act_name", 1)], name="section_act_idx"
+        )
+        await db.legal_sections.create_index(
+            [("act_id", 1), ("section_num_int", 1)], name="act_sections_idx"
+        )
+        await db.legal_sections.create_index(
+            [("jurisdiction", 1), ("is_dead_law", 1)], name="jurisdiction_dead_idx"
+        )
+        await db.judicial_invalidations.create_index(
+            [("act_name", 1), ("section_number", 1)], name="ji_act_section_idx"
+        )
+        results["action"] = "ensured"
+        logger.info("[CORPUS_MIGRATION] Indexes ensured on legal_sections + judicial_invalidations.")
+    except Exception as e:
+        results["action"] = "error"
+        results["error"] = f"{type(e).__name__}: {e}"
+        logger.error(f"[CORPUS_MIGRATION] Index creation FAILED — {type(e).__name__}: {e}")
+    return results
+
+
 async def run_corpus_migration(db, corpus_db_name: str) -> list:
     """Entry point. Called once at startup as a background task (see server.py)."""
     logger.info(f"[CORPUS_MIGRATION] Starting. Target database: '{corpus_db_name}'.")
@@ -111,6 +161,9 @@ async def run_corpus_migration(db, corpus_db_name: str) -> list:
         except Exception as e:
             logger.error(f"[CORPUS_MIGRATION] {name}: unexpected top-level error — {type(e).__name__}: {e}")
             results.append({"collection": name, "action": "error", "error": f"{type(e).__name__}: {e}"})
+
+    index_result = await _ensure_indexes(db)
+    results.append({"collection": "_indexes", **index_result})
 
     elapsed = round(time.monotonic() - t0, 1)
     seeded = [r["collection"] for r in results if r.get("action") == "seeded"]

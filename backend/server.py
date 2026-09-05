@@ -857,6 +857,28 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     if not early_refusal and not retrieved and not state_hits and not db_hits and not db_orphan:
         early_refusal = REFUSAL_NO_CORPUS
 
+    # (c0) Cross-engine noise suppression (general rule, not per-Act — lives
+    # here once, not duplicated per topic). The curated Python corpus
+    # (`retrieved`) is hand-verified: every entry was deliberately keyword-
+    # tagged for that exact scenario. MongoDB's fuzzy $text search, in
+    # contrast, can pass a hit on nothing more than two generic words ("day",
+    # "every") shared with a completely unrelated Act — e.g. "my husband
+    # beats me every day" once also surfaced "The Representation of the
+    # People Act... paid holiday to employees on the day of poll" (shared
+    # words: "day", "every"), and "can an Indian marry twice" surfaced "The
+    # National Commission for Indian System of Medicine Act" (shared word:
+    # "indian"). `is_anchored` (corpus_db.py) marks a MongoDB hit as
+    # STRUCTURALLY trustworthy — an exact section-number lookup, or an
+    # explicit Act-label match — as opposed to bare generic-word overlap.
+    # Once ANY verified answer already exists for this query (the curated
+    # corpus answered, OR MongoDB itself found an anchored hit), a
+    # non-anchored MongoDB hit adds noise, not evidence, and is dropped. It
+    # is kept ONLY when it is the sole thing found for the query at all —
+    # never leaving the user with a refusal just because the one hit we have
+    # happens to be unanchored.
+    if db_hits and (retrieved or any(h.get("is_anchored") for h in db_hits)):
+        db_hits = [h for h in db_hits if h.get("is_anchored")]
+
     # (c1) Merge the state rules into the citation list the user will see. State
     # rules go LAST so the central position is read first, and the combined list
     # stays capped at three chips.
@@ -1853,61 +1875,6 @@ async def retrieve(body: RetrieveIn, user: dict = Depends(current_user)):
         "state_priority": (
             STATE_CODE_TO_JURISDICTION.get((body.state_code or user.get("state") or "").upper(), None)
         ),
-    }
-
-# ── TEMPORARY debug endpoint — production guard verification ────────────────
-# Read-only. Gated by the DEBUG_VERIFY_TOKEN secret (set it in Deployment Panel
-# → Secrets to enable; if the env var is unset the route 404s and does not
-# exist for callers). Runs INSIDE the deployed backend so it uses the real
-# production corpus DB connection — no JWT / user session needed. Calls only
-# existing read functions; performs no writes. REMOVE after one verification.
-@api.get("/_debug/verify-guards")
-async def _debug_verify_guards(x_debug_token: Optional[str] = Header(None)):
-    expected = os.environ.get("DEBUG_VERIFY_TOKEN")
-    if not expected:
-        raise HTTPException(404, "Not found")
-    if not x_debug_token or x_debug_token != expected:
-        raise HTTPException(403, "Forbidden")
-
-    # (1) Corpus reachability + population counts (proves prod reads the corpus DB)
-    try:
-        ls = corpus_db.legal_sections
-        total = await ls.estimated_document_count()
-        dead = await ls.count_documents({"is_dead_law": True})
-        tier1 = await ls.count_documents({"verify_tier": 1})
-        ji = await corpus_db.judicial_invalidations.estimated_document_count()
-        corpus_reachable = total > 0
-    except Exception as e:
-        # No connection details, no exception message (which can embed a URI on
-        # some drivers) — only the exception class name.
-        return {"corpus_reachable": False, "error": type(e).__name__}
-
-    # (2) §66A IT Act — dead-law + "struck down" guard must fire
-    r66 = await db_lookup_section(corpus_db, "66A", "Information Technology")
-    p66 = (bool(r66) and bool(r66.get("is_dead_law")) and bool(r66.get("dead_warning"))
-           and ("struck down" in (r66.get("judicial_flag") or "").lower()))
-
-    # (3) IPC §377 — judicial-invalidation guard must fire, no fabricated text
-    r377 = await db_lookup_section(corpus_db, "377", "Indian Penal Code")
-    p377 = (bool(r377) and bool(r377.get("judicial_flag")) and bool(r377.get("no_current_text"))
-            and not r377.get("section_text"))
-
-    # Response is intentionally minimal: pass/fail + aggregate counts only.
-    # No db name, no connection info, no raw document contents (act_name,
-    # section_text, source_url, etc. are withheld even though this data is
-    # already public-facing elsewhere in the app — this route's only job is
-    # a yes/no reachability + guard check).
-    return {
-        "corpus_reachable": corpus_reachable,
-        "counts": {
-            "legal_sections": total,
-            "is_dead_law_true": dead,       # expect 1509
-            "judicial_invalidations": ji,   # expect 16
-            "verify_tier_1": tier1,         # expect 3961
-        },
-        "check_66A_it_act": {"pass": p66},
-        "check_377_ipc": {"pass": p377},
-        "overall_pass": bool(corpus_reachable and p66 and p377),
     }
 
 

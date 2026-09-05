@@ -72,6 +72,7 @@ from retrieval_logic import (
     significant_words as _significant_words,
     corroboration_score as _corroboration_score,
     corroborates as _corroborates,  # noqa: F401  (kept for external callers)
+    relative_top_cutoff as _relative_top_cutoff,
 )
 
 # ── State code → corpus jurisdiction string ──────────────────────────────────
@@ -132,7 +133,18 @@ _SEC_RE = re.compile(
 )
 # Act-name hints extracted from the query to improve exact lookup accuracy.
 _ACT_HINTS: dict[str, re.Pattern] = {
-    "Bharatiya Nyaya Sanhita": re.compile(r"bns|nyaya\s+sanhita", re.I),
+    # Bigamy/second-marriage phrasing is added here (not a separate hint key)
+    # because the correct universal answer — BNS s.82 "Marrying again during
+    # lifetime of husband or wife" — shares only ONE significant word
+    # ("marri*") with common phrasings like "can an Indian marry twice", and
+    # the >=2-word Corroboration Rule (retrieval_logic.MIN_COROBORATION_WORDS)
+    # would otherwise filter it out even though it is the single most
+    # relevant section in the corpus for that exact question.
+    "Bharatiya Nyaya Sanhita": re.compile(
+        r"bns|nyaya\s+sanhita|bigamy|marry\s+(?:twice|again)|marrying\s+again|"
+        r"second\s+marriage|remarry\s+without\s+divorce|two\s+wives|two\s+husbands",
+        re.I,
+    ),
     "Bharatiya Nagarik Suraksha Sanhita": re.compile(r"bnss|nagarik\s+suraksha", re.I),
     "Bharatiya Sakshya Adhiniyam": re.compile(r"bsa|sakshya", re.I),
     "Information Technology": re.compile(r"\bit\s+act\b|information\s+technology", re.I),
@@ -220,8 +232,17 @@ async def _judicial_flag(db: AsyncIOMotorDatabase, act_name: str, section_number
     return rec.get("user_warning") or f"⚠️ This provision has been subject to judicial proceedings. Please verify current status with an advocate."
 
 
-def _shape(doc: dict, score: float, jflag: str | None) -> dict:
-    """Convert a raw MongoDB document to the standard result dict."""
+def _shape(doc: dict, score: float, jflag: str | None, is_anchored: bool = False) -> dict:
+    """Convert a raw MongoDB document to the standard result dict.
+
+    `is_anchored` marks a STRUCTURALLY high-confidence hit — an exact
+    section-number lookup, or an explicit Act-label match (see
+    corroboration_score's 9999 sentinel) — as opposed to a fuzzy hit that
+    only cleared the bare MIN_COROBORATION_WORDS floor on generic-word
+    overlap. server.py uses this to decide whether a MongoDB hit is trusted
+    enough to stand alongside (or instead of) the curated Python corpus for
+    the SAME query — see the "anchored-preference" merge rule there.
+    """
     return {
         "act_name": doc.get("act_name", ""),
         "section_number": doc.get("section_number", ""),
@@ -235,6 +256,7 @@ def _shape(doc: dict, score: float, jflag: str | None) -> dict:
         "dead_warning": _dead_warning(doc),
         "judicial_flag": jflag,
         "_score": score,
+        "is_anchored": is_anchored,
         # Extra fields useful for display
         "ministry": doc.get("ministry", ""),
         "act_year": doc.get("act_year"),
@@ -306,9 +328,10 @@ async def lookup_section(
             "act_id": "",
             "dead_law_reason": None,
             "no_current_text": True,
+            "is_anchored": True,
         }
 
-    return _shape(doc, 0.0, jflag)
+    return _shape(doc, 0.0, jflag, is_anchored=True)
 
 
 async def retrieve_db(
@@ -431,26 +454,41 @@ async def retrieve_db(
     # Sort: corr_score DESC → jurisdiction_priority DESC → text_score DESC
     candidates.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
 
-    # Collect top-limit unique candidates (respecting already-seen exact hits)
-    top_candidates: list[tuple[float, dict]] = []
+    # Dedupe by key first (state + central candidate pools can in theory
+    # overlap at the boundary), preserving sort order — the relative cutoff
+    # below assumes a clean, already-ranked list.
+    deduped: list[tuple[int, float, dict]] = []
     for corr, _jprio, text_score, key, doc in candidates:
-        if len(top_candidates) >= limit - len(results):
-            break
         if key in seen_ids:
             continue
         seen_ids.add(key)
-        top_candidates.append((text_score, doc))
+        deduped.append((corr, text_score, doc))
+
+    # Relative-noise cutoff — shared with corpus.py's retrieve() via
+    # retrieval_logic.relative_top_cutoff so the two engines cannot drift
+    # apart again. corr == 9999 is an explicit Act-label match (see
+    # corroboration_score) and always passes through; every other candidate
+    # must score at least half of the best NON-label-match candidate to be
+    # shown, so an anchored citation (e.g. BNS s.82 for a bigamy question)
+    # cannot silently drag along an unrelated hit that only just cleared the
+    # absolute MIN_COROBORATION_WORDS floor.
+    top_candidates: list[tuple[int, float, dict]] = _relative_top_cutoff(
+        [(corr, (corr, text_score, doc)) for corr, text_score, doc in deduped],
+        limit=limit - len(results),
+        min_floor=_MIN_COROBORATION_WORDS,
+        sentinel=9999,
+    )
 
     # Fetch JI flags in parallel for the final slice only (not all 300)
     if top_candidates:
         jflags = await asyncio.gather(
             *[
                 _judicial_flag(db, doc.get("act_name", ""), doc.get("section_number", ""))
-                for _, doc in top_candidates
+                for _, _, doc in top_candidates
             ]
         )
-        for (text_score, doc), jflag in zip(top_candidates, jflags):
-            results.append(_shape(doc, text_score, jflag))
+        for (corr, text_score, doc), jflag in zip(top_candidates, jflags):
+            results.append(_shape(doc, text_score, jflag, is_anchored=(corr == 9999)))
 
     return results
 

@@ -267,3 +267,45 @@ def corroboration_score(question_sig: set, doc: dict, act_hint: str | None) -> i
 def corroborates(question_sig: set, doc: dict, act_hint: str | None) -> bool:
     """Corroboration Rule gate — boolean version (kept for external callers)."""
     return corroboration_score(question_sig, doc, act_hint) >= MIN_COROBORATION_WORDS
+
+
+# ── Relative-noise cutoff — shared final-slice rule for BOTH engines ────────
+# Defined ONCE here (not duplicated in corpus.py / corpus_db.py) precisely so
+# the two retrieval engines cannot drift apart again the way they did before
+# this module existed. A clear winner (or an explicit Act-label match, see
+# `sentinel`) must not drag a weakly-related hit along just because that hit
+# cleared the ABSOLUTE floor (RETRIEVAL_MIN_SCORE / MIN_COROBORATION_WORDS).
+# Real examples this caught in production: a cheque-bounce question also
+# returning an RTI reply-deadline chip (both mention "notice" + "30 days");
+# a bigamy question ("can an Indian marry twice") returning an unrelated
+# "National Commission for Indian System of Medicine Act" hit that only
+# shared the word "Indian".
+def relative_top_cutoff(
+    scored: list[tuple[float, object]],
+    limit: int,
+    min_floor: float,
+    relative_ratio: float = 0.5,
+    sentinel: float | None = None,
+) -> list:
+    """`scored` must already be sorted descending by score.
+
+    Keeps at most `limit` items, dropping any whose score is below
+    max(min_floor, relative_ratio * best_score) — "best_score" being the top
+    score EXCLUDING any `sentinel`-valued entries (an explicit Act-label
+    match), so one anchored citation cannot inflate the bar and silently
+    swallow a second, genuinely-corroborated citation. Sentinel-valued
+    entries themselves always pass through (they are a direct label match,
+    not a fuzzy score), up to `limit`.
+    """
+    if not scored:
+        return []
+    real_scores = [s for s, _ in scored if sentinel is None or s != sentinel]
+    top_real = real_scores[0] if real_scores else 0
+    floor = max(min_floor, top_real * relative_ratio)
+    out: list = []
+    for s, item in scored:
+        if len(out) >= limit:
+            break
+        if (sentinel is not None and s == sentinel) or s >= floor:
+            out.append(item)
+    return out

@@ -2006,6 +2006,7 @@ from retrieval_logic import (  # noqa: E402
     make_token_weight,
     score_items,
     corroborated,
+    relative_top_cutoff,
 )
 
 
@@ -2037,24 +2038,18 @@ def retrieve(question: str, limit: int = 3) -> list[dict]:
       +6  if a multi-word keyword appears as a contiguous substring
       +   weighted token overlap (rare tokens 4, common tokens 1)
 
-    
-, i.e. it
-    needs either a label hit, a phrase hit, or at least one reasonably
+    i.e. it needs either a label hit, a phrase hit, or at least one reasonably
     specific word in common — a single generic word like "police" is not
     enough on its own.
+
+    Final slice uses the shared relative_top_cutoff (retrieval_logic.py) — a
+    clear winner must not drag along entries scoring under half its score.
     """
     scored = [
         (s, it) for s, it in _score_all(question)
         if s >= RETRIEVAL_MIN_SCORE and corroborated(question, it)
     ]
-    if not scored: return [] 
-    # Relative cutoff. A clear winner used to drag along weakly-related entries
-    # (e.g. a cheque-bounce question also returned an RTI reply-deadline chip
-    # because both mention "notice" and "30 days"). Anything scoring less than
-    # half the best hit is noise and, worse, looks authoritative in the UI.
-    top = scored[0][0]
-    floor = max(RETRIEVAL_MIN_SCORE, top * 0.5)
-    return [item for s, item in scored[:limit] if s >= floor]
+    return relative_top_cutoff(scored, limit, RETRIEVAL_MIN_SCORE)
 
 
 def top_candidate_debug(question: str) -> dict:
