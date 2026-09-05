@@ -1398,7 +1398,7 @@ export default function ChatScreen() {
                 ? isPro
                   ? 'Deep answers'
                   : `${remaining} samples left`
-                : 'Free forever'}
+                : 'Free during community launch'}
             </Text>
           </View>
         </View>

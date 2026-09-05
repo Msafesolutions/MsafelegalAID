@@ -60,7 +60,7 @@ export default function Signup() {
 
           <View style={styles.card}>
             <Text style={styles.heading}>Create your account</Text>
-            <Text style={styles.sub}>Free forever. No fear, just facts.</Text>
+            <Text style={styles.sub}>Free during community launch. No fear, just facts.</Text>
 
             <Text style={styles.label}>Full name</Text>
             <TextInput testID="signup-name-input" style={styles.input} value={name} onChangeText={setName} placeholder="Your name" placeholderTextColor={theme.colors.onSurfaceTertiary} />
