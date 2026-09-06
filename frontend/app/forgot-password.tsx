@@ -6,8 +6,8 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
+import { crossAlert } from '@/src/utils/crossAlert';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Link } from 'expo-router';
@@ -95,7 +95,7 @@ export default function ForgotPassword() {
       if (hydrateSession) {
         await hydrateSession(data.token, data.user);
       }
-      Alert.alert(
+      crossAlert(
         'Password reset',
         'Your password has been updated. You are now signed in.',
         [{ text: 'OK', onPress: () => router.replace('/(tabs)') }],

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, ActivityIndicator } from 'react-native';
+import { crossAlert } from '@/src/utils/crossAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -28,7 +29,7 @@ export default function History() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const remove = async (id: string) => {
-    Alert.alert('Delete conversation?', 'This cannot be undone.', [
+    crossAlert('Delete conversation?', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         await fetch(`${API_BASE}/api/chat/sessions/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });

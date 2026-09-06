@@ -9,8 +9,8 @@ import {
   ActivityIndicator,
   Share,
   Platform,
-  Alert,
 } from 'react-native';
+import { crossAlert } from '@/src/utils/crossAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
@@ -58,7 +58,7 @@ export default function DraftForm() {
             router.push('/upgrade');
           }
         } else {
-          Alert.alert('Free notice used', msg, [
+          crossAlert('Free notice used', msg, [
             { text: 'Not now', style: 'cancel' },
             { text: 'See Pro', onPress: () => router.push('/upgrade') },
           ]);
@@ -73,7 +73,7 @@ export default function DraftForm() {
       addToHistory({ type: spec.type, title: spec.title, text, lang: 'en' }).catch(() => {});
       refreshUser().catch(() => {});
     } catch {
-      Alert.alert('Could not create the notice', 'Please check your connection and try again.');
+      crossAlert('Could not create the notice', 'Please check your connection and try again.');
     } finally {
       setBusy(false);
     }

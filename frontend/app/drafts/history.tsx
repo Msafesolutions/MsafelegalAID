@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, Share, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, Share } from 'react-native';
+import { crossAlert } from '@/src/utils/crossAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -34,7 +35,7 @@ export default function DraftHistoryScreen() {
   };
 
   const onDelete = (item: DraftHistoryItem) => {
-    Alert.alert('Delete this notice?', 'This only removes it from your history on this phone.', [
+    crossAlert('Delete this notice?', 'This only removes it from your history on this phone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',

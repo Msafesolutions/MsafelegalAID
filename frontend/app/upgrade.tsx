@@ -6,11 +6,11 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Alert,
   Platform,
   Modal,
   TextInput,
 } from 'react-native';
+import { crossAlert } from '@/src/utils/crossAlert';
 // NOTE: must be the keyboard-controller KeyboardAvoidingView, not React Native's.
 // This modal renders inside an RN <Modal>, and keyboard-controller forces
 // SOFT_INPUT_ADJUST_NOTHING on every modal window it attaches to, so RN's
@@ -215,13 +215,13 @@ export default function Upgrade() {
         }).then((x) => x.json());
         if (v.is_pro) {
           await refreshUser();
-          Alert.alert('Welcome to Pro', 'Your account is now Pro.');
+          crossAlert('Welcome to Pro', 'Your account is now Pro.');
         }
       }
     } catch (e: any) {
       const msg = e?.message || 'Please try again';
       setErrorMsg(msg);
-      if (Platform.OS !== 'web') Alert.alert('Stripe checkout failed', msg);
+      if (Platform.OS !== 'web') crossAlert('Stripe checkout failed', msg);
     } finally {
       setLoadingStripe(false);
     }
@@ -247,7 +247,7 @@ export default function Upgrade() {
     if (!token) return;
     const pid = razorPaymentId.trim();
     if (!pid.startsWith('pay_')) {
-      Alert.alert('Invalid Payment ID', 'The Payment ID from Razorpay must start with "pay_".');
+      crossAlert('Invalid Payment ID', 'The Payment ID from Razorpay must start with "pay_".');
       return;
     }
     setVerifying(true);
@@ -263,7 +263,7 @@ export default function Upgrade() {
         await refreshUser();
         setRazorModal(false);
         setRazorPaymentId('');
-        Alert.alert(
+        crossAlert(
           'Welcome to Dhara Pro',
           data.trust_based
             ? 'Your Pro access has been activated. We will confirm your payment shortly.'
@@ -271,7 +271,7 @@ export default function Upgrade() {
         );
       }
     } catch (e: any) {
-      Alert.alert('Could not verify', e?.message || 'Please double-check the Payment ID and try again.');
+      crossAlert('Could not verify', e?.message || 'Please double-check the Payment ID and try again.');
     } finally {
       setVerifying(false);
     }

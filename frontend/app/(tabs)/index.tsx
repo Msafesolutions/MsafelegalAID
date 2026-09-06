@@ -8,7 +8,6 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
-  Alert,
   Modal,
   Switch,
   Animated,
@@ -16,6 +15,7 @@ import {
   type GestureResponderEvent,
   type PanResponderGestureState,
 } from 'react-native';
+import { crossAlert } from '@/src/utils/crossAlert';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -173,7 +173,7 @@ export default function ChatScreen() {
       setVoiceBanner({ title, message });
       voiceBannerTimerRef.current = setTimeout(() => setVoiceBanner(null), 7000);
     } else {
-      Alert.alert(title, message);
+      crossAlert(title, message);
     }
   }, []);
   // Hands-free "locked" recording — set by dragging the mic straight up,
@@ -874,13 +874,13 @@ export default function ChatScreen() {
           setSpeakingId(null);
           speakerRef.current = null;
           if (message.includes('429')) {
-            Alert.alert(
+            crossAlert(
               'Daily limit reached',
               "You have used all your free questions for today. Free help: NALSA 15100 (legal aid) - Consumer Helpline 1800-11-4000.",
             );
             return;
           }
-          Alert.alert(
+          crossAlert(
             'Speaker unavailable',
             message.includes('Network')
               ? 'Could not reach the speech server. Please check your internet connection.'
@@ -1343,7 +1343,7 @@ export default function ChatScreen() {
         });
         setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, saved: true } : x)));
       } catch {
-        Alert.alert('Could not save', 'Please try again.');
+        crossAlert('Could not save', 'Please try again.');
       }
     },
     [messages, token, language],

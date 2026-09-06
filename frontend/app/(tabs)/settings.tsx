@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform, Switch, Animated, Linking, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Platform, Switch, Animated, Linking, TextInput, ActivityIndicator } from 'react-native';
+import { crossAlert } from '@/src/utils/crossAlert';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -53,7 +54,7 @@ export default function Settings() {
     if (!value) {
       // The OS doesn't let an app silently revoke its own notification
       // permission — send the user to the one place that actually can.
-      Alert.alert(
+      crossAlert(
         'Turn off notifications',
         'To stop notifications from Dhara, turn them off in your phone\'s Settings app.',
         [
@@ -71,7 +72,7 @@ export default function Settings() {
     }
     setPushState('denied');
     if (!result.canAskAgain) {
-      Alert.alert(
+      crossAlert(
         'Notifications are blocked',
         'You previously denied notification permission for Dhara. Open Settings to turn it on.',
         [
@@ -117,13 +118,7 @@ export default function Settings() {
   };
 
   const confirmLogout = () => {
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm('Sign out of Dhara?')) {
-        logout();
-      }
-      return;
-    }
-    Alert.alert('Sign out?', 'You will need to sign in again to continue.', [
+    crossAlert('Sign out?', 'You will need to sign in again to continue.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: () => logout() },
     ]);
