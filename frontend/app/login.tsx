@@ -7,7 +7,7 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, sessionExpired, clearSessionExpired } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,6 +17,7 @@ export default function Login() {
 
   const onSubmit = async () => {
     setError(null);
+    clearSessionExpired();
     setLoading(true);
     try {
       await login(email.trim(), password);
@@ -45,6 +46,15 @@ export default function Login() {
           <View style={styles.card}>
             <Text style={styles.heading}>Welcome back</Text>
             <Text style={styles.sub}>Sign in to continue</Text>
+
+            {sessionExpired && (
+              <View style={styles.sessionExpiredBanner} testID="session-expired-banner">
+                <Ionicons name="alert-circle-outline" size={18} color={theme.colors.error} />
+                <Text style={styles.sessionExpiredText}>
+                  Your session has expired — please sign in again.
+                </Text>
+              </View>
+            )}
 
             <Text style={styles.label}>Email</Text>
             <TextInput
@@ -137,6 +147,16 @@ const styles = StyleSheet.create({
   // "Forgot password?": navy-on-cream — 11.92:1 ✅ (already had underline)
   forgotLink: { color: theme.dhara.textPrimary, fontWeight: '600', fontSize: 14, textDecorationLine: 'underline' },
   error: { color: theme.colors.error, marginTop: theme.spacing.md },
+  sessionExpiredBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.errorContainer ?? '#FDECEA',
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    marginTop: theme.spacing.md,
+  },
+  sessionExpiredText: { color: theme.colors.error, flex: 1, fontSize: 13, fontWeight: '600' },
   // Footer Sanskrit: gold-on-navy — 6.29:1 ✅
   footer: { textAlign: 'center', color: theme.dhara.gold, marginTop: theme.spacing.xxl, letterSpacing: 2 },
   // Copyright: textOnNavyMuted (gold) on navy — 6.29:1 ✅  — NOT a raw gray (#8A93A6 fails)

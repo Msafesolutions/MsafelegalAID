@@ -30,7 +30,7 @@ import {
 } from 'expo-audio';
 import { ChunkedSpeaker } from '@/src/voice/tts';
 import { File, Paths } from 'expo-file-system';
-import { useAuth, API_BASE } from '@/src/auth';
+import { useAuth, API_BASE, logClientError } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 import { addBookmark } from '@/src/bookmarks';
@@ -119,7 +119,7 @@ const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicon
 ];
 
 export default function ChatScreen() {
-  const { token, user, language, model, autoSpeak, ttsVolume, refreshUser } = useAuth();
+  const { token, user, language, model, autoSpeak, ttsVolume, refreshUser, forceLogout } = useAuth();
   const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>([]);
   // Per-message toggle for the "View Legal Details" summary-first disclosure.
@@ -384,8 +384,13 @@ export default function ChatScreen() {
       setInput('');
       setStreaming(true);
 
-      try {
-        const res = await fetch(`${API_BASE}/api/chat/stream`, {
+      const isNative = Platform.OS !== 'web';
+
+      // Builds the request fresh each time — needed both for the initial
+      // attempt and for the one allowed retry (a failed/consumed response
+      // body can't be re-read; only a brand-new fetch can be retried).
+      const doFetch = () =>
+        fetch(`${API_BASE}/api/chat/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
@@ -399,6 +404,33 @@ export default function ChatScreen() {
             mode: modeToSend,
           }),
         });
+
+      try {
+        // Native-only: a chunked SSE response can occasionally fail with a
+        // network-level error (connection reset, timeout, incomplete body)
+        // on a real Android device even though the server answered fine —
+        // confirmed by testing the same request directly against the
+        // deployed backend. Retry ONCE, only for that class of failure —
+        // never for a completed HTTP response (4xx/5xx), which is a real
+        // answer from the server and must never be silently retried.
+        let res: Response;
+        try {
+          res = await doFetch();
+        } catch (networkErr) {
+          logClientError(token, 'chat_stream_fetch', networkErr, { retried: isNative });
+          if (!isNative) throw networkErr;
+          await new Promise((r) => setTimeout(r, 700));
+          res = await doFetch(); // second and final attempt — no further retry
+        }
+
+        // Session expired mid-use (token invalid/expired) — log the user out
+        // and let the auth guard route to /login with the right message,
+        // instead of showing a generic chat error in the answer bubble.
+        if (res.status === 401) {
+          setMessages((prev) => prev.filter((m) => m.id !== assistantId && m.id !== userId));
+          await forceLogout();
+          return;
+        }
 
         // Paywall (HTTP 402) — pro-mode sample quota exhausted
         // Daily LLM spend cap (HTTP 429) — show the plain-language message in
@@ -552,15 +584,43 @@ export default function ChatScreen() {
               if (parsed.hadError) hadError = true;
             }
           } else {
-            // React Native path: read the full response and parse all frames at once.
-            const fullText = await res.text();
-            const parsed = parseSseBuffer(fullText + '\n\n', '', null, []);
-            acc = parsed.acc;
-            finalText = parsed.final;
-            citations = parsed.citations;
-            hadError = parsed.hadError;
+            // React Native path: read the full response and parse all frames
+            // at once. Retry ONCE if the read itself throws (connection
+            // reset) OR the body came back truncated (no "done" frame — the
+            // server was still mid-stream when the connection dropped) —
+            // both are network-level failures, not a real answer from the
+            // server, so they're safe to retry (unlike a completed 4xx/5xx,
+            // already handled above and never reaches this branch).
+            let fullText: string;
+            try {
+              fullText = await res.text();
+              if (!/"type":\s*"done"/.test(fullText)) throw new Error('incomplete_sse_body');
+            } catch (readErr) {
+              logClientError(token, 'chat_stream_native_read', readErr, { retried: true });
+              await new Promise((r) => setTimeout(r, 700));
+              const retryRes = await doFetch();
+              if (retryRes.status === 401) {
+                setMessages((prev) => prev.filter((m) => m.id !== assistantId && m.id !== userId));
+                await forceLogout();
+                return;
+              }
+              if (!retryRes.ok) {
+                hadError = true;
+                fullText = '';
+              } else {
+                fullText = await retryRes.text(); // if this also throws, propagate — no third attempt
+              }
+            }
+            if (fullText) {
+              const parsed = parseSseBuffer(fullText + '\n\n', '', null, []);
+              acc = parsed.acc;
+              finalText = parsed.final;
+              citations = parsed.citations;
+              hadError = hadError || parsed.hadError;
+            }
           }
-        } catch {
+        } catch (readOrParseErr) {
+          logClientError(token, 'chat_stream_native_read', readOrParseErr);
           hadError = true;
         }
 
@@ -595,8 +655,10 @@ export default function ChatScreen() {
         try {
           await refreshUser();
         } catch {}
-      } catch {
-        // Never render raw errors, stream contents, or JSON to the user.
+      } catch (outerErr) {
+        // Never render raw errors, stream contents, or JSON to the user —
+        // but capture the real exception so a repeat gives a real diagnosis.
+        logClientError(token, 'chat_stream_outer', outerErr);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -608,7 +670,7 @@ export default function ChatScreen() {
         setStreaming(false);
       }
     },
-    [streaming, token, sessionId, language, model, proMode, refreshUser, autoSpeak]
+    [streaming, token, sessionId, language, model, proMode, refreshUser, autoSpeak, forceLogout]
   );
 
   /**
@@ -980,6 +1042,11 @@ export default function ChatScreen() {
           headers: { Authorization: `Bearer ${token}` },
           body: form,
         });
+        if (res.status === 401) {
+          setTranscribing(false);
+          await forceLogout();
+          return;
+        }
         const data = await res.json();
         if (!res.ok) throw new Error(data?.detail?.message || data.detail || 'Transcription failed');
         const heardText = (data.text || '').trim();
@@ -1011,9 +1078,13 @@ export default function ChatScreen() {
       }
     } catch (e: any) {
       setTranscribing(false);
+      if (e?.message === '__session_expired__') {
+        forceLogout();
+        return;
+      }
       notify('Transcription failed', e?.message || 'Try again');
     }
-  }, [recorder, token, language, notify]);
+  }, [recorder, token, language, notify, forceLogout]);
 
   // WhatsApp-style hold-to-talk handlers
   const onMicPressIn = useCallback(() => {

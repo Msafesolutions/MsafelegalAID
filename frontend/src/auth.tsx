@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
 const API = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -32,6 +33,15 @@ type AuthCtx = {
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   hydrateSession: (token: string, user: User) => Promise<void>;
+  /** True right after any API call comes back 401 mid-session (expired/invalid
+   * token) — distinct from simply never having logged in. The login screen
+   * reads this to show "Your session has expired" instead of a blank form. */
+  sessionExpired: boolean;
+  clearSessionExpired: () => void;
+  /** Call this from ANY authenticated fetch call site the moment it sees a 401.
+   * Logs the user out and flags sessionExpired so the auth guard in
+   * (tabs)/_layout.tsx redirects to /login with the right message. */
+  forceLogout: () => Promise<void>;
 };
 
 const DEFAULT_LANG: Language = { code: 'en', name: 'English', native: 'English', tts: 'en-IN' };
@@ -47,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [model, setModelState] = useState<ModelChoice>(DEFAULT_MODEL);
   const [autoSpeak, setAutoSpeakState] = useState<boolean>(true);
   const [ttsVolume, setTtsVolumeState] = useState<number>(1.0);
+  const [sessionExpired, setSessionExpired] = useState<boolean>(false);
 
   useEffect(() => {
     (async () => {
@@ -104,6 +115,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!token) return;
     try {
       const r = await fetch(`${API}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+      if (r.status === 401) {
+        await forceLogout();
+        return;
+      }
       if (r.ok) {
         const u = await r.json();
         await AsyncStorage.setItem(USER_KEY, JSON.stringify(u));
@@ -117,6 +132,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setUser(null);
   };
+
+  // Any authenticated fetch call site should call this the moment it sees a
+  // 401 — logs the user out AND flags sessionExpired (distinct from a plain
+  // logout) so the login screen can show "Your session has expired" instead
+  // of a bare form, per the "never dead-end the user" rule for auth failures.
+  const forceLogout = useCallback(async () => {
+    setSessionExpired(true);
+    await logout();
+  }, []);
+
+  const clearSessionExpired = useCallback(() => setSessionExpired(false), []);
 
   const setLanguage = useCallback(async (l: Language) => {
     setLanguageState(l);
@@ -148,6 +174,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ state: code }),
     });
+    if (r.status === 401) {
+      await forceLogout();
+      throw new Error('Your session has expired — please sign in again');
+    }
     if (!r.ok) throw new Error('Could not save your state');
     const data = await r.json();
     setUser((prev) => {
@@ -155,10 +185,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (next) AsyncStorage.setItem(USER_KEY, JSON.stringify(next));
       return next;
     });
-  }, [token]);
+  }, [token, forceLogout]);
 
   return (
-    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, setUserState, login, register, logout, refreshUser, hydrateSession: persist }}>
+    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, setUserState, login, register, logout, refreshUser, hydrateSession: persist, sessionExpired, clearSessionExpired, forceLogout }}>
       {children}
     </Ctx.Provider>
   );
@@ -168,6 +198,36 @@ export function useAuth() {
   const c = useContext(Ctx);
   if (!c) throw new Error('AuthProvider missing');
   return c;
+}
+
+/**
+ * Fire-and-forget structured error report — captures the REAL error so a
+ * failure gives a real diagnosis next time instead of another guessing
+ * round, without ever surfacing the raw error to the user (callers keep
+ * showing their own friendly message regardless of what this does).
+ * Deliberately swallows its own failures — logging must never itself
+ * become a second point of failure.
+ */
+export function logClientError(
+  token: string | null,
+  context: string,
+  err: unknown,
+  extra?: { retried?: boolean },
+): void {
+  if (!token) return;
+  const e = err as any;
+  const body = {
+    context,
+    error_name: e?.name ? String(e.name) : undefined,
+    error_message: e?.message ? String(e.message).slice(0, 1000) : String(err ?? '').slice(0, 1000),
+    platform: Platform.OS,
+    retried: extra?.retried,
+  };
+  fetch(`${API}/api/client-error-log`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  }).catch(() => {});
 }
 
 export const API_BASE = API;

@@ -161,6 +161,14 @@ class ChatIn(BaseModel):
     model_name: str = "claude-sonnet-4-5-20250929"
     mode: str = "basic"  # "basic" | "pro"
 
+class ClientErrorLogIn(BaseModel):
+    """Structured client-side error report — see POST /client-error-log."""
+    context: str  # e.g. "chat_stream_fetch", "chat_stream_native_read"
+    error_name: Optional[str] = None
+    error_message: Optional[str] = None
+    platform: Optional[str] = None  # "ios" | "android" | "web"
+    retried: Optional[bool] = None
+
 class TTSIn(BaseModel):
     text: str
     language: str = "en"
@@ -655,6 +663,29 @@ async def translate_for_retrieval(text: str, model_provider: str, model_name: st
     except Exception:
         logger.warning("retrieval translation failed; falling back to original text", exc_info=True)
         return text
+
+# ---------- Client-side error logging ----------
+# The chat UI swallows real JS/network exceptions into a friendly "Something
+# went wrong" message so users never see a stack trace. That previously meant
+# a real failure (e.g. a native chunked-response read failing) left NO trace
+# anywhere — the next investigation was pure guesswork. This endpoint gives
+# every such failure a durable, inspectable record, without ever surfacing
+# the raw error back to the user. Deliberately minimal: no PII beyond the
+# already-authenticated user id, capped message length, best-effort (the
+# client fires this and ignores its result).
+@api.post("/client-error-log")
+async def client_error_log(body: ClientErrorLogIn, user: dict = Depends(current_user)):
+    await db.client_error_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "context": body.context[:100],
+        "error_name": (body.error_name or "")[:200],
+        "error_message": (body.error_message or "")[:1000],
+        "platform": (body.platform or "")[:20],
+        "retried": bool(body.retried),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"ok": True}
 
 # ---------- Chat ----------
 @api.post("/chat/stream")

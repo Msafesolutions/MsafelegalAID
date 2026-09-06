@@ -360,6 +360,9 @@ export async function whisperTranscribeFile(
     body: form,
   });
   const data = await res.json();
+  if (res.status === 401) {
+    throw new Error('__session_expired__');
+  }
   if (res.status === 429) {
     throw new Error(
       data?.detail?.message || 'You have reached your daily voice limit. Please try again tomorrow.',
