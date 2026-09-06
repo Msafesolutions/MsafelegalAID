@@ -37,6 +37,24 @@ async def register_device(user_id: str, platform: str, device_token: str) -> dic
     return {"status": "registered"}
 
 
+async def unregister_device(user_id: str) -> None:
+    """Tells the relay to forget this user_id's device-token mapping —
+    called on account deletion so no orphaned token/user_id record is left
+    behind on the relay side once the account no longer exists in our own
+    DB. Same contract as register_device/send_push: callers MUST wrap this
+    in try/except — a relay hiccup must never block the deletion itself.
+    """
+    resp = await _client.post(
+        "/api/v1/push/users/unregister",
+        json={"user_id": user_id},
+    )
+    if resp.status_code == 401:
+        raise RuntimeError("EMERGENT_PUSH_KEY missing or invalid")
+    if resp.status_code >= 500:
+        raise RuntimeError("Push provider unavailable")
+    resp.raise_for_status()
+
+
 async def send_push(recipients: list[str], data: dict, idempotency_key: str | None = None) -> None:
     """Trigger a push to up to 100 user_ids (chunks larger audiences — the
     relay's own cap). Tokens are resolved server-side by SuprSend from

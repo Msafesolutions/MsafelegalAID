@@ -31,7 +31,7 @@ from openai import AsyncOpenAI
 from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
 
 from legal import TERMS_AND_CONDITIONS, TERMS_VERSION, DISCLAIMER_SHORT
-from mailer import send_email, password_reset_otp_email, email_configured
+from mailer import send_email, password_reset_otp_email, account_deletion_otp_email, email_configured
 from corpus import (
     retrieve as corpus_retrieve,
     retrieve_state as corpus_retrieve_state,
@@ -56,8 +56,9 @@ from corpus_db import (
 from states import STATES, STATE_BY_CODE, is_valid_state, state_name
 from langpolicy import needs_language_repair, repair_prompt, needs_retrieval_translation
 from corpus_migration import run_corpus_migration
-from push import register_device
+from push import register_device, unregister_device
 from push_jobs import run_push_jobs_loop
+from account_deletion import hard_delete_user
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -148,6 +149,21 @@ class ResetPasswordIn(BaseModel):
     email: EmailStr
     code: str = Field(min_length=4, max_length=10)
     new_password: str = Field(min_length=6)
+
+class DeleteAccountIn(BaseModel):
+    """In-app deletion (Settings) — re-auth with the account password before
+    an irreversible, total-data-loss action."""
+    password: str
+
+class RequestDeletionOTPIn(BaseModel):
+    """Public web deletion page, step 1 — email a one-time code."""
+    email: EmailStr
+
+class VerifyDeletionOTPIn(BaseModel):
+    """Public web deletion page, step 2 — prove ownership of the mailbox,
+    then permanently delete the account."""
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=10)
 
 class AuthOut(BaseModel):
     token: str
@@ -506,6 +522,125 @@ async def reset_password(body: ResetPasswordIn):
     _RESET_SENDS.pop(email, None)
     updated = await db.users.find_one({"id": user["id"]})
     return {"token": make_token(user["id"]), "user": public_user(updated)}
+
+# ---- Account deletion (Google Play "Account deletion" requirement) ----
+# Two paths, one shared underlying hard_delete_user() (see account_deletion.py)
+# so they can never drift apart:
+#   1. In-app (authenticated, Settings → Delete account) — re-auth by password.
+#   2. Public web page, no login required (for users who already uninstalled
+#      the app) — proves identity via emailed OTP instead of a session, same
+#      pattern as /auth/forgot-password + /auth/reset-password.
+# Both permanently erase the account and every user-linked collection — there
+# is no soft-delete and no recovery window.
+_DELETE_SENDS: dict[str, list[datetime]] = {}
+
+
+def _prune_delete_sends(email: str) -> list[datetime]:
+    cutoff = datetime.now(timezone.utc) - _RESET_SEND_WINDOW
+    kept = [t for t in _DELETE_SENDS.get(email, []) if t > cutoff]
+    _DELETE_SENDS[email] = kept
+    return kept
+
+
+async def _finish_deletion(user_id: str) -> None:
+    """Shared tail of both deletion paths: hard-delete every collection,
+    then best-effort tell the push relay to forget this user. A relay
+    hiccup must never stop the account from actually being deleted."""
+    await hard_delete_user(db, user_id)
+    try:
+        await unregister_device(user_id)
+    except Exception as e:
+        logger.warning(f"[account_deletion] push unregister failed for {user_id}: {type(e).__name__}: {e}")
+
+
+@api.post("/account/delete")
+async def delete_account_in_app(body: DeleteAccountIn, user: dict = Depends(current_user)):
+    """In-app path. Requires re-entering the account password as proof of
+    intent — a bare button tap is not enough for an irreversible action."""
+    if not check_pw(body.password, user["password_hash"]):
+        raise HTTPException(401, "Incorrect password.")
+    await _finish_deletion(user["id"])
+    return {"deleted": True}
+
+
+@api.post("/account-deletion/request-otp")
+async def request_deletion_otp(body: RequestDeletionOTPIn):
+    """Public web page, step 1 — email a 6-digit one-time code. Always
+    returns the same generic response so the endpoint cannot be used to
+    discover which email addresses are registered."""
+    if not email_configured():
+        raise HTTPException(503, "Account deletion by email is not configured on this server.")
+
+    email = body.email.lower().strip()
+    now = datetime.now(timezone.utc)
+    sends = _prune_delete_sends(email)
+    if sends and (now - sends[-1]) < _RESET_MIN_GAP:
+        raise HTTPException(429, "Please wait a minute before requesting another code.")
+    if len(sends) >= _RESET_MAX_SENDS:
+        raise HTTPException(429, "Too many requests. Please try again in an hour.")
+
+    generic = {
+        "sent": True,
+        "message": "If that email is registered, we've sent a 6-digit code to it. It expires in 10 minutes.",
+        "expires_in_minutes": OTP_TTL_MINUTES,
+    }
+
+    user = await db.users.find_one({"email": email})
+    _DELETE_SENDS.setdefault(email, []).append(now)
+    if not user:
+        return generic
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    await db.account_deletion_otps.update_one(
+        {"email": email},
+        {"$set": {
+            "email": email,
+            "user_id": user["id"],
+            "code_hash": hash_pw(code),
+            "expires_at": (now + timedelta(minutes=OTP_TTL_MINUTES)).isoformat(),
+            "attempts": 0,
+            "used": False,
+            "created_at": now.isoformat(),
+        }},
+        upsert=True,
+    )
+
+    subject, html = account_deletion_otp_email(name=user.get("name") or "", code=code, minutes=OTP_TTL_MINUTES)
+    await send_email(to=email, subject=subject, html=html)
+    logger.info(f"account deletion code emailed to {email}")
+    return generic
+
+
+@api.post("/account-deletion/verify")
+async def verify_deletion_otp(body: VerifyDeletionOTPIn):
+    """Public web page, step 2 — verify the emailed code and permanently
+    delete the account. No login required; mailbox ownership IS the proof
+    of identity for this one irreversible action."""
+    email = body.email.lower().strip()
+    now = datetime.now(timezone.utc)
+    rec = await db.account_deletion_otps.find_one({"email": email})
+    invalid = HTTPException(400, "That code is not valid or has expired. Please request a new one.")
+    if not rec or rec.get("used"):
+        raise invalid
+    if rec.get("attempts", 0) >= OTP_MAX_ATTEMPTS:
+        raise HTTPException(429, "Too many wrong codes. Please request a new one.")
+    try:
+        expired = datetime.fromisoformat(rec["expires_at"]) < now
+    except Exception:
+        expired = True
+    if expired:
+        await db.account_deletion_otps.delete_one({"email": email})
+        raise invalid
+
+    if not check_pw(body.code.strip(), rec["code_hash"]):
+        await db.account_deletion_otps.update_one({"email": email}, {"$inc": {"attempts": 1}})
+        raise invalid
+
+    user_id = rec["user_id"]
+    await db.account_deletion_otps.delete_one({"email": email})
+    _DELETE_SENDS.pop(email, None)
+    await _finish_deletion(user_id)
+    return {"deleted": True, "message": "Your Dhara account and all associated data have been permanently deleted."}
 
 @api.get("/auth/me")
 async def me(user: dict = Depends(current_user)):

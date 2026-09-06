@@ -1,9 +1,10 @@
 """
 Transactional email via the Emergent-managed Resend integration.
 
-Only used for the password-reset OTP. Recipients always come from a server-side
-DB lookup and bodies always come from the fixed templates in this file — no
-caller ever supplies a recipient, subject or HTML.
+Used for the password-reset OTP and the account-deletion OTP. Recipients
+always come from a server-side DB lookup and bodies always come from the
+fixed templates in this file — no caller ever supplies a recipient, subject
+or HTML.
 """
 import os
 import re
@@ -158,8 +159,26 @@ def password_reset_otp_email(*, name: str, code: str, minutes: int) -> tuple[str
         '<div style="font-size:34px;font-weight:800;letter-spacing:10px;color:#12203A;'
         'background:#F3EFE7;border-radius:10px;padding:16px 8px">'
         f"{escape(code)}</div></td></tr>"
-        f'<tr><td style="font-size:14px;line-height:21px;color:#4A5568">This code expires in '
+            f'<tr><td style="font-size:14px;line-height:21px;color:#4A5568">This code expires in '
         f"{minutes} minutes and can be used once. Type it into the app to choose a new "
         "password.</td></tr>"
+    )
+    return subject, _shell(inner)
+
+
+def account_deletion_otp_email(*, name: str, code: str, minutes: int) -> tuple[str, str]:
+    """Returns (subject, html) for the account-deletion OTP. Fixed template."""
+    subject = "Confirm deletion of your Dhara account"
+    inner = (
+        '<tr><td style="font-size:22px;font-weight:700;padding-bottom:8px">Dhara</td></tr>'
+        f'<tr><td style="font-size:15px;line-height:22px">Hi {escape(name or "there")}, '
+        "use this code to permanently delete your Dhara account and all its data.</td></tr>"
+        '<tr><td align="center" style="padding:24px 0">'
+        '<div style="font-size:34px;font-weight:800;letter-spacing:10px;color:#12203A;'
+        'background:#F3EFE7;border-radius:10px;padding:16px 8px">'
+        f"{escape(code)}</div></td></tr>"
+        f'<tr><td style="font-size:14px;line-height:21px;color:#4A5568">This code expires in '
+        f"{minutes} minutes and can be used once. If you did not request this, ignore this "
+        "email — your account will not be deleted without it.</td></tr>"
     )
     return subject, _shell(inner)

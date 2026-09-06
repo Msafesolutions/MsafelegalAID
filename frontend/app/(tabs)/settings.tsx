@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform, Switch, Animated, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform, Switch, Animated, Linking, TextInput, ActivityIndicator } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,14 @@ export default function Settings() {
   // Brief visual confirmation when language changes
   const [langConfirm, setLangConfirm] = useState<string | null>(null);
   const langFadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Account deletion — irreversible, so it requires re-entering the account
+  // password before we call the backend (see handle_permissions/auth-bug
+  // pattern of never dead-ending, but this action is intentionally final).
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const flashLangConfirm = (name: string) => {
     setLangConfirm(name);
@@ -71,6 +79,40 @@ export default function Settings() {
           { text: 'Open Settings', onPress: () => Linking.openSettings() },
         ]
       );
+    }
+  };
+
+  const openDeleteModal = () => {
+    setDeletePassword('');
+    setDeleteError(null);
+    setShowDeleteModal(true);
+  };
+
+  const submitDeleteAccount = async () => {
+    if (!deletePassword) {
+      setDeleteError('Enter your password to confirm.');
+      return;
+    }
+    setDeleteError(null);
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/account/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ password: deletePassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteError(data?.detail || 'Could not delete your account. Please try again.');
+        setDeleteLoading(false);
+        return;
+      }
+      setShowDeleteModal(false);
+      await logout();
+      router.replace('/login');
+    } catch (e: any) {
+      setDeleteError(e?.message || 'Network error. Please try again.');
+      setDeleteLoading(false);
     }
   };
 
@@ -306,6 +348,15 @@ export default function Settings() {
           <Ionicons name="log-out-outline" size={20} color={theme.colors.error} />
           <Text style={styles.logoutText}>Sign out</Text>
         </Pressable>
+
+        <Text style={styles.section}>Danger Zone</Text>
+        <Pressable testID="delete-account-button" style={styles.deleteBtn} onPress={openDeleteModal}>
+          <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+          <Text style={styles.logoutText}>Delete my account</Text>
+        </Pressable>
+        <Text style={styles.deleteHint}>
+          Permanently erases your account, chat history, bookmarks and drafts. This cannot be undone.
+        </Text>
       </ScrollView>
 
       <PickerModal
@@ -342,6 +393,64 @@ export default function Settings() {
             <Text style={styles.termsBody}>{termsText}</Text>
           </ScrollView>
         </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={showDeleteModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => (deleteLoading ? null : setShowDeleteModal(false))}
+        testID="delete-account-modal"
+      >
+        <Pressable
+          style={styles.backdrop}
+          onPress={() => (deleteLoading ? null : setShowDeleteModal(false))}
+        >
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="warning" size={20} color={theme.colors.error} />
+              <Text style={[styles.sheetTitle, { color: theme.colors.error, marginBottom: 0 }]}>Delete account</Text>
+            </View>
+            <Text style={styles.deleteModalBody}>
+              This permanently deletes your account, chat history, bookmarks, drafts and usage
+              data. This cannot be undone. Enter your password to confirm.
+            </Text>
+            <TextInput
+              testID="delete-password-input"
+              style={styles.deletePasswordInput}
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              placeholder="Your password"
+              placeholderTextColor={theme.colors.onSurfaceTertiary}
+              secureTextEntry
+              editable={!deleteLoading}
+            />
+            {deleteError && (
+              <Text style={styles.error} testID="delete-account-error">{deleteError}</Text>
+            )}
+            <Pressable
+              testID="confirm-delete-account-button"
+              style={[styles.dangerConfirmBtn, deleteLoading && { opacity: 0.6 }]}
+              disabled={deleteLoading}
+              onPress={submitDeleteAccount}
+            >
+              {deleteLoading ? (
+                <ActivityIndicator color={theme.colors.onBrandPrimary} />
+              ) : (
+                <Text style={styles.btnText}>Permanently delete my account</Text>
+              )}
+            </Pressable>
+            <Pressable
+              testID="cancel-delete-account-button"
+              style={styles.cancelDeleteBtn}
+              disabled={deleteLoading}
+              onPress={() => setShowDeleteModal(false)}
+            >
+              <Text style={styles.link}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -419,6 +528,27 @@ const styles = StyleSheet.create({
   aboutText: { color: theme.colors.onSurfaceSecondary, lineHeight: 22, fontSize: 13 },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: theme.spacing.lg, marginTop: theme.spacing.xl, borderWidth: 1, borderColor: theme.colors.error, borderRadius: theme.radius.md },
   logoutText: { color: theme.colors.error, fontWeight: '700' },
+  deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: theme.spacing.lg, marginTop: theme.spacing.sm, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceSecondary, borderWidth: 1, borderColor: theme.colors.border },
+  deleteHint: { color: theme.colors.onSurfaceTertiary, fontSize: 12, marginTop: theme.spacing.sm, textAlign: 'center', paddingHorizontal: theme.spacing.md },
+  deleteModalBody: { color: theme.colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19, marginTop: theme.spacing.md, marginBottom: theme.spacing.lg },
+  deletePasswordInput: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    fontSize: 16,
+    color: theme.colors.onSurface,
+    backgroundColor: theme.colors.surfaceSecondary,
+  },
+  dangerConfirmBtn: {
+    backgroundColor: theme.colors.error,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    marginTop: theme.spacing.lg,
+    minHeight: 52,
+  },
+  cancelDeleteBtn: { alignItems: 'center', paddingVertical: theme.spacing.md, minHeight: 44 },
   copyBlock: { alignItems: 'center', marginTop: theme.spacing.xl, paddingVertical: theme.spacing.lg },
   copyLine: { color: theme.colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   copySub: { color: theme.colors.onSurfaceTertiary, fontSize: 11, marginTop: 2, letterSpacing: 0.5 },
@@ -455,5 +585,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  langToastText: { color: theme.colors.onBrandPrimary, fontWeight: '700', fontSize: 14, flex: 1 },
+  error: { color: theme.colors.error, marginTop: theme.spacing.md, fontSize: 13, fontWeight: '600' },
+  btnText: { color: theme.colors.onBrandPrimary, fontWeight: '700', fontSize: 15 },
 });
