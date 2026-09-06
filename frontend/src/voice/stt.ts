@@ -343,13 +343,23 @@ export async function getConfiguredSTT(
  * `languageHint` — optional ISO 639-1 code (e.g. "hi", "ta") to bias Whisper's
  * recognition toward the user's selected language. Massively improves accuracy
  * for Indian languages compared to auto-detect.
+ *
+ * Returns the transcript plus the backend's script-mismatch check (e.g. Telugu
+ * selected but the transcript came back in Kannada script) so the caller can
+ * warn the user before they send a silently-wrong-language query.
  */
+export type WhisperTranscribeResult = {
+  text: string;
+  scriptMismatch: boolean;
+  detectedScript: string | null;
+};
+
 export async function whisperTranscribeFile(
   apiBase: string,
   token: string,
   uri: string,
   languageHint?: string
-): Promise<string> {
+): Promise<WhisperTranscribeResult> {
   const form = new FormData();
   // @ts-expect-error RN FormData file
   form.append('audio', { uri, name: 'audio.m4a', type: 'audio/m4a' });
@@ -369,5 +379,9 @@ export async function whisperTranscribeFile(
     );
   }
   if (!res.ok) throw new Error(data.detail || 'Transcription failed');
-  return data.text || '';
+  return {
+    text: data.text || '',
+    scriptMismatch: !!data.script_mismatch,
+    detectedScript: data.detected_script ?? null,
+  };
 }

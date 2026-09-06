@@ -143,6 +143,12 @@ export default function ChatScreen() {
   // WhatsApp-style voice UX state
   const [transcriptPreview, setTranscriptPreview] = useState<string>('');
   const [showTranscriptModal, setShowTranscriptModal] = useState<boolean>(false);
+  // Set when the backend detects the transcript's script doesn't match the
+  // selected language (e.g. Telugu selected but Whisper mis-heard it as
+  // Kannada — the two scripts are visually similar to the model). Never
+  // blocks sending — just makes the mismatch impossible to miss in the
+  // "We heard" modal before the user taps send.
+  const [transcriptMismatch, setTranscriptMismatch] = useState<{ detected: string | null } | null>(null);
   const [holdElapsed, setHoldElapsed] = useState<number>(0);
   const [slideCancelled, setSlideCancelled] = useState<boolean>(false);
   // TTS playback speed — cycles 1x → 1.5x → 2x → back
@@ -1052,6 +1058,7 @@ export default function ChatScreen() {
         const heardText = (data.text || '').trim();
         setTranscribing(false);
         if (heardText) {
+          setTranscriptMismatch(data.script_mismatch ? { detected: data.detected_script ?? null } : null);
           setTranscriptPreview(heardText);
           setShowTranscriptModal(true);
         } else {
@@ -1066,10 +1073,11 @@ export default function ChatScreen() {
         } catch {}
         if (!uri) { setTranscribing(false); return; }
         if (!token) { setTranscribing(false); return; }
-        const text = await whisperTranscribeFile(API_BASE, token, uri, language?.code);
+        const result = await whisperTranscribeFile(API_BASE, token, uri, language?.code);
         setTranscribing(false);
-        const heardText = (text || '').trim();
+        const heardText = (result.text || '').trim();
         if (heardText) {
+          setTranscriptMismatch(result.scriptMismatch ? { detected: result.detectedScript } : null);
           setTranscriptPreview(heardText);
           setShowTranscriptModal(true);
         } else {
@@ -1292,12 +1300,14 @@ export default function ChatScreen() {
   const cancelTranscript = useCallback(() => {
     setShowTranscriptModal(false);
     setTranscriptPreview('');
+    setTranscriptMismatch(null);
   }, []);
 
   const sendTranscript = useCallback(() => {
     const t = transcriptPreview.trim();
     setShowTranscriptModal(false);
     setTranscriptPreview('');
+    setTranscriptMismatch(null);
     if (t) send(t);
   }, [transcriptPreview, send]);
 
@@ -1306,6 +1316,7 @@ export default function ChatScreen() {
     setInput(transcriptPreview);
     setShowTranscriptModal(false);
     setTranscriptPreview('');
+    setTranscriptMismatch(null);
   }, [transcriptPreview]);
 
   const cycleSpeechRate = useCallback(() => {
@@ -1921,17 +1932,29 @@ export default function ChatScreen() {
               <Ionicons name="mic-circle" size={26} color={theme.colors.brand} />
               <Text style={styles.tcTitle}>We heard</Text>
             </View>
+
+            {transcriptMismatch && (
+              <View style={styles.tcMismatchBanner} testID="transcript-mismatch-warning">
+                <Ionicons name="warning" size={16} color={theme.colors.error} />
+                <Text style={styles.tcMismatchText}>
+                  {transcriptMismatch.detected
+                    ? `This looks like ${transcriptMismatch.detected.charAt(0).toUpperCase()}${transcriptMismatch.detected.slice(1)} script, not ${language?.native || language?.name || 'the selected language'}. Please check before sending — it may search for the wrong words.`
+                    : `This doesn't look like ${language?.native || language?.name || 'the selected language'}. Please check before sending.`}
+                </Text>
+              </View>
+            )}
+
             <Text style={styles.tcText} testID="transcript-text">
               {`\u201C${transcriptPreview}\u201D`}
             </Text>
 
             <Pressable
               testID="transcript-send-btn"
-              style={styles.tcSendBtn}
+              style={[styles.tcSendBtn, transcriptMismatch && styles.tcSendBtnWarn]}
               onPress={sendTranscript}
             >
               <Ionicons name="send" size={16} color={theme.colors.onBrandPrimary} />
-              <Text style={styles.tcSendText}>Correct — send</Text>
+              <Text style={styles.tcSendText}>{transcriptMismatch ? 'Send anyway' : 'Correct — send'}</Text>
             </Pressable>
 
             <View style={styles.tcRow}>
@@ -2576,6 +2599,19 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.lg,
     marginBottom: theme.spacing.md,
   },
+  tcSendBtnWarn: { backgroundColor: theme.colors.error },
+  tcMismatchBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: theme.colors.error + '1A',
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  tcMismatchText: { flex: 1, color: theme.colors.error, fontSize: 13, lineHeight: 18, fontWeight: '600' },
   tcSendText: { color: theme.colors.onBrandPrimary, fontWeight: '800', fontSize: 15 },
   tcRow: { flexDirection: 'row', gap: theme.spacing.md },
   tcSecondaryBtn: {

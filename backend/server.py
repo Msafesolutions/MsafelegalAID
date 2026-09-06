@@ -59,6 +59,7 @@ from corpus_migration import run_corpus_migration
 from push import register_device, unregister_device
 from push_jobs import run_push_jobs_loop
 from account_deletion import hard_delete_user
+from script_guard import check_script_mismatch
 from personal_law import (
     classify_personal_law_topic,
     detect_context as detect_personal_law_context,
@@ -1663,7 +1664,7 @@ async def transcribe(
         try:
             kwargs = {**base_kwargs, **({"language": lang_hint} if lang_hint else {})}
             result = await oc.audio.transcriptions.create(**kwargs)
-            return {"text": result.text}
+            return {"text": result.text, **check_script_mismatch(result.text, language)}
         except Exception as first_err:
             # If we sent a language hint and the proxy rejected it as
             # unsupported, silently retry without the hint so the user still
@@ -1679,7 +1680,7 @@ async def transcribe(
                     lang_hint,
                 )
                 result = await oc.audio.transcriptions.create(**base_kwargs)
-                return {"text": result.text}
+                return {"text": result.text, **check_script_mismatch(result.text, language)}
             raise
     except Exception as e:
         # A very short hold-and-release (or a race where the recorder captures
