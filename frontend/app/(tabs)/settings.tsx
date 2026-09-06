@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform, Switch, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Alert, Platform, Switch, Animated, Linking } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,14 +7,16 @@ import { useRouter } from 'expo-router';
 import { useAuth, API_BASE, Language } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { SOSButton } from '@/src/components/SOSButton';
+import { getPushPermissionState, enablePushNotifications, PushPermissionState } from '@/src/push';
 
 export default function Settings() {
-  const { user, logout, language, setLanguage, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, refreshUser } = useAuth();
+  const { user, token, logout, language, setLanguage, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, refreshUser } = useAuth();
   const router = useRouter();
   const [langs, setLangs] = useState<Language[]>([]);
   const [showLang, setShowLang] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [termsText, setTermsText] = useState('');
+  const [pushState, setPushState] = useState<PushPermissionState>('undetermined');
   // Brief visual confirmation when language changes
   const [langConfirm, setLangConfirm] = useState<string | null>(null);
   const langFadeAnim = useRef(new Animated.Value(0)).current;
@@ -32,7 +34,45 @@ export default function Settings() {
     fetch(`${API_BASE}/api/reference/languages`).then(r => r.json()).then(setLangs);
     fetch(`${API_BASE}/api/legal/terms`).then(r => r.json()).then(d => setTermsText(d.text)).catch(() => {});
     refreshUser();
+    if (Platform.OS !== 'web') {
+      getPushPermissionState().then(setPushState);
+    } else {
+      setPushState('unsupported');
+    }
   }, [refreshUser]);
+
+  const onTogglePush = async (value: boolean) => {
+    if (!value) {
+      // The OS doesn't let an app silently revoke its own notification
+      // permission — send the user to the one place that actually can.
+      Alert.alert(
+        'Turn off notifications',
+        'To stop notifications from Dhara, turn them off in your phone\'s Settings app.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return;
+    }
+    if (!token || !user) return;
+    const result = await enablePushNotifications(token, user.id);
+    if (result.granted) {
+      setPushState('granted');
+      return;
+    }
+    setPushState('denied');
+    if (!result.canAskAgain) {
+      Alert.alert(
+        'Notifications are blocked',
+        'You previously denied notification permission for Dhara. Open Settings to turn it on.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
+  };
 
   const confirmLogout = () => {
     if (Platform.OS === 'web') {
@@ -124,6 +164,29 @@ export default function Settings() {
             thumbColor={theme.colors.surface}
           />
         </View>
+
+        {pushState !== 'unsupported' && (
+          <View style={styles.row} testID="row-push-notifications">
+            <Ionicons name="notifications-outline" size={22} color={theme.colors.brand} />
+            <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+              <Text style={styles.rowTitle}>Push notifications</Text>
+              <Text style={styles.rowValue}>
+                {pushState === 'granted'
+                  ? 'On · reminders about free questions and law updates'
+                  : pushState === 'denied'
+                  ? 'Off · blocked in phone Settings'
+                  : 'Off · get reminders about free questions and law updates'}
+              </Text>
+            </View>
+            <Switch
+              testID="push-notifications-switch"
+              value={pushState === 'granted'}
+              onValueChange={onTogglePush}
+              trackColor={{ true: theme.colors.brandSecondary, false: theme.colors.borderStrong }}
+              thumbColor={theme.colors.surface}
+            />
+          </View>
+        )}
 
         <View style={styles.volumeCard} testID="row-tts-volume">
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>

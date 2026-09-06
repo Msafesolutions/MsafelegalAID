@@ -56,6 +56,8 @@ from corpus_db import (
 from states import STATES, STATE_BY_CODE, is_valid_state, state_name
 from langpolicy import needs_language_repair, repair_prompt, needs_retrieval_translation
 from corpus_migration import run_corpus_migration
+from push import register_device
+from push_jobs import run_push_jobs_loop
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -168,6 +170,12 @@ class ClientErrorLogIn(BaseModel):
     error_message: Optional[str] = None
     platform: Optional[str] = None  # "ios" | "android" | "web"
     retried: Optional[bool] = None
+
+class RegisterPushBody(BaseModel):
+    """Emergent-managed push (SuprSend relay) device registration."""
+    user_id: str
+    platform: str   # "android" | "ios"
+    device_token: str
 
 class TTSIn(BaseModel):
     text: str
@@ -686,6 +694,24 @@ async def client_error_log(body: ClientErrorLogIn, user: dict = Depends(current_
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     return {"ok": True}
+
+# ---------- Push notifications (Emergent-managed / SuprSend relay) ----------
+# Registers this device's push token with the relay so it can be targeted by
+# user_id later (daily nudge + dead-law bookmark alert — see push_jobs.py, or
+# any future ad-hoc send). Never stores the raw device token in our own DB —
+# the relay is the source of truth for token -> user_id mapping.
+@api.post("/register-push")
+async def register_push(body: RegisterPushBody, user: dict = Depends(current_user)):
+    if body.user_id != user["id"]:
+        raise HTTPException(403, "user_id mismatch")
+    try:
+        await register_device(user_id=body.user_id, platform=body.platform, device_token=body.device_token)
+    except Exception as e:
+        logger.warning(f"[push] register_push failed for user {user['id']}: {type(e).__name__}: {e}")
+        # Never fail the caller's app flow over a push-registration hiccup —
+        # the user just won't get push this session; nothing else breaks.
+        return {"status": "failed"}
+    return {"status": "registered"}
 
 # ---------- Chat ----------
 @api.post("/chat/stream")
@@ -2231,6 +2257,11 @@ async def _startup():
     # almost instantly (see run_corpus_migration's per-collection count
     # check) so this is never a startup cost after the first successful run.
     asyncio.create_task(run_corpus_migration(corpus_db, CORPUS_DB_NAME))
+
+    # Fire-and-forget: the daily push-notification loop (re-engagement nudge
+    # + dead-law bookmark sweep — see push_jobs.py). Sleeps until the next
+    # scheduled run internally; costs nothing at boot.
+    asyncio.create_task(run_push_jobs_loop(db, corpus_db))
 
 
 @app.on_event("shutdown")

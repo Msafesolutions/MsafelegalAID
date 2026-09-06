@@ -1,10 +1,11 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { View } from 'react-native';
+import { View, Platform } from 'react-native';
 import { useEffect } from 'react';
 import { theme } from '@/src/theme';
 import { DisclaimerBanner } from '@/src/components/DisclaimerBanner';
 import { useAuth } from '@/src/auth';
+import { addNotificationTapListener } from '@/src/push';
 
 /**
  * Tab layout with a non-dismissible global legal disclaimer banner
@@ -25,6 +26,17 @@ export default function TabsLayout() {
       router.replace('/login');
     }
   }, [token, loading, router]);
+
+  // Tapping a push notification (e.g. the daily nudge, or a dead-law
+  // bookmark alert) routes straight to the relevant screen. Native only —
+  // expo-notifications' tap events aren't applicable on web.
+  useEffect(() => {
+    if (Platform.OS === 'web' || !token) return undefined;
+    const sub = addNotificationTapListener((actionUrl) => {
+      if (actionUrl) router.push(actionUrl as any);
+    });
+    return () => sub.remove();
+  }, [token, router]);
 
   // Don't render tabs at all while unauthenticated — prevents a flash of the
   // settings screen after logout while the redirect is in flight.
