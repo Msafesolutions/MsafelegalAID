@@ -1979,6 +1979,14 @@ from corpus_labour import LABOUR_CORPUS  # noqa: E402
 
 CORPUS.extend(LABOUR_CORPUS)
 
+# Citizen-rights clusters (protest/assembly, FIR refusal, bail, under-trial
+# detention, consumer protection, RTI, child labour/marriage, senior-citizen
+# maintenance) — audited against the MongoDB corpus and added as their own
+# module, same pattern as LABOUR_CORPUS above.
+from corpus_rights import RIGHTS_CORPUS  # noqa: E402
+
+CORPUS.extend(RIGHTS_CORPUS)
+
 # Non-Indian jurisdictions — trap-question refusal helper
 NON_INDIAN_JURISDICTION_KEYWORDS = [
     "texas", "california", "florida", "new york state", "uk law", "united kingdom law",
