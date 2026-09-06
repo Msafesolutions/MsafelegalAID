@@ -59,6 +59,13 @@ from corpus_migration import run_corpus_migration
 from push import register_device, unregister_device
 from push_jobs import run_push_jobs_loop
 from account_deletion import hard_delete_user
+from personal_law import (
+    classify_personal_law_topic,
+    detect_context as detect_personal_law_context,
+    act_hint_phrase,
+    disambiguation_question,
+    act_disclaimer,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -950,6 +957,32 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     elif is_non_legal_advice(retrieval_text):
         early_refusal = REFUSAL_NOT_LEGAL
 
+    # -------- Personal-law disambiguation (marriage/succession) --------
+    # Hindu Marriage Act vs Special Marriage Act vs Muslim/Christian personal
+    # law (same for succession) give DIFFERENT sections for the same real-life
+    # question — answering under the wrong one is a wrong citation. Ask once
+    # (remembered for the rest of THIS chat thread) instead of guessing; see
+    # personal_law.py for the full design note.
+    personal_law_topic: Optional[str] = None
+    personal_law_note: Optional[str] = None
+    if not early_refusal:
+        personal_law_topic = classify_personal_law_topic(retrieval_text)
+        if personal_law_topic:
+            personal_law_ctx = detect_personal_law_context(retrieval_text) or (
+                (session or {}).get("personal_law_context") or {}
+            ).get(personal_law_topic)
+            if not personal_law_ctx:
+                early_refusal = disambiguation_question(personal_law_topic)
+            else:
+                await db.sessions.update_one(
+                    {"id": session_id},
+                    {"$set": {f"personal_law_context.{personal_law_topic}": personal_law_ctx}},
+                )
+                hint = act_hint_phrase(personal_law_ctx, personal_law_topic)
+                if hint:
+                    retrieval_text = f"{retrieval_text} ({hint})"
+                personal_law_note = act_disclaimer(personal_law_ctx, personal_law_topic)
+
     # (b) Corpus retrieval — deterministic keyword match against verified statutes
     retrieved = [] if early_refusal else corpus_retrieve(retrieval_text, limit=3)
 
@@ -1097,6 +1130,12 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             cause_code = "not_legal_advice_request"
             sub_cause = None
             dbg = {"top_score": None, "top_key": None, "content_tokens": None}
+        elif personal_law_topic and personal_law_note is None:
+            # This early_refusal is the disambiguation clarifying question,
+            # not a genuine "nothing verified for this topic" refusal.
+            cause_code = "personal_law_disambiguation"
+            sub_cause = personal_law_topic
+            dbg = {"top_score": None, "top_key": None, "content_tokens": None}
         else:
             cause_code = "no_corpus_match"
             dbg = top_candidate_debug(retrieval_text)
@@ -1239,6 +1278,8 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             status = "refused_non_indian"
         elif early_refusal == REFUSAL_NOT_LEGAL:
             status = "refused_not_legal"
+        elif personal_law_topic and personal_law_note is None and early_refusal:
+            status = "personal_law_disambiguation_asked"
         else:
             status = "ok"
         doc = {
@@ -1436,6 +1477,11 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
                     sanitized = translated
             except Exception:
                 logger.exception("reply-language repair failed")
+
+        # Append the personal-law disclaimer (see above) so the user always
+        # sees which religion/marriage-type's law was applied.
+        if personal_law_note and not errored and (sanitized or full):
+            sanitized = (sanitized or full) + f"\n\n{personal_law_note}"
 
         if sanitized != full:
             # Overwrite the accumulated text on the client with the sanitized version.

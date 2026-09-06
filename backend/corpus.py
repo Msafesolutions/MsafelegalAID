@@ -206,6 +206,20 @@ CORPUS = [
             "bnss 43", "bnss 43(5)", "section 43 bnss", "arrest at night", "arrest after sunset",
             "no arrest at night", "woman arrest", "female arrest", "night arrest woman",
             "arrest sunset sunrise", "woman police officer arrest", "arrest at night woman",
+            "daughter", "wife", "sister", "mother", "girlfriend", "girl", "lady", "ladies",
+        ],
+        # Gate: this section is ONLY about the TIMING of a woman's arrest. Without
+        # either a direct label mention OR a real night-time signal, "arrest" +
+        # "police" alone would also match a completely unrelated daytime arrest
+        # question (e.g. "my daughter was arrested for shoplifting") — the
+        # require_any pattern (already used for the RTI/helmet entries above)
+        # stops that: no night-time evidence at all means this entry is skipped
+        # entirely, not just scored low.
+        "require_any": [
+            "bnss 43", "43(5)", "section 43",
+            "night", "sunset", "sunrise", "midnight",
+            "6pm", "7pm", "8pm", "9pm", "10pm", "11pm", "12pm",
+            "1am", "2am", "3am", "4am", "5am", "6am", "12am",
         ],
     },
     {

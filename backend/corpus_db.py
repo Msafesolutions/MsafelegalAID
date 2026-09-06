@@ -158,6 +158,20 @@ _ACT_HINTS: dict[str, re.Pattern] = {
     "Right to Information": re.compile(r"\brti\b|right\s+to\s+information", re.I),
     "Labour Code|Code on Wages": re.compile(r"wages\s+code|code\s+on\s+wages", re.I),
     "Insolvency and Bankruptcy": re.compile(r"\bibc\b|insolvency.*bankruptcy", re.I),
+    # ── Personal law (marriage/succession) — added alongside personal_law.py's
+    # disambiguation flow. Each pattern is intentionally topic-specific (marriage
+    # vs succession) so a marriage-only signal never boosts a succession Act and
+    # vice-versa; server.py additionally appends one of these exact phrases to
+    # the retrieval text once a religion/context is known, so these patterns
+    # ALSO fire reliably off that silent hint rather than needing the user's
+    # own wording to happen to match.
+    "Hindu Marriage Act": re.compile(r"hindu\s+marriage\s+act|\bhma\b", re.I),
+    "Hindu Succession Act": re.compile(r"hindu\s+succession\s+act|\bhsa\b", re.I),
+    "Special Marriage Act": re.compile(r"special\s+marriage\s+act", re.I),
+    "Indian Christian Marriage Act": re.compile(r"indian\s+christian\s+marriage\s+act|christian\s+marriage\s+act", re.I),
+    "Dissolution of Muslim Marriages Act": re.compile(r"dissolution\s+of\s+muslim\s+marriages\s+act", re.I),
+    "Indian Succession Act": re.compile(r"indian\s+succession\s+act", re.I),
+    "Muslim Personal Law": re.compile(r"muslim\s+personal\s+law|shariat\s+application\s+act", re.I),
 }
 
 
