@@ -2449,36 +2449,3 @@ async def _startup():
 @app.on_event("shutdown")
 async def _shutdown():
     client.close()
-
-
-# ============================================================================
-# Serve the Expo web build from this same service.
-#
-# The EAS deploy template's nginx proxies EVERY path to this FastAPI app
-# (location / -> 127.0.0.1:8001) and builds no web bundle of its own, so
-# without this the deployment answers "/" with API JSON and there is no
-# website for a custom domain to point at. Every API route lives under the
-# /api prefix and /health is registered near the top of this file, so both
-# are matched before the catch-all below ever runs.
-#
-# Regenerate the bundle from frontend/ with:
-#   npx expo export --platform web --output-dir ../backend/webdist
-# ============================================================================
-from fastapi.staticfiles import StaticFiles as _StaticFiles
-from fastapi.responses import FileResponse as _FileResponse
-from pathlib import Path as _WebPath
-
-_WEB_DIR = _WebPath(__file__).parent / "webdist"
-
-if _WEB_DIR.is_dir():
-    _expo_assets = _WEB_DIR / "_expo"
-    if _expo_assets.is_dir():
-        app.mount("/_expo", _StaticFiles(directory=str(_expo_assets)), name="expo_assets")
-
-    @app.get("/{web_path:path}", include_in_schema=False)
-    async def _serve_expo_web(web_path: str):
-        root = _WEB_DIR.resolve()
-        candidate = (_WEB_DIR / web_path).resolve()
-        if web_path and str(candidate).startswith(str(root)) and candidate.is_file():
-            return _FileResponse(candidate)
-        return _FileResponse(root / "index.html")
