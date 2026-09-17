@@ -28,6 +28,7 @@ import {
   createAudioPlayer,
   type AudioPlayer,
 } from 'expo-audio';
+import { speakNative, stopNativeTTS } from '@/src/voice/native-tts';
 import { ChunkedSpeaker } from '@/src/voice/tts';
 import { File, Paths } from 'expo-file-system';
 import { useAuth, API_BASE, logClientError } from '@/src/auth';
@@ -132,7 +133,7 @@ const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicon
 ];
 
 export default function ChatScreen() {
-  const { token, user, language, model, autoSpeak, ttsVolume, refreshUser, forceLogout } = useAuth();
+  const { token, user, language, model, autoSpeak, ttsVolume, ttsVoiceMode, refreshUser, forceLogout } = useAuth();
   const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>([]);
   // Per-message toggle for the "View Legal Details" summary-first disclosure.
@@ -748,12 +749,30 @@ export default function ChatScreen() {
       // Toggle: tapping speaker while loading OR playing immediately stops
       if (speakingId === msgId || ttsLoadingId === msgId) {
         stopCloudTTS();
+        stopNativeTTS();
         return;
       }
       // Any other playback -> stop it first
       stopCloudTTS();
+      stopNativeTTS();
 
       if (!text || !text.trim() || !token) return;
+
+      // ── Native device TTS (free Indian accent voices) ────────────────────
+      if (ttsVoiceMode === 'device-female' || ttsVoiceMode === 'device-male') {
+        setSpeakingId(msgId);
+        speakingIdRef.current = msgId;
+        const gender = ttsVoiceMode === 'device-female' ? 'female' : 'male';
+        speakNative(text, language?.code ?? 'en', gender, () => {
+          if (speakingIdRef.current === msgId) {
+            setSpeakingId(null);
+            speakingIdRef.current = null;
+          }
+        });
+        return;
+      }
+
+      // ── Cloud TTS (streamed, highest quality) ────────────────────────────
 
       // Force iOS silent-switch playback and disable recording-mode conflicts
       try {
@@ -926,7 +945,7 @@ export default function ChatScreen() {
       // still keeps the FIRST request short, which is where the latency win comes from.
       speaker.end(text.slice(0, 3800));
     },
-    [speakingId, ttsLoadingId, language, speechRate, ttsVolume, token, stopCloudTTS],
+    [speakingId, ttsLoadingId, language, speechRate, ttsVolume, ttsVoiceMode, token, stopCloudTTS],
   );
   speakRef.current = speak;
 

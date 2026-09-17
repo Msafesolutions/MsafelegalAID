@@ -1,17 +1,17 @@
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Modal, Platform, Switch, Animated, Linking, TextInput, ActivityIndicator } from 'react-native';
 import { crossAlert } from '@/src/utils/crossAlert';
 import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useAuth, API_BASE, Language } from '@/src/auth';
+import { useAuth, API_BASE, Language, TtsVoiceMode } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { SOSButton } from '@/src/components/SOSButton';
 import { getPushPermissionState, enablePushNotifications, PushPermissionState } from '@/src/push';
 
 export default function Settings() {
-  const { user, token, logout, language, setLanguage, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, refreshUser } = useAuth();
+  const { user, token, logout, language, setLanguage, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, ttsVoiceMode, setTtsVoiceMode, refreshUser } = useAuth();
   const router = useRouter();
   const [langs, setLangs] = useState<Language[]>([]);
   const [showLang, setShowLang] = useState(false);
@@ -249,6 +249,44 @@ export default function Settings() {
             maximumTrackTintColor={theme.colors.borderStrong}
             thumbTintColor={theme.colors.brand}
           />
+        </View>
+
+        {/* ── Voice accent ────────────────────────────────────────────── */}
+        <View style={styles.volumeCard} testID="row-voice-mode">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
+            <Ionicons name="mic-outline" size={22} color={theme.colors.brand} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Voice accent</Text>
+              <Text style={styles.rowValue}>Choose the accent used for spoken answers</Text>
+            </View>
+          </View>
+          {(
+            [
+              { key: 'cloud',         label: 'Cloud TTS',      sub: 'High quality · uses credits', icon: 'cloud-outline' },
+              { key: 'device-female', label: 'Device · Female', sub: 'Free · Indian accent (en-IN)', icon: 'woman-outline' },
+              { key: 'device-male',   label: 'Device · Male',   sub: 'Free · Indian accent (en-IN)', icon: 'man-outline'   },
+            ] as { key: TtsVoiceMode; label: string; sub: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[]
+          ).map(({ key, label, sub, icon }) => (
+            <Pressable
+              key={key}
+              testID={`voice-mode-${key}`}
+              style={[styles.voiceModeRow, ttsVoiceMode === key && styles.voiceModeRowActive]}
+              onPress={() => setTtsVoiceMode(key)}
+            >
+              <Ionicons
+                name={icon}
+                size={18}
+                color={ttsVoiceMode === key ? theme.colors.onBrandPrimary : theme.colors.brand}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.voiceModeLabel, ttsVoiceMode === key && styles.voiceModeLabelActive]}>{label}</Text>
+                <Text style={[styles.voiceModeSub, ttsVoiceMode === key && styles.voiceModeSubActive]}>{sub}</Text>
+              </View>
+              {ttsVoiceMode === key && (
+                <Ionicons name="checkmark-circle" size={18} color={theme.colors.onBrandPrimary} />
+              )}
+            </Pressable>
+          ))}
         </View>
 
         <Text style={styles.section}>Today&apos;s free usage</Text>
@@ -500,6 +538,19 @@ const styles = StyleSheet.create({
   section: { fontFamily: theme.fonts.display, fontSize: 16, color: theme.colors.brand, marginTop: theme.spacing.xl, marginBottom: theme.spacing.sm, fontWeight: '700' },
   row: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.lg, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, marginBottom: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border },
   volumeCard: { padding: theme.spacing.lg, backgroundColor: theme.colors.surfaceSecondary, borderRadius: theme.radius.md, marginBottom: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border },
+  voiceModeRow: {
+    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md,
+    paddingVertical: theme.spacing.sm, paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface, marginBottom: 6,
+  },
+  voiceModeRowActive: {
+    backgroundColor: theme.colors.brand, borderColor: theme.colors.brand,
+  },
+  voiceModeLabel: { fontSize: 14, fontWeight: '600', color: theme.colors.onSurface },
+  voiceModeLabelActive: { color: theme.colors.onBrandPrimary },
+  voiceModeSub: { fontSize: 12, color: theme.colors.onSurfaceSecondary, marginTop: 2 },
+  voiceModeSubActive: { color: 'rgba(255,255,255,0.75)' },
   rowTitle: { color: theme.colors.onSurface, fontWeight: '600' },
   rowValue: { color: theme.colors.onSurfaceSecondary, fontSize: 13, marginTop: 2 },
   sosRow: {

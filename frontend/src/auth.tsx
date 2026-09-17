@@ -9,6 +9,7 @@ const LANG_KEY = 'gk_lang';
 const MODEL_KEY = 'gk_model';
 const AUTO_SPEAK_KEY = 'dhara_auto_speak';
 const TTS_VOLUME_KEY = 'dhara_tts_volume';
+const TTS_VOICE_KEY  = 'dhara_tts_voice';
 
 export type User = { id: string; email: string; name: string; phone?: string; language: string; state?: string | null; state_name?: string; is_grandfathered?: boolean; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; drafts_used?: number; drafts_free_limit?: number; drafts_remaining?: number; daily_queries_cap?: number | null; daily_queries_left?: number | null; daily_questions_cap?: number | null; daily_questions_left?: number | null; daily_voice_cap?: number | null; daily_voice_left?: number | null; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
 export type Language = { code: string; name: string; native: string; tts: string };
@@ -27,6 +28,9 @@ type AuthCtx = {
   /** Playback loudness for spoken answers, 0.0–1.0. Persisted across sessions. */
   ttsVolume: number;
   setTtsVolume: (v: number) => Promise<void>;
+  /** Voice engine for spoken answers: cloud TTS or a free native Indian accent. */
+  ttsVoiceMode: TtsVoiceMode;
+  setTtsVoiceMode: (v: TtsVoiceMode) => Promise<void>;
   setUserState: (code: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, phone: string, terms_accepted: boolean, terms_version: string) => Promise<void>;
@@ -44,8 +48,9 @@ type AuthCtx = {
   forceLogout: () => Promise<void>;
 };
 
-const DEFAULT_LANG: Language = { code: 'en', name: 'English', native: 'English', tts: 'en-IN' };
-const DEFAULT_MODEL: ModelChoice = { provider: 'anthropic', name: 'claude-sonnet-4-5-20250929', label: 'Dhara AI', recommended: true };
+export type TtsVoiceMode = 'cloud' | 'device-female' | 'device-male';
+const DEFAULT_LANG:  Language     = { code: 'en', name: 'English', native: 'English', tts: 'en-IN' };
+const DEFAULT_MODEL: ModelChoice  = { provider: 'anthropic', name: 'claude-sonnet-4-5-20250929', label: 'Dhara AI', recommended: true };
 
 const Ctx = createContext<AuthCtx | null>(null);
 
@@ -57,17 +62,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [model, setModelState] = useState<ModelChoice>(DEFAULT_MODEL);
   const [autoSpeak, setAutoSpeakState] = useState<boolean>(true);
   const [ttsVolume, setTtsVolumeState] = useState<number>(1.0);
+  const [ttsVoiceMode, setTtsVoiceModeState] = useState<TtsVoiceMode>('cloud');
   const [sessionExpired, setSessionExpired] = useState<boolean>(false);
 
   useEffect(() => {
     (async () => {
-      const [t, u, l, m, a, v] = await Promise.all([
+      const [t, u, l, m, a, v, vm] = await Promise.all([
         AsyncStorage.getItem(TOKEN_KEY),
         AsyncStorage.getItem(USER_KEY),
         AsyncStorage.getItem(LANG_KEY),
         AsyncStorage.getItem(MODEL_KEY),
         AsyncStorage.getItem(AUTO_SPEAK_KEY),
         AsyncStorage.getItem(TTS_VOLUME_KEY),
+        AsyncStorage.getItem(TTS_VOICE_KEY),
       ]);
       if (t) setToken(t);
       if (u) setUser(JSON.parse(u));
@@ -77,6 +84,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (v !== null) {
         const n = parseFloat(v);
         if (!Number.isNaN(n)) setTtsVolumeState(Math.min(1, Math.max(0, n)));
+      }
+      if (vm === 'cloud' || vm === 'device-female' || vm === 'device-male') {
+        setTtsVoiceModeState(vm);
       }
       setLoading(false);
     })();
@@ -165,6 +175,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(TTS_VOLUME_KEY, String(clamped));
   }, []);
 
+  const setTtsVoiceMode = useCallback(async (v: TtsVoiceMode) => {
+    setTtsVoiceModeState(v);
+    await AsyncStorage.setItem(TTS_VOICE_KEY, v);
+  }, []);
+
   // Jurisdiction — state / UT decides rent, liquor, stamp duty and traffic fine
   // amounts, so the server needs it to serve the local rule with the answer.
   const setUserState = useCallback(async (code: string) => {
@@ -188,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token, forceLogout]);
 
   return (
-    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, setUserState, login, register, logout, refreshUser, hydrateSession: persist, sessionExpired, clearSessionExpired, forceLogout }}>
+    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, ttsVoiceMode, setTtsVoiceMode, setUserState, login, register, logout, refreshUser, hydrateSession: persist, sessionExpired, clearSessionExpired, forceLogout }}>
       {children}
     </Ctx.Provider>
   );

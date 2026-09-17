@@ -18,6 +18,18 @@ export default function Root({ children }: PropsWithChildren) {
           set `overflow: auto` on the body style below.
         */}
         <ScrollViewStyleReset />
+        {/* ── Icon fonts ─────────────────────────────────────────────────────
+            @expo/vector-icons injects its own font-face asynchronously via JS,
+            so the very first render can show empty squares for all icons.
+            Declaring the face here (before any React hydration) eliminates that
+            flash.  The CDN URL matches the package version in package.json.     */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          @font-face {
+            font-family: 'Ionicons';
+            src: url('https://cdn.jsdelivr.net/npm/@expo/vector-icons@15.1.1/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf') format('truetype');
+            font-display: block;
+          }
+        ` }} />
         <style
           dangerouslySetInnerHTML={{
             __html: `
