@@ -9,14 +9,14 @@ import { theme } from '@/src/theme';
 type Topic = { id: string; icon: string; title: string; summary: string; law: string; points: string[] };
 
 const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
-  shield: 'shield-checkmark',
-  handcuffs: 'lock-closed',
-  'file-text': 'document-text',
-  heart: 'heart',
-  car: 'car',
-  info: 'information-circle',
-  'shopping-bag': 'bag-handle',
-  home: 'home',
+  shield: 'shield-half-outline',       // Rights during a police stop — authority + protection
+  handcuffs: 'lock-closed-outline',    // Rights when arrested — detained/locked
+  'file-text': 'document-text-outline', // How to file an FIR — filing a document
+  heart: 'heart-outline',              // Women's safety — care and protection
+  car: 'car-outline',                  // Traffic law — vehicles
+  info: 'eye-outline',                 // RTI — right to *see* information
+  'shopping-bag': 'receipt-outline',   // Consumer rights — purchase receipts
+  home: 'home-outline',                // Domestic violence — home context
 };
 
 export default function Rights() {
@@ -52,7 +52,7 @@ export default function Rights() {
             >
               <View style={styles.cardHead}>
                 <View style={styles.iconWrap}>
-                  <Ionicons name={ICON_MAP[t.icon] || 'library'} size={24} color={theme.colors.brand} />
+                  <Ionicons name={ICON_MAP[t.icon] || 'library-outline'} size={24} color={theme.colors.brand} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.cardTitle}>{t.title}</Text>
@@ -63,7 +63,7 @@ export default function Rights() {
               {open && (
                 <View style={styles.body}>
                   <View style={styles.lawPill}>
-                    <Ionicons name="book" size={14} color={theme.colors.brandSecondary} />
+                    <Ionicons name="book-outline" size={14} color={theme.colors.brandSecondary} />
                     <Text style={styles.lawText}>{t.law}</Text>
                   </View>
                   {t.points.map((p, i) => (
@@ -77,7 +77,7 @@ export default function Rights() {
                     style={styles.askBtn}
                     onPress={() => router.push('/(tabs)')}
                   >
-                    <Ionicons name="chatbubbles" size={16} color={theme.colors.onBrandPrimary} />
+                    <Ionicons name="chatbubbles-outline" size={16} color={theme.colors.onBrandPrimary} />
                     <Text style={styles.askText}>Ask Dhara more</Text>
                   </Pressable>
                 </View>

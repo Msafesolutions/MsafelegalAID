@@ -125,8 +125,8 @@ export default function Login() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.dhara.navy },
   scroll: { flexGrow: 1, padding: theme.spacing.xl, justifyContent: 'center' },
-  // Fixed square dimensions + resizeMode="contain" — the logo can never stretch.
-  logo: { width: 84, height: 84, alignSelf: 'center', borderRadius: 20, marginBottom: 12 },
+  // Strict 1:1 square + contain → zero distortion on every viewport
+  logo: { width: 88, height: 88, aspectRatio: 1, alignSelf: 'center', borderRadius: 22, marginBottom: 12 },
   brand: { fontFamily: theme.fonts.display, fontSize: 44, color: theme.colors.onBrandPrimary, textAlign: 'center', fontWeight: '700' },
   // Tagline: gold-on-navy — 6.29:1 ✅ WCAG AA
   tag: { color: theme.dhara.gold, textAlign: 'center', marginTop: 8, fontSize: 15, fontWeight: '600' },

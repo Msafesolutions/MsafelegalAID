@@ -104,17 +104,30 @@ type Msg = {
   saved?: boolean;
 };
 
+/**
+ * Generate a RFC-4122 v4 UUID for new conversation sessions.
+ * Used on the frontend so "New Chat" owns its session ID immediately,
+ * preventing race conditions where an in-flight SSE stream from the
+ * previous conversation could overwrite the new session ID.
+ */
+const generateId = (): string =>
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16);
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+
 const BASIC_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
-  { text: 'My cheque bounced — what is the notice deadline?', icon: 'card-outline' },
-  { text: 'Money gone in a UPI fraud — what do I do first?', icon: 'warning-outline' },
+  { text: 'My cheque bounced — what is the notice deadline?', icon: 'receipt-outline' },
+  { text: 'Money gone in a UPI fraud — what do I do first?', icon: 'shield-outline' },
   { text: 'What is the fine for riding without a helmet?', icon: 'car-outline' },
   { text: 'What is the helmet law for a child riding pillion?', icon: 'shield-checkmark-outline' },
 ];
 
 const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
-  { text: 'Draft a first appeal for an unanswered RTI', icon: 'create-outline' },
-  { text: 'Complain about a defective online product — full steps', icon: 'list-outline' },
-  { text: 'Draft an RTI asking for a certified FIR copy', icon: 'file-tray-outline' },
+  { text: 'Draft a first appeal for an unanswered RTI', icon: 'document-text-outline' },
+  { text: 'Complain about a defective online product — full steps', icon: 'bag-handle-outline' },
+  { text: 'Draft an RTI asking for a certified FIR copy', icon: 'eye-outline' },
   { text: 'Escalation path for a domestic violence case', icon: 'trending-up-outline' },
 ];
 
@@ -212,6 +225,12 @@ export default function ChatScreen() {
   const ttsPlayerReleaseTimerRef = useRef<any>(null);
   /** Active chunked speaker, so stopCloudTTS() can tear the whole queue down. */
   const speakerRef = useRef<ChunkedSpeaker | null>(null);
+  /**
+   * Conversation generation counter. Incremented each time the user starts a
+   * new conversation so that a racing SSE session-frame from the *previous*
+   * request cannot overwrite the freshly-assigned session ID.
+   */
+  const convKeyRef = useRef<number>(0);
   /**
    * Web only. `HTMLMediaElement.play()` returns a promise that the browser
    * REJECTS with an AbortError ("The play() request was interrupted by a call
@@ -484,6 +503,9 @@ export default function ChatScreen() {
          * Only text-bearing frames update the UI. Metadata frames are handled internally.
          */
         // Jurisdiction metadata frames — mutated in place by the parser below.
+        // Capture the conversation key at request-start so we can guard the
+        // SSE session-frame update against a stale in-flight response.
+        const capturedConvKey = convKeyRef.current;
         const stateMeta: { prompt: string | null; note: string | null } = { prompt: null, note: null };
         const parseSseBuffer = (
           buf: string,
@@ -517,7 +539,11 @@ export default function ChatScreen() {
             if (!payload || typeof payload !== 'object' || !('type' in payload)) continue;
             switch (payload.type) {
               case 'session':
-                if (payload.session_id) setSessionId(payload.session_id);
+                // Only update if we are still in the same conversation
+                // generation (i.e. startNewChat wasn't pressed mid-stream).
+                if (payload.session_id && capturedConvKey === convKeyRef.current) {
+                  setSessionId(payload.session_id);
+                }
                 if (typeof payload.samples_remaining_after === 'number') {
                   setSamplesRemaining(payload.samples_remaining_after);
                 }
@@ -1329,9 +1355,16 @@ export default function ChatScreen() {
   }, []);
 
   const startNewChat = useCallback(() => {
+    // Increment conversation key FIRST so any in-flight SSE session-frame
+    // from the old stream cannot overwrite the new session ID.
+    convKeyRef.current += 1;
     setMessages([]);
-    setSessionId(null);
+    // Pre-generate a UUID so this conversation owns its ID from the moment
+    // "New Conversation" is pressed — no races with backend session frames.
+    setSessionId(generateId());
     setInput('');
+    setExpandedDetails({});
+    setSamplesRemaining(null);
   }, []);
 
   const activeSuggestions = proMode ? PRO_SUGGESTIONS : BASIC_SUGGESTIONS;
@@ -1472,9 +1505,16 @@ export default function ChatScreen() {
             style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
           />
           <View>
-            <Text style={styles.modeLabelCompact}>
-              {proMode ? '⚖️ Pro mode' : '📖 Basic mode'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons
+                name={proMode ? 'scale-outline' : 'book-outline'}
+                size={13}
+                color={theme.colors.brand}
+              />
+              <Text style={styles.modeLabelCompact}>
+                {proMode ? 'Pro mode' : 'Basic mode'}
+              </Text>
+            </View>
             <Text style={styles.modeSubCompact}>
               {proMode
                 ? isPro
@@ -1657,7 +1697,10 @@ export default function ChatScreen() {
                             </Text>
                           )}
                           <View style={styles.citationsWrap} testID={`citations-${m.id}`}>
-                            <Text style={styles.citationsHeader}>📚 Verified sources</Text>
+                            <View style={styles.citationsHeaderRow}>
+                      <Ionicons name="library-outline" size={11} color={theme.colors.brand} />
+                      <Text style={styles.citationsHeader}>Verified sources</Text>
+                    </View>
                             {m.citations!.map((c) => (
                               <View key={c.key} style={styles.citationCard}>
                                 <View style={styles.citationHead}>
@@ -1691,7 +1734,10 @@ export default function ChatScreen() {
                     (the summary-first collapse only kicks in once streaming ends). */}
                 {m.role === 'assistant' && streaming && m.citations && m.citations.length > 0 && (
                   <View style={styles.citationsWrap} testID={`citations-${m.id}`}>
-                    <Text style={styles.citationsHeader}>📚 Verified sources</Text>
+                    <View style={styles.citationsHeaderRow}>
+                      <Ionicons name="library-outline" size={11} color={theme.colors.brand} />
+                      <Text style={styles.citationsHeader}>Verified sources</Text>
+                    </View>
                     {m.citations.map((c) => (
                       <View key={c.key} style={styles.citationCard}>
                         <View style={styles.citationHead}>
@@ -2287,12 +2333,17 @@ const styles = StyleSheet.create({
     color: theme.colors.brand,
   },
 
+  citationsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+  },
   citationsHeader: {
     fontSize: 11,
     fontWeight: '800',
     color: theme.colors.brand,
     letterSpacing: 0.5,
-    marginBottom: 2,
   },
   citationCard: {
     borderWidth: 1,

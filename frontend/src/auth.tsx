@@ -45,7 +45,7 @@ type AuthCtx = {
 };
 
 const DEFAULT_LANG: Language = { code: 'en', name: 'English', native: 'English', tts: 'en-IN' };
-const DEFAULT_MODEL: ModelChoice = { provider: 'anthropic', name: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5', recommended: true };
+const DEFAULT_MODEL: ModelChoice = { provider: 'anthropic', name: 'claude-sonnet-4-5-20250929', label: 'Dhara AI', recommended: true };
 
 const Ctx = createContext<AuthCtx | null>(null);
 

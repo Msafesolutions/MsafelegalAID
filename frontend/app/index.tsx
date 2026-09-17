@@ -34,8 +34,8 @@ export default function Index() {
 
 const styles = StyleSheet.create({
   c: { flex: 1, backgroundColor: theme.colors.brand, alignItems: 'center', justifyContent: 'center' },
-  // Square dims + contain → aspect ratio always preserved
-  logo: { width: 96, height: 96, borderRadius: 22, marginBottom: 16 },
+  // Strict 1:1 square + contain → zero distortion on every viewport
+  logo: { width: 88, height: 88, aspectRatio: 1, borderRadius: 22, marginBottom: 16 },
   brand: { fontFamily: theme.fonts.display, fontSize: 40, color: theme.colors.onBrandPrimary, fontWeight: '700' },
   tag: { fontFamily: theme.fonts.body, color: theme.colors.brandSecondary, marginTop: 12, fontSize: 16 },
 });

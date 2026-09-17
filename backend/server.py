@@ -2035,7 +2035,7 @@ LANGUAGES = [
 ]
 
 MODELS = [
-    {"provider": "anthropic", "name": "claude-sonnet-4-5-20250929", "label": "Claude Sonnet 4.5", "recommended": True},
+    {"provider": "anthropic", "name": "claude-sonnet-4-5-20250929", "label": "Dhara AI", "recommended": True},
     {"provider": "openai", "name": "gpt-5.2", "label": "GPT-5.2"},
     {"provider": "gemini", "name": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro"},
 ]
@@ -2171,7 +2171,7 @@ async def pricing():
             "Step-by-step action plans with jurisdiction & authority names",
             "Counter-arguments & pitfalls analysis",
             "Escalation paths (SP, DM, HRC, NALSA, Consumer Commission)",
-            "Priority AI models (Claude Sonnet 4.5)",
+            "Priority AI models",
         ],
     }
 
