@@ -1476,6 +1476,14 @@ export default function ChatScreen() {
             <Ionicons name="add" size={16} color={theme.colors.brand} />
             <Text style={styles.newChatText}>New Chat</Text>
           </Pressable>
+          <Pressable
+            testID="history-header-btn"
+            style={styles.historyHeaderBtn}
+            onPress={() => router.push('/(tabs)/history')}
+            hitSlop={6}
+          >
+            <Ionicons name="time-outline" size={22} color={theme.colors.brand} />
+          </Pressable>
         </View>
       </View>
 
@@ -2154,7 +2162,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     minHeight: 32,
   },
-  newChatText: { color: theme.colors.brand, fontSize: 12, fontWeight: '700' },
+  historyHeaderBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.colors.border,
+  },
   usageRow: {
     flexDirection: 'row',
     gap: theme.spacing.sm,

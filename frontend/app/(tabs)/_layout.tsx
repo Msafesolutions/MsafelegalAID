@@ -94,10 +94,17 @@ export default function TabsLayout() {
             name="history"
             options={{
               title: 'History',
+              tabBarButton: () => null, // hidden from tab bar; accessible via header icon
+            }}
+          />
+          <Tabs.Screen
+            name="lookup"
+            options={{
+              title: 'Lookup',
               tabBarIcon: ({ color, size }) => (
-                <Ionicons name="time-outline" size={size} color={color} />
+                <Ionicons name="search-outline" size={size} color={color} />
               ),
-              tabBarButtonTestID: 'tab-history',
+              tabBarButtonTestID: 'tab-lookup',
             }}
           />
           <Tabs.Screen

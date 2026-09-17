@@ -2,7 +2,7 @@
 import os
 import io
 import re
-import json
+import httpx
 import uuid
 import asyncio
 import hmac
@@ -83,6 +83,10 @@ RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
 RAZORPAY_ME_HANDLE = os.environ.get("RAZORPAY_ME_HANDLE", "calviltech")
 RAZORPAY_ME_URL = os.environ.get("RAZORPAY_ME_URL", "https://razorpay.me/@calviltech")
+
+# ─── eCourtsIndia partner API ──────────────────────────────────────────────────
+ECOURTS_TOKEN = os.getenv("ECOURTS_API_TOKEN", "")
+ECOURTS_BASE  = os.getenv("ECOURTS_API_BASE", "https://webapi.ecourtsindia.com")
 PRO_PRICE_INR = int(os.environ.get("PRO_PRICE_INR", "9900"))  # paise (₹99)
 PRO_PRICE_LABEL = os.environ.get("PRO_PRICE_LABEL", "₹99")
 PRO_PRICE_USD = int(os.environ.get("PRO_PRICE_USD", "500"))  # cents
@@ -2417,6 +2421,81 @@ async def get_download(filename: str):
     )
     return FileResponse(str(fp), media_type=media_type, filename=filename)
 
+
+# ─── eCourts Case Lookup (Dhara Lookup tab) ───────────────────────────────────
+# Proxy all calls so ECOURTS_API_TOKEN never reaches the frontend.
+
+CNR_RE = re.compile(r"^[A-Z]{4}\d{12}$")   # e.g. DLHC010001232024
+
+
+async def _eci_get(path: str, params: dict | None = None) -> dict:
+    if not ECOURTS_TOKEN:
+        raise HTTPException(503, "eCourts API is not configured on this server.")
+    headers = {"Authorization": f"Bearer {ECOURTS_TOKEN}", "Accept": "application/json"}
+    for attempt in range(3):
+        async with httpx.AsyncClient(base_url=ECOURTS_BASE, timeout=20) as client:
+            r = await client.get(path, params=params, headers=headers)
+        if r.status_code == 429 and attempt < 2:
+            await asyncio.sleep(2 ** attempt)
+            continue
+        if r.status_code >= 400:
+            try:
+                msg = r.json().get("message") or r.json().get("error", {}).get("message", "")
+            except Exception:
+                msg = ""
+            raise HTTPException(
+                status_code=502 if r.status_code >= 500 else r.status_code,
+                detail=msg or f"eCourts upstream returned {r.status_code}",
+            )
+        return r.json()
+    raise HTTPException(429, "eCourts rate limit — please try again.")
+
+
+def _nc(item: dict, cnr_hint: str | None = None) -> dict:
+    d = item.get("courtCaseData", item)
+    return {
+        "cnr":               d.get("cnr")             or item.get("cnr")             or cnr_hint,
+        "case_status":       d.get("caseStatus")      or item.get("caseStatus"),
+        "next_hearing_date": d.get("nextHearingDate") or item.get("nextHearingDate"),
+        "court_name":        d.get("courtName")       or item.get("courtName"),
+        "district":          d.get("district")        or item.get("district"),
+        "state":             d.get("state")           or item.get("state"),
+        "case_type":         d.get("caseType")        or item.get("caseType"),
+        "filing_date":       d.get("filingDate")      or item.get("filingDate"),
+        "petitioners":       d.get("petitioners")     or item.get("petitioners") or [],
+        "respondents":       d.get("respondents")     or item.get("respondents") or [],
+    }
+
+
+@api.get("/cases/cnr/{cnr}", summary="Look up a court case by CNR number")
+async def case_by_cnr(cnr: str, user: dict = Depends(current_user)):
+    cnr = cnr.strip().upper()
+    if not CNR_RE.match(cnr):
+        raise HTTPException(
+            400,
+            "CNR must be 4 capital letters followed by 12 digits "
+            "(16 chars, e.g. DLHC010001232024).",
+        )
+    payload = await _eci_get(f"/api/partner/case/{cnr}")
+    return _nc(payload.get("data", payload), cnr)
+
+
+@api.get("/cases/search", summary="Search court cases by party name")
+async def search_cases(name: str, page: int = 1, user: dict = Depends(current_user)):
+    name = name.strip()
+    if len(name) < 2:
+        raise HTTPException(400, "Party name must be at least 2 characters.")
+    payload = await _eci_get(
+        "/api/partner/search",
+        {"litigants": name, "nameMatchMode": "phrase", "page": page, "pageSize": 20},
+    )
+    rows = payload.get("data", {}).get("results", [])
+    if isinstance(rows, dict):
+        rows = rows.get("results", [])
+    return {"results": [_nc(x) for x in (rows or [])], "page": page}
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 app.include_router(api)
 
 app.add_middleware(
@@ -2463,6 +2542,8 @@ async def _shutdown():
 #
 # Regenerate the bundle from frontend/ with:
 #   npx expo export --platform web --output-dir ../backend/webdist
+
+# ─── Static web bundle (must stay the LAST route in the file) ────────────────
 # ============================================================================
 from fastapi.staticfiles import StaticFiles as _StaticFiles
 from fastapi.responses import FileResponse as _FileResponse
