@@ -1053,7 +1053,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
                 (session or {}).get("personal_law_context") or {}
             ).get(personal_law_topic)
             if not personal_law_ctx:
-                early_refusal = disambiguation_question(personal_law_topic)
+                early_refusal = disambiguation_question(personal_law_topic, body.language)
             else:
                 await db.sessions.update_one(
                     {"id": session_id},
@@ -1062,7 +1062,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
                 hint = act_hint_phrase(personal_law_ctx, personal_law_topic)
                 if hint:
                     retrieval_text = f"{retrieval_text} ({hint})"
-                personal_law_note = act_disclaimer(personal_law_ctx, personal_law_topic)
+                personal_law_note = act_disclaimer(personal_law_ctx, personal_law_topic, body.language)
 
     # (b) Corpus retrieval — deterministic keyword match against verified statutes
     retrieved = [] if early_refusal else corpus_retrieve(retrieval_text, limit=3)
