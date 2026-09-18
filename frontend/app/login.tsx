@@ -7,12 +7,13 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 
 export default function Login() {
-  const { login, sessionExpired, clearSessionExpired } = useAuth();
+  const { login, loginWithGoogle, sessionExpired, clearSessionExpired } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const onSubmit = async () => {
@@ -26,6 +27,20 @@ export default function Login() {
       setError(e?.message || 'Login failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onGoogleSignIn = async () => {
+    setError(null);
+    clearSessionExpired();
+    setGoogleLoading(true);
+    try {
+      await loginWithGoogle();
+      router.replace('/(tabs)');
+    } catch (e: any) {
+      setError(e?.message || 'Google sign-in failed');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -100,6 +115,30 @@ export default function Login() {
               {loading ? <ActivityIndicator color={theme.colors.onBrandPrimary} /> : <Text style={styles.btnText}>Sign In</Text>}
             </Pressable>
 
+            {/* ── Divider ── */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* ── Google Sign-In ── */}
+            <Pressable
+              testID="google-signin-button"
+              style={[styles.googleBtn, googleLoading && { opacity: 0.6 }]}
+              disabled={googleLoading}
+              onPress={onGoogleSignIn}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color={theme.colors.onSurface} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="logo-google" size={20} color="#DB4437" />
+                  <Text style={styles.googleBtnText}>Continue with Google</Text>
+                </>
+              )}
+            </Pressable>
+
             <Link href="/forgot-password" asChild>
               <Pressable testID="go-to-forgot-password" style={styles.forgotWrap}>
                 <Text style={styles.forgotLink}>Forgot password?</Text>
@@ -140,6 +179,11 @@ const styles = StyleSheet.create({
   eyeBtn: { paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md, justifyContent: 'center', alignItems: 'center' },
   btn: { backgroundColor: theme.colors.brand, padding: theme.spacing.lg, borderRadius: theme.radius.md, alignItems: 'center', marginTop: theme.spacing.xl, minHeight: 52 },
   btnText: { color: theme.colors.onBrandPrimary, fontWeight: '700', fontSize: 16 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: theme.spacing.lg, gap: 8 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: theme.colors.border },
+  dividerText: { color: theme.colors.onSurfaceTertiary, fontSize: 13, fontWeight: '500' },
+  googleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing.lg, minHeight: 52, backgroundColor: theme.colors.surface },
+  googleBtnText: { color: theme.colors.onSurface, fontWeight: '600', fontSize: 15 },
   row: { flexDirection: 'row', justifyContent: 'center', marginTop: theme.spacing.lg },
   // "Create an account" link: navy-on-cream — 11.92:1 ✅ + underline for link affordance
   link: { color: theme.dhara.textPrimary, fontWeight: '700', textDecorationLine: 'underline' },

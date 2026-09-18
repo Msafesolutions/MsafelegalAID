@@ -1,6 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+
+// Required for iOS to properly complete the auth session
+WebBrowser.maybeCompleteAuthSession();
 
 const API = process.env.EXPO_PUBLIC_BACKEND_URL;
 const TOKEN_KEY = 'gk_token';
@@ -34,6 +39,7 @@ type AuthCtx = {
   setUserState: (code: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, phone: string, terms_accepted: boolean, terms_version: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   hydrateSession: (token: string, user: User) => Promise<void>;
@@ -64,10 +70,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ttsVolume, setTtsVolumeState] = useState<number>(1.0);
   const [ttsVoiceMode, setTtsVoiceModeState] = useState<TtsVoiceMode>('cloud');
   const [sessionExpired, setSessionExpired] = useState<boolean>(false);
+  // Guard: prevent the same session_id being exchanged twice on Android
+  const usedSessionIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     (async () => {
-      const [t, u, l, m, a, v, vm] = await Promise.all([
+      // ── Web: detect session_id in URL before checking stored token ──
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const combined = window.location.hash + '&' + window.location.search;
+        const m = combined.match(/[?#&]session_id=([^&#]+)/);
+        if (m) {
+          const sid = decodeURIComponent(m[1]);
+          if (!usedSessionIds.current.has(sid)) {
+            usedSessionIds.current.add(sid);
+            try {
+              const r = await fetch(`${API}/api/auth/session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sid }),
+              });
+              if (r.ok) {
+                const data = await r.json();
+                await AsyncStorage.setItem(TOKEN_KEY, data.token);
+                await AsyncStorage.setItem(USER_KEY, JSON.stringify(data.user));
+                setToken(data.token);
+                setUser(data.user);
+              }
+            } catch {}
+            // Clean the URL fragment
+            window.history.replaceState(window.history.state, '', window.location.pathname);
+          }
+          setLoading(false);
+          return;
+        }
+      }
+
+      const [t, u, l, m2, a, v, vm] = await Promise.all([
         AsyncStorage.getItem(TOKEN_KEY),
         AsyncStorage.getItem(USER_KEY),
         AsyncStorage.getItem(LANG_KEY),
@@ -79,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (t) setToken(t);
       if (u) setUser(JSON.parse(u));
       if (l) setLanguageState(JSON.parse(l));
-      if (m) setModelState(JSON.parse(m));
+      if (m2) setModelState(JSON.parse(m2));
       if (a !== null) setAutoSpeakState(a === '1');
       if (v !== null) {
         const n = parseFloat(v);
@@ -180,6 +218,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(TTS_VOICE_KEY, v);
   }, []);
 
+  const loginWithGoogle = useCallback(async () => {
+    // Platform-specific redirect URL (critical per playbook)
+    const redirectUrl = Platform.OS === 'web'
+      ? (typeof window !== 'undefined' ? window.location.origin + '/' : '')
+      : Linking.createURL('');
+
+    const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') window.location.href = authUrl;
+      return;
+    }
+
+    // Register deep link listener BEFORE opening browser (Android fallback)
+    let deepLinkUrl: string | null = null;
+    const sub = Linking.addEventListener('url', (e) => { deepLinkUrl = e.url; });
+
+    const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+    sub.remove();
+
+    // Per playbook: try result.url → listener → getInitialURL
+    // Android often returns 'dismiss' even on success — don't treat as cancel yet
+    const callbackUrl: string | null =
+      (result as any).url || deepLinkUrl || await Linking.getInitialURL();
+
+    if (!callbackUrl) return; // all three sources empty = genuine cancel
+
+    // Emergent uses hash fragment: msafelegalaid://#session_id=...
+    const m = callbackUrl.match(/[?#&]session_id=([^&#]+)/);
+    if (!m) return;
+
+    const sid = decodeURIComponent(m[1]);
+    if (usedSessionIds.current.has(sid)) return; // dedup
+    usedSessionIds.current.add(sid);
+
+    const r = await fetch(`${API}/api/auth/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sid }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Google sign-in failed');
+    const data = await r.json();
+    await persist(data.token, data.user);
+  }, []);
+
   // Jurisdiction — state / UT decides rent, liquor, stamp duty and traffic fine
   // amounts, so the server needs it to serve the local rule with the answer.
   const setUserState = useCallback(async (code: string) => {
@@ -203,7 +286,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token, forceLogout]);
 
   return (
-    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, ttsVoiceMode, setTtsVoiceMode, setUserState, login, register, logout, refreshUser, hydrateSession: persist, sessionExpired, clearSessionExpired, forceLogout }}>
+    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, ttsVoiceMode, setTtsVoiceMode, setUserState, login, register, loginWithGoogle, logout, refreshUser, hydrateSession: persist, sessionExpired, clearSessionExpired, forceLogout }}>
       {children}
     </Ctx.Provider>
   );

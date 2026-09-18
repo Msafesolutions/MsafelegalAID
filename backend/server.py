@@ -421,9 +421,84 @@ async def register(body: RegisterIn):
 @api.post("/auth/login", response_model=AuthOut)
 async def login(body: LoginIn):
     user = await db.users.find_one({"email": body.email.lower()})
-    if not user or not check_pw(body.password, user["password_hash"]):
+    if not user or not check_pw(body.password, user.get("password_hash", "")):
         raise HTTPException(401, "Invalid credentials")
     return {"token": make_token(user["id"]), "user": public_user(user)}
+
+
+# ---- Google Sign-In via Emergent OAuth ----
+class GoogleSessionIn(BaseModel):
+    session_id: str
+
+# Guard: prevent replaying the same session_id twice (deep links can fire twice on Android)
+_USED_GOOGLE_SESSIONS: set[str] = set()
+
+@api.post("/auth/session", response_model=AuthOut)
+async def google_auth_session(body: GoogleSessionIn):
+    """Exchange an Emergent OAuth session_id for a Dhara JWT.
+
+    The frontend never calls Emergent directly — it only sends the session_id
+    here. We call demobackend.emergentagent.com once, upsert the user by email
+    (so existing email/password accounts are linked), and return our own JWT.
+    """
+    sid = body.session_id.strip()
+    if sid in _USED_GOOGLE_SESSIONS:
+        raise HTTPException(401, "Session already used")
+    _USED_GOOGLE_SESSIONS.add(sid)
+    # Keep the in-memory guard from growing unboundedly
+    if len(_USED_GOOGLE_SESSIONS) > 5000:
+        _USED_GOOGLE_SESSIONS.clear()
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": sid},
+            )
+    except Exception:
+        raise HTTPException(502, "Could not reach auth service")
+
+    if r.status_code != 200:
+        raise HTTPException(401, "Invalid or expired Google session")
+
+    data = r.json()
+    email = (data.get("email") or "").lower().strip()
+    name  = (data.get("name")  or "").strip() or (email.split("@")[0] if email else "User")
+
+    if not email:
+        raise HTTPException(401, "Google did not return an email address")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Upsert: reuse existing account if the email is already registered
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        uid  = existing["id"]
+        user = existing
+    else:
+        uid  = f"user_{uuid.uuid4().hex[:12]}"
+        user = {
+            "id":               uid,
+            "email":            email,
+            "name":             name,
+            "phone":            "",
+            "language":         "en",
+            "is_pro":           False,
+            "pro_since":        None,
+            "pro_samples_used": 0,
+            "is_grandfathered":  True,
+            "state":            None,
+            "state_jurisdiction": "",
+            "terms_accepted":   True,
+            "terms_version":    TERMS_VERSION,
+            "terms_accepted_at": now,
+            "auth_provider":    "google",
+            "created_at":       now,
+        }
+        await db.users.insert_one(user)
+
+    return {"token": make_token(uid), "user": public_user(user)}
+
 
 # ---- Password reset via emailed one-time code (OTP) ----
 # The old flow accepted an email + registered phone number and immediately issued
