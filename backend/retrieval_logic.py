@@ -29,6 +29,62 @@ from __future__ import annotations
 
 import re
 
+# ── Synonym / lay-term expansion ──────────────────────────────────────────────
+# Maps plain-language terms users actually type to the statutory vocabulary used
+# in the corpus. Each tuple is (compiled_regex, expansion_suffix). The suffix is
+# APPENDED to the query (not a replacement) so the original words still score too.
+_SYNONYMS: list[tuple[re.Pattern, str]] = [
+    # NRI / FEMA / property
+    (re.compile(r"\bNRI\b", re.I),                                       "person resident outside India FEMA foreign exchange"),
+    (re.compile(r"\bnon.?resident\s+indian\b", re.I),                    "person resident outside India FEMA foreign exchange"),
+    (re.compile(r"\b(?:buy|purchase|acquire)\s+(?:\w+\s+)?(?:land|plot|flat|property|house|farm)\b", re.I), "purchase immovable property transfer acquire"),
+    (re.compile(r"\b(?:sell|transfer)\s+(?:\w+\s+)?(?:land|plot|flat|property|house|farm)\b", re.I),        "transfer immovable property sale"),
+    (re.compile(r"\bown\s+(?:land|property|flat|house)\b", re.I),        "hold immovable property ownership"),
+    (re.compile(r"\bsend\s+money\s+(?:to\s+)?india\b", re.I),            "inward remittance FEMA foreign exchange"),
+    (re.compile(r"\bsend\s+money\s+abroad\b", re.I),                     "outward remittance FEMA foreign exchange"),
+    (re.compile(r"\bforeign\s+(?:money|funds|investment|currency)\b", re.I), "foreign exchange FEMA"),
+    # Consumer
+    (re.compile(r"\b(?:cheated|fraud|scam)\s+(?:by\s+)?(?:a\s+)?(?:shop|seller|brand|company)\b", re.I), "consumer protection defective goods complaint"),
+    (re.compile(r"\bdefective\s+product\b", re.I),                       "consumer protection defective goods"),
+    (re.compile(r"\brefund\s+(?:denied|refused|not\s+given)\b", re.I),   "consumer protection complaint redressal"),
+    # Cheque / negotiable instruments
+    (re.compile(r"\bcheque\s+(?:bounce|bounced|dishonour|dishonored)\b", re.I), "dishonour cheque negotiable instruments"),
+    # Traffic / motor vehicles
+    (re.compile(r"\btraffic\s+(?:fine|challan|ticket)\b", re.I),         "motor vehicles challan compounding"),
+    (re.compile(r"\bover\s*speed(?:ing)?\b", re.I),                      "motor vehicles speeding challan"),
+    # Workplace harassment
+    (re.compile(r"\bsexual\s+harassment\s+(?:at\s+)?(?:work|office|workplace)\b", re.I), "POSH sexual harassment workplace"),
+    # Domestic violence
+    (re.compile(r"\b(?:wife|husband|partner|spouse)\s+(?:beating|beat|hit|hitting|abuse|abused|violence)\b", re.I), "domestic violence protection women"),
+    (re.compile(r"\bspousal\s+abuse\b", re.I),                           "domestic violence protection women"),
+    # Employment / termination
+    (re.compile(r"\b(?:fired|sacked|dismissed|terminated)\s+from\s+(?:job|work)\b", re.I), "termination employment industrial disputes"),
+    (re.compile(r"\bunfair\s+dismissal\b", re.I),                        "termination employment industrial disputes"),
+    # Bail / arrest
+    (re.compile(r"\b(?:get\s+out\s+of\s+jail|jail\s+release|get\s+bail)\b", re.I), "bail arrest BNSS"),
+    # RTI
+    (re.compile(r"\b(?:ask|get\s+information\s+from)\s+(?:the\s+)?(?:government|govt)\b", re.I), "right to information RTI"),
+    # Dowry
+    (re.compile(r"\bdowry\s+(?:harassment|demand|torture)\b", re.I),     "dowry prohibition BNS cruelty"),
+]
+
+
+def expand_query(query: str) -> str:
+    """Append statutory synonyms for any lay-term patterns found in `query`.
+
+    Never replaces the original words — only adds; so the original tokens
+    still score independently and the expansion only helps retrieval, never
+    hurts it. Safe to call more than once (idempotent via exact-suffix check).
+    """
+    extra: list[str] = []
+    for pattern, expansion in _SYNONYMS:
+        if pattern.search(query) and expansion not in query:
+            extra.append(expansion)
+    if not extra:
+        return query
+    return query + " " + " ".join(extra)
+
+
 # ── Shared corroboration threshold ────────────────────────────────────────────
 # A fuzzy hit needs at least this many significant words in common with the
 # query (unless the query names the Act by label) to count as corroborated.
@@ -155,10 +211,10 @@ def score_items(
           bare numerals are skipped (a section number floating free of its Act
           context is weak evidence).
     """
-    q_norm = _norm(question)
+    q_norm = _norm(expand_query(question))
     if not q_norm:
         return []
-    q_tokens = _tokens(question) - stop
+    q_tokens = _tokens(expand_query(question)) - stop
 
     scored: list[tuple[int, dict]] = []
     for item in items:

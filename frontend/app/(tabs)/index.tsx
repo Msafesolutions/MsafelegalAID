@@ -763,13 +763,17 @@ export default function ChatScreen() {
         setSpeakingId(msgId);
         speakingIdRef.current = msgId;
         const gender = ttsVoiceMode === 'device-female' ? 'female' : 'male';
-        speakNative(text, language?.code ?? 'en', gender, () => {
+        const usedNative = await speakNative(text, language?.code ?? 'en', gender, () => {
           if (speakingIdRef.current === msgId) {
             setSpeakingId(null);
             speakingIdRef.current = null;
           }
         });
-        return;
+        if (usedNative) return;
+        // Voice not available on device (e.g. mr-IN missing) — clear the
+        // speaking indicator and fall through to cloud TTS below.
+        setSpeakingId(null);
+        speakingIdRef.current = null;
       }
 
       // ── Cloud TTS (streamed, highest quality) ────────────────────────────

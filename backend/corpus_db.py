@@ -73,6 +73,7 @@ from retrieval_logic import (
     corroboration_score as _corroboration_score,
     corroborates as _corroborates,  # noqa: F401  (kept for external callers)
     relative_top_cutoff as _relative_top_cutoff,
+    expand_query as _expand_query,
 )
 
 # ── State code → corpus jurisdiction string ──────────────────────────────────
@@ -395,6 +396,7 @@ async def retrieve_db(
         if pattern.search(question):
             act_hint = hint_name
             break
+    question = _expand_query(question)          # synonym expansion before retrieval
     question_sig = _significant_words(question)
 
     # ── 1. Attempt exact section lookup first ─────────────────────────────────
