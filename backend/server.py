@@ -21,7 +21,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Optional, AsyncGenerator
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form, Header, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form, Header, Request, Query
 from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -2811,6 +2811,175 @@ async def intakes_list(advocate_id: str, user: dict = Depends(current_user)):
     cursor = db.client_intakes.find({"advocate_id": advocate_id}, {"_id": 0}).sort("created_at", -1).limit(50)
     intakes = await cursor.to_list(length=50)
     return intakes
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── IPC → BNS Cross-Reference Engine ─────────────────────────────────────────
+
+import json as _json_mod
+from pathlib import Path as _Path
+
+_XREF_PATH = _Path(__file__).parent / "ipc_bns_mapping.json"
+_XREF_DATA: dict = {}
+
+def _load_xref() -> dict:
+    global _XREF_DATA
+    if not _XREF_DATA and _XREF_PATH.exists():
+        with open(_XREF_PATH, encoding="utf-8") as _f:
+            _XREF_DATA = _json_mod.load(_f)
+    return _XREF_DATA
+
+
+def _xref_search(q: str = "", ipc: str = "", bns: str = "") -> list[dict]:
+    """
+    Search the IPC↔BNS cross-reference file.
+    Matches on:
+      - Exact/partial IPC section (ipc param or q starts with a digit)
+      - Exact/partial BNS section (bns param)
+      - Keyword search in offence + what_changed fields
+    Returns a normalised list of result dicts, deduped, max 25.
+    """
+    data = _load_xref()
+    q_lower = q.strip().lower()
+    ipc_q  = (ipc or "").strip().upper()
+    bns_q  = (bns or "").strip().upper()
+
+    results: list[dict] = []
+
+    def _matches(entry: dict) -> bool:
+        # Normalise fields — guard against JSON null values
+        def _s(v): return str(v).upper() if v is not None else ""
+        e_ipc    = _s(entry.get("ipc_section"))
+        e_bns    = _s(entry.get("bns_section"))
+        e_crpc   = _s(entry.get("crpc_section"))
+        e_bnss   = _s(entry.get("bnss_section"))
+        e_ea     = _s(entry.get("evidence_act_section"))
+        e_bsa    = _s(entry.get("bsa_section"))
+        e_off    = str(entry.get("offence",  entry.get("procedure", entry.get("provision", "")))).lower()
+        e_what   = str(entry.get("what_changed", "")).lower()
+        e_pun    = str(entry.get("punishment_note", "")).lower()
+        e_reason = str(entry.get("reason", "")).lower()
+        e_note   = str(entry.get("note", "")).lower()
+
+        if ipc_q and (ipc_q in e_ipc or ipc_q in e_crpc or ipc_q in e_ea):
+            return True
+        if bns_q and (bns_q in e_bns or bns_q in e_bnss or bns_q in e_bsa):
+            return True
+        if q_lower:
+            combined = f"{e_ipc} {e_bns} {e_crpc} {e_bnss} {e_ea} {e_bsa} {e_off} {e_what} {e_pun} {e_reason} {e_note}"
+            return q_lower in combined
+        return False
+
+    def _normalise(entry: dict, source: str) -> dict:
+        """Flatten heterogeneous entries into a single shape."""
+        old_sec = (
+            entry.get("ipc_section")  or
+            entry.get("crpc_section") or
+            entry.get("evidence_act_section") or ""
+        )
+        new_sec = (
+            entry.get("bns_section")  or
+            entry.get("bnss_section") or
+            entry.get("bsa_section")  or "—"
+        )
+        return {
+            "source":        source,
+            "old_section":   str(old_sec),
+            "new_section":   str(new_sec),
+            "offence":       entry.get("offence") or entry.get("procedure") or entry.get("provision") or "",
+            "change_type":   entry.get("change_type", ""),
+            "what_changed":  entry.get("what_changed") or entry.get("note") or entry.get("reason") or entry.get("punishment_note") or "",
+            "verified":      entry.get("verified", False),
+        }
+
+    seen: set[str] = set()
+    sources = [
+        ("ipc_complete_mapping",            "IPC → BNS"),
+        ("bns_to_ipc_mapping",              "IPC → BNS"),
+        ("reverse_lookup_ipc_to_bns",       "IPC → BNS"),
+        ("crpc_to_bnss_mapping",            "CrPC → BNSS"),
+        ("evidence_act_to_bsa_mapping",     "Evidence Act → BSA"),
+        ("new_bns_offences_no_ipc_equivalent", "New BNS"),
+        ("deleted_ipc_sections",            "Deleted IPC"),
+    ]
+    for key, src_label in sources:
+        for entry in data.get(key, []):
+            if _matches(entry):
+                norm = _normalise(entry, src_label)
+                uid  = f"{norm['old_section']}|{norm['new_section']}"
+                if uid not in seen:
+                    seen.add(uid)
+                    results.append(norm)
+                if len(results) >= 25:
+                    break
+        if len(results) >= 25:
+            break
+
+    return results
+
+
+@api.get("/advocate/cross-reference")
+async def cross_reference(
+    q:   str = Query("", description="Keyword search"),
+    ipc: str = Query("", description="IPC/CrPC/Evidence Act section number"),
+    bns: str = Query("", description="BNS/BNSS/BSA section number"),
+):
+    """
+    IPC → BNS cross-reference with Citation Guard.
+
+    Citation Guard guarantees:
+    1. ONLY the ipc_bns_mapping.json is the source of truth — no AI inference.
+    2. Every result carries its verified/unverified status from the file.
+    3. If a section is not in the file the response signals that explicitly;
+       the caller MUST show the 'not in database' message — never infer a mapping.
+    4. Results where bns_section is null are labelled 'deleted' — callers must
+       NOT substitute a guessed BNS number.
+    """
+    if not q.strip() and not ipc.strip() and not bns.strip():
+        raise HTTPException(400, "Supply at least one of: q, ipc, bns")
+
+    data    = _load_xref()
+    results = _xref_search(q=q, ipc=ipc, bns=bns)
+
+    # ── Citation Guard metadata ───────────────────────────────────────────────
+    is_section_search = bool(ipc.strip() or bns.strip())
+    unverified_count  = sum(1 for r in results if not r.get("verified"))
+
+    citation_guard = {
+        # Always true — this endpoint never calls an LLM or infers missing data
+        "database_only":      True,
+        # False when a section-mode search returns 0 results → caller shows wall
+        "query_found_in_db":  len(results) > 0,
+        # True only when EVERY returned entry is marked verified in the file
+        "all_entries_verified": unverified_count == 0 and len(results) > 0,
+        "unverified_count":   unverified_count,
+        "total_in_db":        sum(
+            len(data.get(k, [])) for k in (
+                "ipc_complete_mapping",
+                "bns_to_ipc_mapping", "reverse_lookup_ipc_to_bns",
+                "crpc_to_bnss_mapping", "evidence_act_to_bsa_mapping",
+                "new_bns_offences_no_ipc_equivalent", "deleted_ipc_sections",
+            )
+        ),
+        # Surface the audit trail for the caller
+        "bare_act_audit_count": len(data.get("metadata", {}).get("bare_act_audit", [])),
+        # What to show in the UI when query_found_in_db is False
+        "not_in_db_message": (
+            "Section mapping not yet verified in our database. "
+            "Please consult a manual or the bare Act directly."
+            if is_section_search and len(results) == 0 else ""
+        ),
+    }
+
+    return {
+        "results":            results,
+        "total":              len(results),
+        "citation_guard":     citation_guard,
+        "which_code_applies": data.get("which_code_applies_rule", {}),
+        "effective_date":     data.get("commencement_status", {}).get(
+                                  "bns_bnss_bsa_effective_date", "2024-07-01"),
+        "disclaimer":         data.get("metadata", {}).get("disclaimer", ""),
+    }
 
 # ─────────────────────────────────────────────────────────────────────────────
 

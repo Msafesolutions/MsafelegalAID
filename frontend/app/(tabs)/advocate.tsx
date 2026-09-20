@@ -103,6 +103,12 @@ export default function AdvocateTab() {
       sub: 'Professional-format answers with section citations',
       onPress: () => router.push({ pathname: '/(tabs)' as any, params: { mode: 'advocate' } }),
     },
+    {
+      icon: 'git-compare-outline' as const,
+      title: 'IPC → BNS Lookup',
+      sub: 'Cross-reference old & new criminal code sections',
+      onPress: () => router.push('/ipc-bns-lookup' as any),
+    },
   ];
 
   return (
