@@ -2651,10 +2651,13 @@ async def _generate_intake_summary(client_name: str, situation: str, outcome: st
         )
         result = await chat.send_message(UserMessage(text=prompt))
         full_text = str(result or "").strip()
+        # Strip any markdown bold/italic artifacts the model may emit
+        import re as _re
+        full_text = _re.sub(r'\*{1,3}', '', full_text).strip()
         if "DHARA ANALYSIS" in full_text:
             parts = full_text.split("DHARA ANALYSIS", 1)
             summary = parts[0].replace("SUMMARY:", "").replace("SUMMARY", "").strip()
-            analysis = "DHARA ANALYSIS" + parts[1]
+            analysis = parts[1].lstrip(":").lstrip("**").strip()
         else:
             summary = full_text[:400]
             analysis = full_text[400:].strip()
@@ -2717,7 +2720,7 @@ async def advocate_profile(user_id: str, user: dict = Depends(current_user)):
 
 
 @api.post("/advocate/intake/create")
-async def intake_create(body: IntakeCreateIn, user: dict = Depends(current_user)):
+async def intake_create(request: Request, body: IntakeCreateIn, user: dict = Depends(current_user)):
     """Create a shareable intake link for a client. Returns intake_token and intake_url."""
     if user["id"] != body.advocate_id:
         raise HTTPException(403, "advocate_id mismatch")
@@ -2727,8 +2730,9 @@ async def intake_create(body: IntakeCreateIn, user: dict = Depends(current_user)
         raise HTTPException(403, "Register as an advocate first")
     token = secrets.token_urlsafe(20)
     now = datetime.now(timezone.utc).isoformat()
-    base_url = os.getenv("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
-    intake_url = f"{base_url}/intake/{token}"
+    # Build absolute intake URL from the incoming request's origin
+    origin = str(request.base_url).rstrip("/")
+    intake_url = f"{origin}/intake/{token}"
     doc = {
         "id": str(uuid.uuid4()),
         "intake_token": token,
