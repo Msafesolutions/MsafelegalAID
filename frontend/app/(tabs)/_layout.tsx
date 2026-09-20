@@ -108,6 +108,16 @@ export default function TabsLayout() {
             }}
           />
           <Tabs.Screen
+            name="advocate"
+            options={{
+              title: 'Advocate',
+              tabBarIcon: ({ color, size }) => (
+                <Ionicons name="briefcase-outline" size={size} color={color} />
+              ),
+              tabBarButtonTestID: 'tab-advocate',
+            }}
+          />
+          <Tabs.Screen
             name="settings"
             options={{
               title: 'Settings',

@@ -221,6 +221,19 @@ class CheckoutIn(BaseModel):
 class AcceptTermsIn(BaseModel):
     terms_version: str = TERMS_VERSION
 
+class AdvocateRegisterIn(BaseModel):
+    user_id: str
+    bar_council_number: str
+    state_bar: str
+    specializations: List[str]
+
+class IntakeCreateIn(BaseModel):
+    advocate_id: str
+
+class IntakeSubmitIn(BaseModel):
+    client_name: str
+    transcript: List[str]  # [situation, outcome]
+
 # ---------- Helpers ----------
 def hash_pw(pw: str) -> str:
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
@@ -286,6 +299,7 @@ def build_system_prompt(
     is_pro: bool = False,
     corpus_context: str = "",
     language_native: Optional[str] = None,
+    advocate_mode: bool = False,
 ) -> str:
     """
     Grade-6 answer prompt with strict citation-integrity rule.
@@ -303,6 +317,42 @@ def build_system_prompt(
         else language_name
     )
     is_english = language_name.strip().lower() == "english"
+
+    # ── Advocate / Professional Mode ──────────────────────────────────────────
+    # Completely different system prompt for licensed advocates. Allows section
+    # citations (unlike citizen mode), uses formal legal language, and grounds
+    # all analysis in the verified corpus provided.
+    if advocate_mode:
+        verified_block_adv = ""
+        if corpus_context:
+            verified_block_adv = (
+                "\n\nVERIFIED SOURCES (cite these directly by Act name and section):\n"
+                + corpus_context + "\n"
+            )
+        return (
+            "You are Dhara — an AI legal analysis assistant for licensed Indian advocates.\n\n"
+            "PROFESSIONAL MODE: You are addressing a licensed Indian advocate. "
+            "Use formal legal language. You MAY cite specific Act names, section numbers, "
+            "sub-sections, and provisos found in the VERIFIED SOURCES below. "
+            "Assume the reader has legal training. "
+            "Flag areas where the advocate should verify with current gazette notifications or state amendments.\n\n"
+            "HARD RULES:\n"
+            "1. Base your analysis ONLY on the VERIFIED SOURCES provided. "
+            "If VERIFIED SOURCES are empty, decline with: "
+            "'Insufficient verified corpus material for a professional brief on this topic. Please consult primary sources.'\n"
+            "2. No markdown headers (#, ##). No bold (**). No emoji.\n"
+            "3. If the corpus does not cover this topic, state so explicitly rather than extrapolating.\n\n"
+            "FORMAT — respond in this four-part structure:\n\n"
+            "Issue: <one-sentence statement of the legal question>\n\n"
+            "Applicable Law: <cite the Act(s) and section(s) from verified sources>\n\n"
+            "Legal Position: <technical analysis in 3–5 sentences>\n\n"
+            "Practitioner Notes:\n"
+            "- <procedural step or verification point>\n"
+            "- <state amendment flag or gazette check needed>\n"
+            "- <escalation path or time-limit note>\n"
+            "- <optional 4th note>"
+            f"{verified_block_adv}"
+        )
 
     disclaimer_line = (
         "\n\nAt the end of your reply, add exactly this line, WRITTEN IN " + lang_display + ":\n"
@@ -951,8 +1001,10 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     is_pro_user = bool(user.get("is_pro"))
     samples_used = int(user.get("pro_samples_used", 0))
     is_sample_consumption = False
+    # Advocate mode: professional prompt for licensed advocates — no paywall
+    is_advocate_mode = (mode == "advocate")
 
-    if mode == "pro" and not is_pro_user:
+    if mode == "pro" and not is_pro_user and not is_advocate_mode:
         if samples_used >= PRO_FREE_SAMPLES:
             # Log the blocked attempt so the operator sees who's hitting the paywall
             # and what they were trying to ask. Otherwise the query vanishes from the DB.
@@ -1337,6 +1389,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         is_pro=use_pro_prompt,
         corpus_context=corpus_context,
         language_native=lang_native,
+        advocate_mode=is_advocate_mode,
     )
 
     chat = LlmChat(
@@ -2572,6 +2625,191 @@ async def search_cases(name: str, page: int = 1, user: dict = Depends(current_us
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Advocate Door — Sprint 5 ─────────────────────────────────────────────────
+
+async def _generate_intake_summary(client_name: str, situation: str, outcome: str) -> tuple[str, str]:
+    """Generate a structured advocate brief from client intake transcript using LLM."""
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"intake-summary-{uuid.uuid4()}",
+            system_message=(
+                "You are a legal case briefing assistant for an Indian advocate. "
+                "Given a client intake, produce a structured brief with exactly two sections:\n"
+                "SUMMARY: 2-3 concise sentences summarising the facts and what the client wants.\n"
+                "DHARA ANALYSIS: identify the primary legal issue, the relevant area of law "
+                "(e.g. family, property, criminal, consumer), and 2-3 recommended next actions "
+                "for the advocate (office to visit, document to file, notice to send, etc.).\n"
+                "Write in formal but accessible English. No markdown. No section numbers."
+            ),
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        prompt = (
+            f"Client name: {client_name}\n\n"
+            f"Situation (client's own words):\n{situation}\n\n"
+            f"Desired outcome:\n{outcome}\n\n"
+            "Write the SUMMARY and DHARA ANALYSIS:"
+        )
+        result = await chat.send_message(UserMessage(text=prompt))
+        full_text = str(result or "").strip()
+        if "DHARA ANALYSIS" in full_text:
+            parts = full_text.split("DHARA ANALYSIS", 1)
+            summary = parts[0].replace("SUMMARY:", "").replace("SUMMARY", "").strip()
+            analysis = "DHARA ANALYSIS" + parts[1]
+        else:
+            summary = full_text[:400]
+            analysis = full_text[400:].strip()
+        return summary, analysis
+    except Exception as e:
+        logger.warning(f"[intake_summary] LLM call failed: {e}")
+        return "", ""
+
+
+@api.post("/advocate/register")
+async def advocate_register(body: AdvocateRegisterIn, user: dict = Depends(current_user)):
+    """Register a user as an advocate. Creates an advocate_profiles document."""
+    if user["id"] != body.user_id:
+        raise HTTPException(403, "user_id mismatch")
+    existing = await db.advocate_profiles.find_one({"user_id": body.user_id})
+    if existing:
+        return {k: v for k, v in existing.items() if k != "_id"}
+    if len(body.bar_council_number.strip()) < 4:
+        raise HTTPException(400, "Invalid bar council number")
+    if not body.specializations:
+        raise HTTPException(400, "Select at least one specialization")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": body.user_id,
+        "bar_council_number": body.bar_council_number.strip().upper(),
+        "state_bar": body.state_bar,
+        "specializations": body.specializations[:5],
+        "verified": False,
+        "created_at": now,
+        "updated_at": now,
+    }
+    try:
+        await db.advocate_profiles.insert_one(doc)
+    except Exception:
+        existing = await db.advocate_profiles.find_one({"user_id": body.user_id})
+        if existing:
+            return {k: v for k, v in existing.items() if k != "_id"}
+        raise HTTPException(500, "Registration failed — please try again")
+    await db.verification_log.insert_one({
+        "id": str(uuid.uuid4()),
+        "advocate_id": body.user_id,
+        "bar_council_number": doc["bar_council_number"],
+        "state_bar": body.state_bar,
+        "action": "registration_submitted",
+        "created_at": now,
+    })
+    return {k: v for k, v in doc.items() if k != "_id"}
+
+
+@api.get("/advocate/profile/{user_id}")
+async def advocate_profile(user_id: str, user: dict = Depends(current_user)):
+    """Fetch the advocate profile for a user."""
+    if user["id"] != user_id:
+        raise HTTPException(403, "Forbidden")
+    profile = await db.advocate_profiles.find_one({"user_id": user_id}, {"_id": 0})
+    if not profile:
+        raise HTTPException(404, "Advocate profile not found")
+    return profile
+
+
+@api.post("/advocate/intake/create")
+async def intake_create(body: IntakeCreateIn, user: dict = Depends(current_user)):
+    """Create a shareable intake link for a client. Returns intake_token and intake_url."""
+    if user["id"] != body.advocate_id:
+        raise HTTPException(403, "advocate_id mismatch")
+    # Verify advocate is registered
+    profile = await db.advocate_profiles.find_one({"user_id": body.advocate_id})
+    if not profile:
+        raise HTTPException(403, "Register as an advocate first")
+    token = secrets.token_urlsafe(20)
+    now = datetime.now(timezone.utc).isoformat()
+    base_url = os.getenv("EXPO_PUBLIC_BACKEND_URL", "").rstrip("/")
+    intake_url = f"{base_url}/intake/{token}"
+    doc = {
+        "id": str(uuid.uuid4()),
+        "intake_token": token,
+        "intake_url": intake_url,
+        "advocate_id": body.advocate_id,
+        "client_name": "",
+        "status": "pending",
+        "transcript": [],
+        "summary": "",
+        "dhara_analysis": "",
+        "created_at": now,
+        "completed_at": None,
+    }
+    await db.client_intakes.insert_one(doc)
+    return {"intake_token": token, "intake_url": intake_url}
+
+
+@api.get("/advocate/intake/{token}")
+async def intake_get(token: str):
+    """Public endpoint — fetch intake form metadata for a given token.
+    Used both by the client-facing form and the advocate's intake-view screen."""
+    intake = await db.client_intakes.find_one({"intake_token": token}, {"_id": 0})
+    if not intake:
+        raise HTTPException(404, "Intake not found")
+    # For the public client form: only expose status + expiry info (no PII)
+    return {
+        "id": intake.get("id", ""),
+        "intake_token": intake.get("intake_token", ""),
+        "status": intake.get("status", "pending"),
+        "client_name": intake.get("client_name", ""),
+        "summary": intake.get("summary", ""),
+        "dhara_analysis": intake.get("dhara_analysis", ""),
+        "transcript": intake.get("transcript", []),
+        "created_at": intake.get("created_at", ""),
+        "completed_at": intake.get("completed_at"),
+        "expired": intake.get("status") == "expired",
+    }
+
+
+@api.post("/advocate/intake/{token}/submit")
+async def intake_submit(token: str, body: IntakeSubmitIn):
+    """Public endpoint — client submits their intake data.
+    Saves transcript, then generates an AI summary for the advocate."""
+    intake = await db.client_intakes.find_one({"intake_token": token})
+    if not intake:
+        raise HTTPException(404, "Intake link not found")
+    if intake.get("status") in ("complete", "expired"):
+        raise HTTPException(400, "This intake link has already been used or has expired")
+    now = datetime.now(timezone.utc).isoformat()
+    transcript = [t.strip() for t in (body.transcript or []) if t.strip()]
+    await db.client_intakes.update_one(
+        {"intake_token": token},
+        {"$set": {
+            "client_name": body.client_name.strip()[:120],
+            "transcript": transcript,
+            "status": "processing",
+            "completed_at": now,
+        }},
+    )
+    # Generate AI summary (non-blocking best-effort)
+    situation = transcript[0] if len(transcript) > 0 else ""
+    outcome = transcript[1] if len(transcript) > 1 else ""
+    summary, analysis = await _generate_intake_summary(body.client_name, situation, outcome)
+    await db.client_intakes.update_one(
+        {"intake_token": token},
+        {"$set": {"summary": summary, "dhara_analysis": analysis, "status": "complete"}},
+    )
+    return {"ok": True, "message": "Your information has been sent to your advocate securely."}
+
+
+@api.get("/advocate/intakes/{advocate_id}")
+async def intakes_list(advocate_id: str, user: dict = Depends(current_user)):
+    """Fetch all client intakes created by an advocate (most recent first)."""
+    if user["id"] != advocate_id:
+        raise HTTPException(403, "Forbidden")
+    cursor = db.client_intakes.find({"advocate_id": advocate_id}, {"_id": 0}).sort("created_at", -1).limit(50)
+    intakes = await cursor.to_list(length=50)
+    return intakes
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 app.include_router(api)
 
 app.add_middleware(
@@ -2584,6 +2822,16 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def _startup():
+    # Advocate Door — ensure indexes exist (idempotent)
+    try:
+        await db.advocate_profiles.create_index("user_id", unique=True)
+        await db.advocate_profiles.create_index("bar_council_number", unique=True)
+        await db.client_intakes.create_index("intake_token", unique=True)
+        await db.client_intakes.create_index("advocate_id")
+        await db.verification_log.create_index("advocate_id")
+    except Exception as e:
+        logger.warning(f"[startup] advocate index creation warning: {e}")
+
     # Fire-and-forget background task, NOT awaited: the corpus migration
     # (see corpus_migration.py) starts automatically the instant this
     # process boots, but must never delay the app from serving requests or

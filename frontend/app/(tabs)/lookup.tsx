@@ -1,57 +1,84 @@
+/**
+ * Dhara Lookup — eCourts case search tab.
+ * Sprint 3: Cascade filter UI + in-app WebView results.
+ */
 import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, ScrollView, Pressable,
-  StyleSheet, ActivityIndicator, Modal, FlatList,
-  KeyboardAvoidingView, Platform, Animated,
+  StyleSheet, Modal, FlatList, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Linking from 'expo-linking';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 import {
-  STATES_UTS, CASE_TYPES,
-  getDistricts, getComplexes,
-  CNR_STATE_CODES, CNR_COURT_CODES,
-  type StateUT, type District, type Complex,
+  STATES_UTS, DISTRICTS, CNR_STATE_CODES, CNR_COURT_CODES,
+  buildPartySearchUrl, buildCNRUrl,
 } from '@/src/courtData';
 
-const NAVY = '#14365A';
-const GOLD = '#D3B675';
-const HINT = '#9CA3AF';
+const NAVY  = '#14365A';
+const GOLD  = '#D3B675';
+const CREAM = '#F8F6F0';
+const HINT  = '#999999';
 
 type Mode = 'cnr' | 'party';
-type CaseResult = {
-  cnr: string | null; case_status: string | null; next_hearing_date: string | null;
-  court_name: string | null; district: string | null; state: string | null;
-  case_type: string | null; filing_date: string | null;
-  petitioners: string[]; respondents: string[];
-};
+type PartyType = 'petitioner' | 'respondent';
 
-const formatCNR = (raw: string) => raw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 16);
-
-// ── Generic sheet picker ──────────────────────────────────────────────────────
-function SheetPicker<T extends { code: string; name: string }>({
-  visible, title, items, selected, onSelect, onClose,
+// ── Searchable sheet picker ───────────────────────────────────────────────────
+function SheetPicker({
+  visible, title, items, selectedCode, onSelect, onClose,
 }: {
-  visible: boolean; title: string; items: T[];
-  selected: string; onSelect: (item: T) => void; onClose: () => void;
+  visible: boolean;
+  title: string;
+  items: { code: string; name: string }[];
+  selectedCode: string;
+  onSelect: (item: { code: string; name: string }) => void;
+  onClose: () => void;
 }) {
+  const [q, setQ] = useState('');
+  const filtered = q.trim()
+    ? items.filter(i => i.name.toLowerCase().includes(q.toLowerCase()))
+    : items;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={ps.overlay} onPress={onClose}>
         <View style={ps.sheet}>
           <View style={ps.handle} />
           <Text style={ps.title}>{title}</Text>
-          <FlatList
-            data={items}
-            keyExtractor={i => i.code}
-            renderItem={({ item }) => (
-              <Pressable style={ps.item} onPress={() => { onSelect(item); onClose(); }}>
-                <Text style={[ps.itemText, item.code === selected && ps.itemActive]}>{item.name}</Text>
-                {item.code === selected && <Ionicons name="checkmark" size={16} color={NAVY} />}
+          <View style={ps.searchBox}>
+            <Ionicons name="search-outline" size={16} color={HINT} />
+            <TextInput
+              style={ps.searchInput}
+              placeholder="Type to filter…"
+              placeholderTextColor={HINT}
+              value={q}
+              onChangeText={setQ}
+              autoFocus
+            />
+            {q.length > 0 && (
+              <Pressable onPress={() => setQ('')} hitSlop={8}>
+                <Ionicons name="close-circle" size={16} color={HINT} />
               </Pressable>
             )}
+          </View>
+          <FlatList
+            data={filtered}
+            keyExtractor={i => i.code}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => {
+              const active = item.code === selectedCode;
+              return (
+                <Pressable
+                  style={[ps.item, active && ps.itemActive]}
+                  onPress={() => { setQ(''); onSelect(item); onClose(); }}
+                >
+                  <Text style={[ps.itemText, active && ps.itemTextActive]}>{item.name}</Text>
+                  {active && <Ionicons name="checkmark" size={16} color={NAVY} />}
+                </Pressable>
+              );
+            }}
+            ListEmptyComponent={<Text style={ps.empty}>No matches</Text>}
           />
         </View>
       </Pressable>
@@ -59,69 +86,32 @@ function SheetPicker<T extends { code: string; name: string }>({
   );
 }
 
-// ── Status badge ──────────────────────────────────────────────────────────────
-function StatusBadge({ status }: { status: string | null }) {
-  if (!status) return null;
-  const disposed = /dispos|closed|decided/i.test(status);
-  return (
-    <View style={[styles.badge, disposed ? styles.badgeDisposed : styles.badgePending]}>
-      <Text style={[styles.badgeText, disposed ? styles.badgeTextDisposed : styles.badgeTextPending]}>{status}</Text>
-    </View>
-  );
-}
-
-// ── Case card ─────────────────────────────────────────────────────────────────
-function CaseCard({ item }: { item: CaseResult }) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <Pressable style={styles.card} onPress={() => setExpanded(v => !v)}>
-      <View style={styles.cardTop}>
-        <View style={styles.cnrRow}>
-          <Ionicons name="document-text-outline" size={14} color={NAVY} />
-          <Text style={styles.cnr} selectable>{item.cnr ?? '—'}</Text>
-        </View>
-        <StatusBadge status={item.case_status} />
-      </View>
-      {(item.court_name || item.district) && (
-        <Text style={styles.court} numberOfLines={1}>
-          {[item.court_name, item.district, item.state].filter(Boolean).join(' · ')}
-        </Text>
-      )}
-      {item.next_hearing_date && (
-        <View style={styles.hearingRow}>
-          <Ionicons name="calendar-outline" size={12} color={theme.colors.brand} />
-          <Text style={styles.hearingText}>Next hearing: {item.next_hearing_date}</Text>
-        </View>
-      )}
-      {expanded && (
-        <View style={styles.expanded}>
-          {item.petitioners?.[0] && <View style={styles.partyRow}><Text style={styles.partyLabel}>Petitioner</Text><Text style={styles.partyVal}>{item.petitioners[0]}</Text></View>}
-          {item.respondents?.[0] && <View style={styles.partyRow}><Text style={styles.partyLabel}>Respondent</Text><Text style={styles.partyVal}>{item.respondents[0]}</Text></View>}
-          {item.case_type   && <View style={styles.partyRow}><Text style={styles.partyLabel}>Case type</Text><Text style={styles.partyVal}>{item.case_type}</Text></View>}
-          {item.filing_date && <View style={styles.partyRow}><Text style={styles.partyLabel}>Filed on</Text><Text style={styles.partyVal}>{item.filing_date}</Text></View>}
-        </View>
-      )}
-      <Text style={styles.toggle}>{expanded ? 'Show less ▲' : 'Show more ▼'}</Text>
-    </Pressable>
-  );
-}
-
-// ── PickerRow ─────────────────────────────────────────────────────────────────
-function PickerRow({ label, value, placeholder, onPress, disabled = false }: {
-  label: string; value: string; placeholder: string; onPress: () => void; disabled?: boolean;
+// ── Picker row ────────────────────────────────────────────────────────────────
+function PickerRow({
+  label, value, placeholder, onPress, disabled,
+}: {
+  label: string; value: string; placeholder: string;
+  onPress: () => void; disabled: boolean;
 }) {
   return (
     <View style={styles.filterBlock}>
       <Text style={styles.filterLabel}>{label}</Text>
       <Pressable
-        style={[styles.filterBtn, disabled && { opacity: 0.4 }]}
-        onPress={onPress}
+        style={[styles.pickerRow, disabled && styles.pickerRowDisabled]}
+        onPress={disabled ? undefined : onPress}
         disabled={disabled}
       >
-        <Text style={value ? styles.filterVal : styles.filterPlaceholder} numberOfLines={1}>
+        <Text
+          style={[styles.pickerText, !value && styles.pickerPlaceholder]}
+          numberOfLines={1}
+        >
           {value || placeholder}
         </Text>
-        <Ionicons name="chevron-down" size={15} color={NAVY} />
+        <Ionicons
+          name="chevron-down-outline"
+          size={16}
+          color={disabled ? HINT : NAVY}
+        />
       </Pressable>
     </View>
   );
@@ -129,90 +119,67 @@ function PickerRow({ label, value, placeholder, onPress, disabled = false }: {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function LookupScreen() {
-  const { token } = useAuth();
   const [mode, setMode] = useState<Mode>('cnr');
 
-  // CNR state
-  const [cnrQuery, setCnrQuery]   = useState('');
-  const [cnrState, setCnrState]   = useState('');
-  const [cnrCourt, setCnrCourt]   = useState('');
-  const [results,  setResults]    = useState<CaseResult[]>([]);
-  const [loading,  setLoading]    = useState(false);
-  const [error,    setError]      = useState<string | null>(null);
-  const [searched, setSearched]   = useState(false);
+  // CNR
+  const [cnr, setCnr]           = useState('');
+  const [cnrState, setCnrState] = useState('');
+  const [cnrCourt, setCnrCourt] = useState('');
 
-  // Party name state
-  const [selState,   setSelState]   = useState<StateUT | null>(null);
-  const [selDist,    setSelDist]    = useState<District | null>(null);
-  const [selComplex, setSelComplex] = useState<Complex | null>(null);
-  const [caseType,   setCaseType]   = useState(CASE_TYPES[0]);
-  const [partyRole,  setPartyRole]  = useState<'Any' | 'Petitioner' | 'Respondent' | 'Accused'>('Any');
-  const [partyName,  setPartyName]  = useState('');
+  // Party
+  const [selState,  setSelState]   = useState<{ code: string; name: string } | null>(null);
+  const [selDist,   setSelDist]    = useState<{ code: string; name: string } | null>(null);
+  const [partyName, setPartyName]  = useState('');
+  const [partyType, setPartyType]  = useState<PartyType>('petitioner');
 
-  // Pickers visibility
-  const [showState,   setShowState]   = useState(false);
-  const [showDist,    setShowDist]    = useState(false);
-  const [showComplex, setShowComplex] = useState(false);
-  const [showType,    setShowType]    = useState(false);
+  // Modals
+  const [showState, setShowState] = useState(false);
+  const [showDist,  setShowDist]  = useState(false);
 
-  const inputRef = useRef<TextInput>(null);
-
-  // Cascade reset
-  const pickState = (s: StateUT) => { setSelState(s); setSelDist(null); setSelComplex(null); };
-  const pickDist  = (d: District) => { setSelDist(d); setSelComplex(null); };
-
-  // CNR auto-decode
   const handleCNR = (text: string) => {
-    const v = formatCNR(text);
-    setCnrQuery(v);
+    const v = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 16);
+    setCnr(v);
     setCnrState(v.length >= 2 ? (CNR_STATE_CODES[v.slice(0, 2)] ?? '') : '');
     setCnrCourt(v.length >= 4 ? (CNR_COURT_CODES[v.slice(2, 4)] ?? '') : '');
   };
 
-  // CNR search (existing backend)
-  const searchCNR = useCallback(async () => {
-    if (cnrQuery.length !== 16 || !token) return;
-    setLoading(true); setError(null); setResults([]); setSearched(false);
-    try {
-      const r = await fetch(`${API_BASE}/api/cases/cnr/${cnrQuery}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) throw new Error((await r.json())?.detail ?? `Error ${r.status}`);
-      setResults([await r.json()]);
-    } catch (e: any) { setError(e.message); }
-    finally { setLoading(false); setSearched(true); }
-  }, [cnrQuery, token]);
-
-  // Party search → open eCourts in browser
-  const searchParty = useCallback(() => {
-    if (!selState || !partyName.trim()) return;
-    const params = new URLSearchParams();
-    params.set('state_code', selState.code);
-    if (selDist)    params.set('dist_code',     selDist.code);
-    if (selComplex && selComplex.code !== 'ALL') params.set('court_complex_code', selComplex.code);
-    if (caseType.code)  params.set('case_type', caseType.code);
-    params.set('party_name', partyName.trim());
-    if (partyRole !== 'Any') params.set('party_type', partyRole.toLowerCase());
-    const url = `https://services.ecourts.gov.in/ecourtindiaR2/cases/casestatus_index.php?${params.toString()}`;
-    Linking.openURL(url);
-  }, [selState, selDist, selComplex, caseType, partyRole, partyName]);
-
-  const resetParty = () => {
-    setSelState(null); setSelDist(null); setSelComplex(null);
-    setCaseType(CASE_TYPES[0]); setPartyRole('Any'); setPartyName('');
+  const pickState = (s: { code: string; name: string }) => {
+    setSelState(s);
+    setSelDist(null);  // reset district
+    setPartyName(''); // clear name
   };
 
-  const districts = selState ? getDistricts(selState.code) : [];
-  const complexes = selState && selDist
-    ? getComplexes(selState.code, selDist.code)
-    : [];
-  const defaultComplex: Complex = selDist
-    ? { code: 'ALL', name: `All courts in ${selDist.name}` }
-    : { code: 'ALL', name: 'All courts in district' };
-  const complexList = complexes.length > 0 ? [defaultComplex, ...complexes] : [defaultComplex];
+  const districts = selState ? (DISTRICTS[selState.code] ?? []) : [];
 
-  const cnrComplete = cnrQuery.length === 16;
-  const partyCanSearch = !!selState && partyName.trim().length >= 2;
+  const partyCanSearch =
+    !!selState && !!selDist && partyName.trim().length >= 3;
+
+  const handleSearch = useCallback(() => {
+    if (mode === 'cnr') {
+      if (cnr.length !== 16) return;
+      router.push({
+        pathname: '/lookup-webview' as any,
+        params: {
+          url: encodeURIComponent(buildCNRUrl(cnr)),
+          title: `Case: ${cnr}`,
+        },
+      });
+    } else {
+      if (!partyCanSearch) return;
+      router.push({
+        pathname: '/lookup-webview' as any,
+        params: {
+          url: encodeURIComponent(
+            buildPartySearchUrl(selState!.code, selDist!.code, partyName.trim(), partyType)
+          ),
+          title: `Results: ${partyName.trim()}`,
+        },
+      });
+    }
+  }, [mode, cnr, selState, selDist, partyName, partyType, partyCanSearch]);
+
+  const cnrComplete = cnr.length === 16;
+  const canSearch   = mode === 'cnr' ? cnrComplete : partyCanSearch;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -226,15 +193,18 @@ export default function LookupScreen() {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* Mode toggle */}
           <View style={styles.modeRow}>
             {(['cnr', 'party'] as Mode[]).map(m => (
               <Pressable
                 key={m}
                 style={[styles.modeBtn, mode === m && styles.modeBtnActive]}
-                onPress={() => { setMode(m); setResults([]); setError(null); setSearched(false); }}
+                onPress={() => { setMode(m); }}
               >
                 <Ionicons
                   name={m === 'cnr' ? 'barcode-outline' : 'person-outline'}
@@ -253,9 +223,8 @@ export default function LookupScreen() {
             <View style={styles.card}>
               <View style={styles.inputRow}>
                 <TextInput
-                  ref={inputRef}
                   style={styles.input}
-                  value={cnrQuery}
+                  value={cnr}
                   onChangeText={handleCNR}
                   placeholder="CNR — e.g. DLHC010001232024"
                   placeholderTextColor={HINT}
@@ -263,130 +232,81 @@ export default function LookupScreen() {
                   autoCorrect={false}
                   maxLength={16}
                   returnKeyType="search"
-                  onSubmitEditing={cnrComplete ? searchCNR : undefined}
+                  onSubmitEditing={cnrComplete ? handleSearch : undefined}
                 />
-                {cnrQuery.length > 0 && (
-                  <Pressable onPress={() => { setCnrQuery(''); setCnrState(''); setCnrCourt(''); setResults([]); }} hitSlop={8}>
+                {cnr.length > 0 && (
+                  <Pressable onPress={() => { setCnr(''); setCnrState(''); setCnrCourt(''); }} hitSlop={8}>
                     <Ionicons name="close-circle" size={18} color={HINT} />
                   </Pressable>
                 )}
               </View>
 
-              {cnrQuery.length > 0 && (
+              {cnr.length > 0 && (
                 <View style={styles.cnrProgress}>
-                  <View style={[styles.cnrBar, { width: `${(cnrQuery.length / 16) * 100}%` as any }]} />
-                  <Text style={styles.cnrCount}>{cnrQuery.length}/16{cnrComplete ? ' ✓' : ''}</Text>
+                  <View style={[styles.cnrBar, { width: `${(cnr.length / 16) * 100}%` as any }]} />
+                  <Text style={styles.cnrCount}>{cnr.length}/16{cnrComplete ? ' ✓' : ''}</Text>
                 </View>
               )}
 
-              {/* Auto-decode labels */}
-              {(cnrState || cnrCourt) ? (
+              {(cnrState || cnrCourt) && (
                 <View style={styles.decodedRow}>
                   {cnrState ? (
                     <View style={styles.decodedChip}>
                       <Ionicons name="location-outline" size={12} color={NAVY} />
-                      <Text style={styles.decodedText}>{cnrQuery.slice(0, 2)} → {cnrState}</Text>
+                      <Text style={styles.decodedText}>{cnr.slice(0, 2)} → {cnrState}</Text>
                     </View>
                   ) : null}
                   {cnrCourt ? (
                     <View style={styles.decodedChip}>
                       <Ionicons name="business-outline" size={12} color={NAVY} />
-                      <Text style={styles.decodedText}>{cnrQuery.slice(2, 4)} → {cnrCourt}</Text>
+                      <Text style={styles.decodedText}>{cnr.slice(2, 4)} → {cnrCourt}</Text>
                     </View>
                   ) : null}
                 </View>
-              ) : null}
+              )}
 
               <Text style={styles.inputHint}>
                 CNR = 16 characters · found on your case notice or the eCourts portal
               </Text>
-
-              <Pressable
-                style={[styles.searchBtn, !cnrComplete && styles.searchBtnDisabled]}
-                onPress={searchCNR}
-                disabled={!cnrComplete || loading}
-              >
-                {loading
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <><Ionicons name="search" size={16} color="#fff" /><Text style={styles.searchBtnText}>Search eCourts</Text></>}
-              </Pressable>
             </View>
           )}
 
           {/* ── PARTY MODE ───────────────────────────────────────── */}
           {mode === 'party' && (
             <View style={styles.card}>
-              {/* Step 1: State */}
+              {/* State picker */}
               <PickerRow
-                label="Step 1 — State / Union Territory *"
+                label="State / Union Territory *"
                 value={selState?.name ?? ''}
                 placeholder="Select State / UT"
                 onPress={() => setShowState(true)}
+                disabled={false}
               />
 
-              {/* Step 2: District (cascades) */}
-              {selState && (
-                <PickerRow
-                  label="Step 2 — District"
-                  value={selDist?.name ?? ''}
-                  placeholder="Select District"
-                  onPress={() => setShowDist(true)}
-                />
-              )}
+              {/* District picker — disabled until State selected */}
+              <PickerRow
+                label="District *"
+                value={selDist?.name ?? ''}
+                placeholder={selState ? 'Select District' : 'Select a State first'}
+                onPress={() => setShowDist(true)}
+                disabled={!selState}
+              />
 
-              {/* Step 3: Court Complex (cascades) */}
-              {selDist && (
-                <PickerRow
-                  label="Step 3 — Court Complex"
-                  value={selComplex?.name ?? defaultComplex.name}
-                  placeholder="Select Court Complex"
-                  onPress={() => setShowComplex(true)}
-                />
-              )}
-
-              {/* Optional filters */}
-              {selState && (
-                <>
-                  <View style={styles.divider} />
-                  <PickerRow
-                    label="Case Type (optional)"
-                    value={caseType.name}
-                    placeholder="All case types"
-                    onPress={() => setShowType(true)}
-                  />
-
-                  {/* Party Role toggle */}
-                  <View style={styles.filterBlock}>
-                    <Text style={styles.filterLabel}>Party Role (optional)</Text>
-                    <View style={styles.roleRow}>
-                      {(['Any', 'Petitioner', 'Respondent', 'Accused'] as const).map(r => (
-                        <Pressable
-                          key={r}
-                          style={[styles.roleBtn, partyRole === r && styles.roleBtnActive]}
-                          onPress={() => setPartyRole(r)}
-                        >
-                          <Text style={[styles.roleBtnText, partyRole === r && { color: '#fff' }]}>{r}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-                </>
-              )}
-
-              {/* Party name input */}
+              {/* Party name — disabled until District selected */}
               <View style={styles.filterBlock}>
-                <Text style={styles.filterLabel}>Step {selState ? 5 : 2} — Party Name *</Text>
-                <View style={styles.inputRow}>
+                <Text style={styles.filterLabel}>Party Name * (min 3 chars)</Text>
+                <View style={[styles.inputRow, !selDist && styles.inputDisabled]}>
                   <TextInput
                     style={[styles.input, { flex: 1 }]}
                     value={partyName}
                     onChangeText={setPartyName}
-                    placeholder="Enter petitioner or respondent name"
+                    placeholder={selDist ? 'Enter petitioner or respondent name' : 'Select a District first'}
                     placeholderTextColor={HINT}
                     autoCapitalize="words"
                     autoCorrect={false}
+                    editable={!!selDist}
                     returnKeyType="search"
-                    onSubmitEditing={partyCanSearch ? searchParty : undefined}
+                    onSubmitEditing={partyCanSearch ? handleSearch : undefined}
                   />
                   {partyName.length > 0 && (
                     <Pressable onPress={() => setPartyName('')} hitSlop={8}>
@@ -396,64 +316,52 @@ export default function LookupScreen() {
                 </View>
               </View>
 
-              <Pressable
-                style={[styles.searchBtn, !partyCanSearch && styles.searchBtnDisabled]}
-                onPress={searchParty}
-                disabled={!partyCanSearch}
-              >
-                <Ionicons name="open-outline" size={16} color="#fff" />
-                <Text style={styles.searchBtnText}>Search eCourts</Text>
-              </Pressable>
-
-              <Pressable onPress={resetParty} style={{ alignItems: 'center', marginTop: 8 }}>
-                <Text style={styles.clearText}>Clear filters</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {/* Error */}
-          {error && (
-            <View style={styles.errorCard}>
-              <Ionicons name="alert-circle-outline" size={16} color={theme.colors.error} />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
-          {/* Results */}
-          {results.length > 0 && (
-            <View style={{ gap: 10 }}>
-              <Text style={styles.resultsLabel}>{results.length === 1 ? '1 case found' : `${results.length} cases found`}</Text>
-              {results.map((item, i) => <CaseCard key={item.cnr ?? i} item={item} />)}
-            </View>
-          )}
-
-          {/* Empty state */}
-          {searched && results.length === 0 && !error && (
-            <View style={styles.emptyWrap}>
-              <Ionicons name="file-tray-outline" size={40} color={HINT} />
-              <Text style={styles.emptyTitle}>No cases found</Text>
-              <Text style={styles.emptyBody}>Check the CNR number and try again.</Text>
-            </View>
-          )}
-
-          {/* Hint cards */}
-          {!searched && !loading && mode === 'cnr' && (
-            <View style={styles.hintCard}>
-              <Ionicons name="barcode-outline" size={20} color={NAVY} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.hintTitle}>Case Number Record (CNR)</Text>
-                <Text style={styles.hintBody}>Your unique 16-character case ID. Find it on any court notice or at ecourts.gov.in</Text>
+              {/* Party type toggle */}
+              <View style={styles.filterBlock}>
+                <Text style={styles.filterLabel}>Party Type</Text>
+                <View style={styles.toggleRow}>
+                  {(['petitioner', 'respondent'] as PartyType[]).map(pt => (
+                    <Pressable
+                      key={pt}
+                      style={[styles.toggleBtn, partyType === pt && styles.toggleBtnActive]}
+                      onPress={() => setPartyType(pt)}
+                    >
+                      <Text style={[styles.toggleText, partyType === pt && styles.toggleTextActive]}>
+                        {pt.charAt(0).toUpperCase() + pt.slice(1)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               </View>
             </View>
           )}
 
+          {/* Search button */}
+          <Pressable
+            style={[styles.searchBtn, !canSearch && styles.searchBtnDisabled]}
+            onPress={handleSearch}
+            disabled={!canSearch}
+          >
+            <Ionicons name="search" size={16} color="#fff" />
+            <Text style={styles.searchBtnText}>Search eCourts</Text>
+          </Pressable>
+
+          {/* Hint */}
           {mode === 'party' && !selState && (
             <View style={styles.hintCard}>
-              <Ionicons name="funnel-outline" size={20} color={NAVY} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.hintTitle}>Narrow your search</Text>
-                <Text style={styles.hintBody}>Select a State first, then District and Court to get precise results. Opens eCourts portal in browser.</Text>
-              </View>
+              <Ionicons name="information-circle-outline" size={18} color={NAVY} />
+              <Text style={styles.hintText}>
+                Select a State, then District, enter a name and tap Search — results open inside DHARA.
+              </Text>
+            </View>
+          )}
+
+          {mode === 'cnr' && !cnr && (
+            <View style={styles.hintCard}>
+              <Ionicons name="barcode-outline" size={18} color={NAVY} />
+              <Text style={styles.hintText}>
+                Your 16-character CNR is on any court notice, vakalatnama, or the eCourts portal.
+              </Text>
             </View>
           )}
         </ScrollView>
@@ -461,60 +369,61 @@ export default function LookupScreen() {
 
       {/* Pickers */}
       <SheetPicker
-        visible={showState} title="Select State / UT"
-        items={STATES_UTS} selected={selState?.code ?? ''}
-        onSelect={pickState} onClose={() => setShowState(false)}
+        visible={showState}
+        title="Select State / UT"
+        items={STATES_UTS}
+        selectedCode={selState?.code ?? ''}
+        onSelect={pickState}
+        onClose={() => setShowState(false)}
       />
       <SheetPicker
-        visible={showDist} title="Select District"
-        items={districts} selected={selDist?.code ?? ''}
-        onSelect={pickDist} onClose={() => setShowDist(false)}
-      />
-      <SheetPicker
-        visible={showComplex} title="Select Court Complex"
-        items={complexList} selected={selComplex?.code ?? 'ALL'}
-        onSelect={c => setSelComplex(c.code === 'ALL' ? null : c)}
-        onClose={() => setShowComplex(false)}
-      />
-      <SheetPicker
-        visible={showType} title="Select Case Type"
-        items={CASE_TYPES} selected={caseType.code}
-        onSelect={setCaseType} onClose={() => setShowType(false)}
+        visible={showDist}
+        title="Select District"
+        items={districts}
+        selectedCode={selDist?.code ?? ''}
+        onSelect={d => { setSelDist(d); setPartyName(''); }}
+        onClose={() => setShowDist(false)}
       />
     </SafeAreaView>
   );
 }
 
 const ps = StyleSheet.create({
-  overlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet:    { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '75%', paddingHorizontal: 20, paddingBottom: 30 },
-  handle:   { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginVertical: 10 },
-  title:    { fontSize: 16, fontWeight: '700', color: NAVY, marginBottom: 10 },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  sheet:   { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%', paddingHorizontal: 20, paddingBottom: 30 },
+  handle:  { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E5E7EB', alignSelf: 'center', marginVertical: 12 },
+  title:   { fontSize: 16, fontWeight: '700', color: NAVY, marginBottom: 10 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 10 },
+  searchInput: { flex: 1, fontSize: 14, color: '#1F2937' },
   item:     { paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  itemActive: { backgroundColor: '#FEF9EC' },
   itemText: { fontSize: 14, color: '#374151', flex: 1 },
-  itemActive: { color: NAVY, fontWeight: '700' },
+  itemTextActive: { color: NAVY, fontWeight: '700' },
+  empty:  { paddingVertical: 20, textAlign: 'center', color: HINT },
 });
 
 const styles = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: theme.colors.surface },
+  safe:   { flex: 1, backgroundColor: CREAM },
   header: { backgroundColor: NAVY, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(211,182,117,0.25)' },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
   headerTitle: { fontSize: 20, fontWeight: '700', color: '#fff' },
   headerSub: { fontSize: 13, color: GOLD, fontWeight: '500' },
   scroll:  { flex: 1 },
-  scrollContent: { padding: 16, gap: 14, paddingBottom: 40 },
+  scrollContent: { padding: 16, gap: 14, paddingBottom: 48 },
 
   modeRow: { flexDirection: 'row', gap: 10 },
-  modeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: NAVY, backgroundColor: theme.colors.surface },
+  modeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: NAVY, backgroundColor: '#fff' },
   modeBtnActive: { backgroundColor: NAVY },
   modeBtnText: { fontSize: 14, fontWeight: '700', color: NAVY },
 
-  card: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border, padding: 16, gap: 12 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: theme.colors.divider, paddingBottom: 8 },
-  input: { flex: 1, fontSize: 15, color: theme.colors.onSurface, minHeight: 28 },
+  card: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1.5, borderColor: NAVY + '33', padding: 16, gap: 14 },
+
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingBottom: 8 },
+  inputDisabled: { opacity: 0.45 },
+  input: { fontSize: 15, color: '#1F2937', minHeight: 28 },
 
   cnrProgress: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cnrBar: { height: 3, borderRadius: 2, backgroundColor: NAVY },
+  cnrBar:  { height: 3, borderRadius: 2, backgroundColor: NAVY },
   cnrCount: { fontSize: 11, color: NAVY, fontWeight: '700' },
 
   decodedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -525,50 +434,22 @@ const styles = StyleSheet.create({
 
   filterBlock: { gap: 5 },
   filterLabel: { fontSize: 12, fontWeight: '700', color: NAVY, letterSpacing: 0.2 },
-  filterBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
-  filterVal: { fontSize: 14, color: theme.colors.onSurface, flex: 1 },
-  filterPlaceholder: { fontSize: 14, color: HINT, flex: 1 },
 
-  divider: { height: 1, backgroundColor: theme.colors.divider },
+  pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1.5, borderColor: NAVY, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: '#fff' },
+  pickerRowDisabled: { borderColor: '#D1D5DB', opacity: 0.5 },
+  pickerText: { fontSize: 14, color: '#1F2937', flex: 1 },
+  pickerPlaceholder: { color: HINT },
 
-  roleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  roleBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 1.5, borderColor: NAVY },
-  roleBtnActive: { backgroundColor: NAVY },
-  roleBtnText: { fontSize: 12, fontWeight: '600', color: NAVY },
+  toggleRow: { flexDirection: 'row', gap: 10 },
+  toggleBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 8, borderWidth: 1.5, borderColor: NAVY, backgroundColor: '#fff' },
+  toggleBtnActive: { backgroundColor: NAVY },
+  toggleText: { fontSize: 14, fontWeight: '700', color: NAVY },
+  toggleTextActive: { color: '#fff' },
 
-  searchBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: NAVY, paddingVertical: 13, borderRadius: 10 },
-  searchBtnDisabled: { backgroundColor: theme.colors.borderStrong },
-  searchBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  clearText: { fontSize: 13, color: HINT, textDecorationLine: 'underline' },
+  searchBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: GOLD, paddingVertical: 14, borderRadius: 10 },
+  searchBtnDisabled: { backgroundColor: '#D1D5DB' },
+  searchBtnText: { color: NAVY, fontSize: 15, fontWeight: '800' },
 
-  errorCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: theme.colors.error, borderRadius: 10, padding: 12 },
-  errorText: { flex: 1, color: theme.colors.error, fontSize: 13 },
-
-  resultsLabel: { fontSize: 13, fontWeight: '700', color: HINT },
-
-  card: { borderWidth: 1, borderColor: theme.colors.border, borderRadius: 12, padding: 14, backgroundColor: '#fff', gap: 6 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cnrRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  cnr: { fontSize: 13, fontWeight: '800', color: NAVY, letterSpacing: 0.5 },
-  court: { fontSize: 13, color: theme.colors.onSurface },
-  hearingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  hearingText: { fontSize: 12, color: theme.colors.brand, fontWeight: '600' },
-  expanded: { borderTopWidth: 1, borderTopColor: theme.colors.divider, paddingTop: 8, gap: 5 },
-  partyRow: { flexDirection: 'row', gap: 8 },
-  partyLabel: { width: 84, fontSize: 12, fontWeight: '700', color: HINT },
-  partyVal: { flex: 1, fontSize: 12, color: theme.colors.onSurface },
-  toggle: { fontSize: 11, color: NAVY, textAlign: 'right' },
-
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  badgePending: { backgroundColor: '#FEF9EC' }, badgeDisposed: { backgroundColor: '#ECFDF5' },
-  badgeText: { fontSize: 10, fontWeight: '700' },
-  badgeTextPending: { color: '#B45309' }, badgeTextDisposed: { color: '#047857' },
-
-  emptyWrap: { alignItems: 'center', paddingVertical: 40, gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.onSurface },
-  emptyBody:  { fontSize: 13, color: HINT, textAlign: 'center' },
-
-  hintCard: { backgroundColor: theme.colors.surfaceSecondary, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border, padding: 14, flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  hintTitle: { fontSize: 14, fontWeight: '700', color: theme.colors.onSurface, marginBottom: 3 },
-  hintBody:  { fontSize: 13, color: HINT, lineHeight: 18 },
+  hintCard: { flexDirection: 'row', gap: 10, backgroundColor: '#EEF2FF', borderRadius: 10, padding: 14, alignItems: 'flex-start' },
+  hintText: { flex: 1, fontSize: 13, color: NAVY, lineHeight: 19 },
 });

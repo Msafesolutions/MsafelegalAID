@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-const API = process.env.EXPO_PUBLIC_API_URL ?? '';
+const API = process.env.EXPO_PUBLIC_BACKEND_URL ?? '';
 const NAVY = '#14365A';
 const GOLD = '#D3B675';
 
