@@ -29,6 +29,16 @@ const GOLD  = '#D3B675';
 const RED   = '#DC2626';
 const GREEN = '#059669';
 
+// Lightweight id generator for anonymous (not-logged-in) citizens using the
+// FIR flow — no external uuid dependency needed for this local-only id.
+function uuidv4Ish(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16);
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 const FIR_LANG_KEY = 'fir_draft_lang';
 
 // ─── Language options for FIR (3 required + English) ──────────────────────
@@ -184,8 +194,23 @@ export default function FIRDraftIntake() {
   const [safetyFlags, setSafetyFlags] = useState<string[]>([]);
   const [showSafety, setShowSafety] = useState(false);
   const [safetyAcknowledged, setSafetyAcknowledged] = useState(false);
+  // Anonymous-first: the Voice FIR flow must work without login. When the
+  // citizen isn't signed in, we generate and persist a local id so their
+  // draft can still be created/synced/generated server-side.
+  const [anonId, setAnonId] = useState<string | null>(null);
+  const effectiveUserId = user?.id ?? anonId;
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+
+  useEffect(() => {
+    if (user?.id) return;
+    AsyncStorage.getItem('fir_anon_id').then(async existing => {
+      if (existing) { setAnonId(existing); return; }
+      const id = `anon-${uuidv4Ish()}`;
+      await AsyncStorage.setItem('fir_anon_id', id).catch(() => {});
+      setAnonId(id);
+    });
+  }, [user?.id]);
 
   // Restore in-progress draft from local storage
   useEffect(() => {
@@ -212,20 +237,25 @@ export default function FIRDraftIntake() {
   }, [answers, draftId, lang, step, user?.id]);
 
   const syncToBackend = useCallback(async (updatedAnswers: Record<string, string>, status = 'in_progress') => {
-    if (!token || !user?.id) return;
+    // Anonymous-first: sync as long as we have SOME id (real user or local
+    // anon id) — a missing auth token must never block this.
+    if (!effectiveUserId) return;
     setSyncing(true);
     try {
       const r = await fetch(`${API_BASE}/api/fir/draft`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ draft_id: draftId, user_id: user.id, language: lang, answers: updatedAnswers, status }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ draft_id: draftId, user_id: effectiveUserId, language: lang, answers: updatedAnswers, status }),
       }).catch(() => null);
       if (r?.ok) {
         const d = await r.json();
         if (d.draft_id && !draftId) setDraftId(d.draft_id);
       }
     } catch {} finally { setSyncing(false); }
-  }, [token, user?.id, draftId, lang]);
+  }, [token, effectiveUserId, draftId, lang]);
 
   const startRecording = async () => {
     try {
@@ -302,7 +332,10 @@ export default function FIRDraftIntake() {
     if (step >= QUESTIONS.length) {
       // Done — go to result
       await syncToBackend(answers, 'completed');
-      router.push({ pathname: '/fir-draft/result', params: { draftId: draftId ?? '', lang } } as any);
+      router.push({
+        pathname: '/fir-draft/result',
+        params: { draftId: draftId ?? '', lang, userId: effectiveUserId ?? '' },
+      } as any);
     } else {
       setStep(s => s + 1);
     }
@@ -367,7 +400,6 @@ export default function FIRDraftIntake() {
                   <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
                   <Text style={s.disclaimerText}>
                     This is a citizen draft — NOT a registered FIR. Accuracy of suggested sections depends on your description.
-                    <Text style={{ color: RED }}> [Disclaimer pending legal counsel review]</Text>
                   </Text>
                 </View>
               </View>

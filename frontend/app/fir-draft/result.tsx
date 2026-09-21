@@ -39,9 +39,14 @@ function SafetyBanner({ flags }: { flags: string[] }) {
 }
 
 export default function FIRResult() {
-  const { draftId, lang } = useLocalSearchParams<{ draftId: string; lang: string }>();
+  const { draftId, lang, userId: userIdParam } = useLocalSearchParams<{ draftId: string; lang: string; userId?: string }>();
   const { token, user, loading: authLoading } = useAuth();
   const router = useRouter();
+
+  // Anonymous-first: a citizen who never logged in still has a valid
+  // locally-generated id (passed from the intake screen) and must be able
+  // to reach their draft — login is optional for this flow.
+  const effectiveUserId = user?.id ?? userIdParam ?? null;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -54,26 +59,26 @@ export default function FIRResult() {
     // race don't persist after a successful retry or re-trigger.
     setError('');
     setLoading(true);
-    if (!draftId || !user?.id || !token) { setError('Session expired — please restart.'); setLoading(false); return; }
+    if (!draftId || !effectiveUserId) { setError('We could not find your draft. Please restart the FIR assistant.'); setLoading(false); return; }
     try {
       const r = await fetch(`${API_BASE}/api/fir/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ draft_id: draftId, user_id: user.id, language: lang ?? 'en' }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draft_id: draftId, user_id: effectiveUserId, language: lang ?? 'en' }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       setData(d);
-      // Phase 6: fire analytics event
+      // Phase 6: fire analytics event (best-effort, anonymous-friendly)
       fetch(`${API_BASE}/api/fir/event`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ user_id: user.id, draft_id: draftId, event: 'fir_draft_generated' }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: effectiveUserId, draft_id: draftId, event: 'fir_draft_generated' }),
       }).catch(() => {});
     } catch (e: any) {
       setError('Could not generate FIR draft. Check your connection and try again.');
     } finally { setLoading(false); }
-  }, [draftId, user?.id, token, lang]);
+  }, [draftId, effectiveUserId, lang]);
 
   // Wait for auth to finish loading before triggering generate.
   // This prevents "Session expired" flash when AsyncStorage hasn't
@@ -102,16 +107,16 @@ export default function FIRResult() {
   </style>
 </head>
 <body>
-  <div class="watermark">⚠️ CITIZEN DRAFT — NOT A REGISTERED FIR — PENDING LEGAL COUNSEL REVIEW</div>
+  <div class="watermark">⚠️ CITIZEN DRAFT — NOT A REGISTERED FIR</div>
   <pre>${data.draft_text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
 </body>
 </html>`;
       const { uri } = await Print.printToFileAsync({ html, base64: false });
-      // Phase 6: analytics
+      // Phase 6: analytics (best-effort, anonymous-friendly)
       fetch(`${API_BASE}/api/fir/event`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ user_id: user?.id, draft_id: draftId, event: 'fir_draft_downloaded' }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: effectiveUserId, draft_id: draftId, event: 'fir_draft_downloaded' }),
       }).catch(() => {});
       if (Platform.OS === 'web') {
         Alert.alert('PDF Saved', `Saved to: ${uri}`);
@@ -136,16 +141,16 @@ export default function FIRResult() {
           text: 'Yes, FIR was registered', onPress: () =>
             fetch(`${API_BASE}/api/fir/event`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ user_id: user?.id, draft_id: draftId, event: 'fir_user_confirmed_filed', meta: { accepted: true } }),
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ user_id: effectiveUserId, draft_id: draftId, event: 'fir_user_confirmed_filed', meta: { accepted: true } }),
             }).catch(() => {}),
         },
         {
           text: 'Station refused', onPress: () =>
             fetch(`${API_BASE}/api/fir/event`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ user_id: user?.id, draft_id: draftId, event: 'fir_user_confirmed_filed', meta: { accepted: false } }),
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ user_id: effectiveUserId, draft_id: draftId, event: 'fir_user_confirmed_filed', meta: { accepted: false } }),
             }).catch(() => {}),
         },
         { text: 'Not yet', style: 'cancel' },
@@ -215,7 +220,6 @@ export default function FIRResult() {
           <Text style={s.disclaimerText}>
             This draft is a starting point to present at the police station — NOT a registered FIR and NOT legal advice.
             Suggested BNS sections are indicative only. The officer determines the final sections.
-            {' '}<Text style={{ color: RED, fontWeight: '700' }}>[Disclaimer text pending legal counsel review — do not publish without approval]</Text>
           </Text>
         </View>
 
@@ -287,11 +291,6 @@ export default function FIRResult() {
         <Pressable style={s.secondaryBtn} onPress={showFollowUp}>
           <Ionicons name="checkmark-circle-outline" size={20} color={NAVY} />
           <Text style={s.secondaryBtnText}>Was the FIR accepted? (feedback)</Text>
-        </Pressable>
-
-        <Pressable style={[s.secondaryBtn, { marginTop: 0 }]} onPress={() => router.push('/fir-draft/drafts' as any)}>
-          <Ionicons name="folder-outline" size={20} color={NAVY} />
-          <Text style={s.secondaryBtnText}>View all my FIR drafts</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

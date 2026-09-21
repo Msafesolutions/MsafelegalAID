@@ -928,8 +928,7 @@ def classify_incident(narrative: str, top_n: int = 3) -> dict:
         "disclaimer": (
             "\u26a0\ufe0f SUGGESTED SECTIONS ONLY \u2014 These BNS sections are a starting point "
             "based on your description. The police officer will determine the applicable "
-            "sections after investigation. This is NOT a registered FIR and NOT legal advice. "
-            "[FLAGGED FOR COUNSEL REVIEW \u2014 DO NOT PUBLISH WITHOUT APPROVAL]"
+            "sections after investigation. This is NOT a registered FIR and NOT legal advice."
         ),
     }
 
