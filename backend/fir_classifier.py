@@ -30,8 +30,30 @@ from typing import TypedDict
 _SEED = Path(__file__).parent / "corpus_seed"
 
 
+# Only these statuses mean the section can no longer be relied upon.
+# READ_DOWN / CONTESTED / UPHELD / RESTORED sections are still valid law
+# (possibly with a narrower interpretation) and must NOT be hidden.
+_DEAD_STATUSES = {"STRUCK_DOWN", "IN_ABEYANCE", "REPEALED"}
+
+
+def _norm_act(act_name: str) -> str:
+    """Normalise an act name for matching — lowercase, strip a leading
+    'the ', collapse whitespace. Prevents 'The Indian Penal Code, 1860'
+    and 'Indian Penal Code, 1860' from being treated as different acts."""
+    n = re.sub(r"\s+", " ", act_name.strip().lower())
+    if n.startswith("the "):
+        n = n[4:]
+    return n
+
+
 def _load_invalidations() -> set[str]:
-    """Return a set of 'ACT|SECTION' strings that are struck down / repealed."""
+    """Return a set of normalised 'act|section' keys that are struck down,
+    repealed, or in abeyance — i.e. genuinely dead law. Each key is scoped
+    to its own act, so a bare section number is NEVER used on its own:
+    otherwise unrelated acts that happen to share a section number (e.g.
+    IPC S.303, struck down in Mithu v. State of Punjab, vs BNS S.303,
+    the active Theft provision) would collide and wrongly block a live
+    section."""
     dead: set[str] = set()
     gz = _SEED / "judicial_invalidations.jsonl.gz"
     if not gz.exists():
@@ -43,9 +65,12 @@ def _load_invalidations() -> set[str]:
                 continue
             try:
                 rec = json.loads(line)
-                key = f"{rec.get('act_name','').strip()}|{rec.get('section_number','').strip()}"
-                dead.add(key)
-                dead.add(rec.get("section_number", "").strip())
+                if str(rec.get("status", "")).strip().upper() not in _DEAD_STATUSES:
+                    continue
+                act = _norm_act(str(rec.get("act_name", "")))
+                section = str(rec.get("section_number", "")).strip()
+                if act and section:
+                    dead.add(f"{act}|{section}")
             except Exception:
                 pass
     return dead
@@ -56,8 +81,8 @@ DEAD_SECTIONS: set[str] = _load_invalidations()
 
 def is_dead_law(act_name: str, section: str) -> bool:
     bare = str(section).strip()
-    full = f"{act_name.strip()}|{bare}"
-    return bare in DEAD_SECTIONS or full in DEAD_SECTIONS
+    full = f"{_norm_act(act_name)}|{bare}"
+    return full in DEAD_SECTIONS
 
 
 # ---------------------------------------------------------------------------

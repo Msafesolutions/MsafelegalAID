@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
 import {
   STATES_UTS, DISTRICTS, CNR_STATE_CODES, CNR_COURT_CODES,
-  buildPartySearchUrl, buildCNRUrl,
 } from '@/src/courtData';
 
 const NAVY  = '#14365A';
@@ -158,21 +157,19 @@ export default function LookupScreen() {
     if (mode === 'cnr') {
       if (cnr.length !== 16) return;
       router.push({
-        pathname: '/lookup-webview' as any,
-        params: {
-          url: encodeURIComponent(buildCNRUrl(cnr)),
-          title: `Case: ${cnr}`,
-        },
+        pathname: '/lookup-results' as any,
+        params: { mode: 'cnr', cnr },
       });
     } else {
       if (!partyCanSearch) return;
       router.push({
-        pathname: '/lookup-webview' as any,
+        pathname: '/lookup-results' as any,
         params: {
-          url: encodeURIComponent(
-            buildPartySearchUrl(selState!.code, selDist!.code, partyName.trim(), partyType)
-          ),
-          title: `Results: ${partyName.trim()}`,
+          mode: 'party',
+          name: partyName.trim(),
+          partyType,
+          stateName: selState!.name,
+          districtName: selDist!.name,
         },
       });
     }

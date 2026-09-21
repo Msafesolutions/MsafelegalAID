@@ -280,6 +280,12 @@ def find_police_station(location_text: str) -> dict:
                 score += 10
             else:
                 alias_tokens = set(_tokenise(alias))
+                if not alias_tokens:
+                    # Alias has no tokenisable words (e.g. short abbreviations
+                    # like "cp") and did not match as a substring above —
+                    # skip it here rather than let an empty-set overlap
+                    # falsely "match" every unrelated location text.
+                    continue
                 overlap = len(tokens & alias_tokens)
                 if overlap >= len(alias_tokens):
                     score += 6
@@ -308,7 +314,12 @@ def find_police_station(location_text: str) -> dict:
             "pilot_note": "5-state pilot: Maharashtra, Delhi, Karnataka, Tamil Nadu, West Bengal. Confirm exact jurisdiction at the station.",
         }
 
-    # Graceful degradation
+    # Graceful degradation — reset best_match first. Otherwise a low,
+    # sub-threshold score from the primary loop above (e.g. a single
+    # partial token overlap that scored 1-5 points) would leak through
+    # here and be presented as a "nearby suggestion" even though it
+    # never actually matched the location text.
+    best_match = None
     dist = None
     for ps in _PS_DATA:
         if ps["district"].lower() in location_text.lower() or ps.get("state", "").lower() in location_text.lower():
