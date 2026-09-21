@@ -130,6 +130,7 @@ export default function LookupScreen() {
   const [selDist,   setSelDist]    = useState<{ code: string; name: string } | null>(null);
   const [partyName, setPartyName]  = useState('');
   const [partyType, setPartyType]  = useState<PartyType>('petitioner');
+  const [showFilters, setShowFilters] = useState(false);
 
   // Modals
   const [showState, setShowState] = useState(false);
@@ -145,13 +146,18 @@ export default function LookupScreen() {
   const pickState = (s: { code: string; name: string }) => {
     setSelState(s);
     setSelDist(null);  // reset district
-    setPartyName(''); // clear name
+  };
+
+  const clearFilters = () => {
+    setSelState(null);
+    setSelDist(null);
   };
 
   const districts = selState ? (DISTRICTS[selState.code] ?? []) : [];
 
-  const partyCanSearch =
-    !!selState && !!selDist && partyName.trim().length >= 3;
+  // State/district are optional refinement only — a party name search
+  // works nationwide on its own (backend does not require them).
+  const partyCanSearch = partyName.trim().length >= 3;
 
   const handleSearch = useCallback(() => {
     if (mode === 'cnr') {
@@ -168,8 +174,8 @@ export default function LookupScreen() {
           mode: 'party',
           name: partyName.trim(),
           partyType,
-          stateName: selState!.name,
-          districtName: selDist!.name,
+          ...(selState ? { stateName: selState.name } : {}),
+          ...(selDist ? { districtName: selDist.name } : {}),
         },
       });
     }
@@ -271,37 +277,18 @@ export default function LookupScreen() {
           {/* ── PARTY MODE ───────────────────────────────────────── */}
           {mode === 'party' && (
             <View style={styles.card}>
-              {/* State picker */}
-              <PickerRow
-                label="State / Union Territory *"
-                value={selState?.name ?? ''}
-                placeholder="Select State / UT"
-                onPress={() => setShowState(true)}
-                disabled={false}
-              />
-
-              {/* District picker — disabled until State selected */}
-              <PickerRow
-                label="District *"
-                value={selDist?.name ?? ''}
-                placeholder={selState ? 'Select District' : 'Select a State first'}
-                onPress={() => setShowDist(true)}
-                disabled={!selState}
-              />
-
-              {/* Party name — disabled until District selected */}
+              {/* Party name — always enabled, this is the only required field */}
               <View style={styles.filterBlock}>
                 <Text style={styles.filterLabel}>Party Name * (min 3 chars)</Text>
-                <View style={[styles.inputRow, !selDist && styles.inputDisabled]}>
+                <View style={styles.inputRow}>
                   <TextInput
                     style={[styles.input, { flex: 1 }]}
                     value={partyName}
                     onChangeText={setPartyName}
-                    placeholder={selDist ? 'Enter petitioner or respondent name' : 'Select a District first'}
+                    placeholder="Enter petitioner or respondent name"
                     placeholderTextColor={HINT}
                     autoCapitalize="words"
                     autoCorrect={false}
-                    editable={!!selDist}
                     returnKeyType="search"
                     onSubmitEditing={partyCanSearch ? handleSearch : undefined}
                   />
@@ -311,6 +298,9 @@ export default function LookupScreen() {
                     </Pressable>
                   )}
                 </View>
+                <Text style={styles.inputHint}>
+                  Searches all-India by name. Add optional filters below to narrow the results.
+                </Text>
               </View>
 
               {/* Party type toggle */}
@@ -330,6 +320,52 @@ export default function LookupScreen() {
                   ))}
                 </View>
               </View>
+
+              {/* ── Optional filters: State / District ──────────────── */}
+              <View style={styles.filtersDivider} />
+              <Pressable style={styles.filtersToggleRow} onPress={() => setShowFilters(v => !v)}>
+                <View style={styles.filtersToggleLeft}>
+                  <Ionicons name="options-outline" size={16} color={NAVY} />
+                  <Text style={styles.filtersToggleLabel}>Filters (optional)</Text>
+                  {(selState || selDist) && (
+                    <View style={styles.filtersBadge}>
+                      <Text style={styles.filtersBadgeText}>
+                        {[selState?.name, selDist?.name].filter(Boolean).join(', ')}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Ionicons
+                  name={showFilters ? 'chevron-up-outline' : 'chevron-down-outline'}
+                  size={18}
+                  color={NAVY}
+                />
+              </Pressable>
+
+              {showFilters && (
+                <View style={styles.filtersBody}>
+                  <PickerRow
+                    label="State / Union Territory"
+                    value={selState?.name ?? ''}
+                    placeholder="Any state (nationwide)"
+                    onPress={() => setShowState(true)}
+                    disabled={false}
+                  />
+                  <PickerRow
+                    label="District"
+                    value={selDist?.name ?? ''}
+                    placeholder={selState ? 'Any district' : 'Select a State first'}
+                    onPress={() => setShowDist(true)}
+                    disabled={!selState}
+                  />
+                  {(selState || selDist) && (
+                    <Pressable style={styles.clearFiltersBtn} onPress={clearFilters}>
+                      <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
+                      <Text style={styles.clearFiltersText}>Clear filters</Text>
+                    </Pressable>
+                  )}
+                </View>
+              )}
             </View>
           )}
 
@@ -344,11 +380,11 @@ export default function LookupScreen() {
           </Pressable>
 
           {/* Hint */}
-          {mode === 'party' && !selState && (
+          {mode === 'party' && partyName.trim().length === 0 && (
             <View style={styles.hintCard}>
               <Ionicons name="information-circle-outline" size={18} color={NAVY} />
               <Text style={styles.hintText}>
-                Select a State, then District, enter a name and tap Search — results open inside DHARA.
+                Type a name and tap Search — results open inside DHARA. Use Filters to narrow by state/district.
               </Text>
             </View>
           )}
@@ -378,7 +414,7 @@ export default function LookupScreen() {
         title="Select District"
         items={districts}
         selectedCode={selDist?.code ?? ''}
-        onSelect={d => { setSelDist(d); setPartyName(''); }}
+        onSelect={d => setSelDist(d)}
         onClose={() => setShowDist(false)}
       />
     </SafeAreaView>
@@ -449,4 +485,14 @@ const styles = StyleSheet.create({
 
   hintCard: { flexDirection: 'row', gap: 10, backgroundColor: '#EEF2FF', borderRadius: 10, padding: 14, alignItems: 'flex-start' },
   hintText: { flex: 1, fontSize: 13, color: NAVY, lineHeight: 19 },
+
+  filtersDivider: { height: 1, backgroundColor: '#F0EDE4', marginVertical: 2 },
+  filtersToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
+  filtersToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, flexWrap: 'wrap' },
+  filtersToggleLabel: { fontSize: 13, fontWeight: '700', color: NAVY },
+  filtersBadge: { backgroundColor: '#EEF2FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  filtersBadgeText: { fontSize: 11, color: NAVY, fontWeight: '600' },
+  filtersBody: { gap: 12, marginTop: 4 },
+  clearFiltersBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingVertical: 4 },
+  clearFiltersText: { fontSize: 12.5, color: '#DC2626', fontWeight: '700' },
 });
