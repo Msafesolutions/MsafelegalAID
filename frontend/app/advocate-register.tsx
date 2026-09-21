@@ -44,7 +44,10 @@ export default function AdvocateRegister() {
         body: JSON.stringify({ user_id: user?.id, bar_council_number: barCouncil.trim().toUpperCase(), state_bar: stateBar, specializations: specs }),
       });
       if (!r.ok) throw new Error((await r.json()).detail ?? 'Registration failed');
-      router.replace('/lawyer-home' as any);
+      // Land on the full Lawyer Mode tab (not the legacy /lawyer-home screen)
+      // so the advocate immediately sees their submitted enrolment number and
+      // the "Verification Pending" banner — confirming what they just submitted.
+      router.replace('/(tabs)/advocate' as any);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   };
@@ -94,7 +97,7 @@ export default function AdvocateRegister() {
         <View style={s.disclaimerCard}>
           <Ionicons name="time-outline" size={16} color="#92400E" />
           <Text style={s.disclaimerText}>
-            Your Bar Council enrolment number will be verified within 24–48 hours. You can access Lawyer Mode immediately and receive a "Verified" badge once approved.
+            Your Bar Council enrolment number will be verified within 24–48 hours. You can access Lawyer Mode immediately and receive a &ldquo;Verified&rdquo; badge once approved.
           </Text>
         </View>
 
