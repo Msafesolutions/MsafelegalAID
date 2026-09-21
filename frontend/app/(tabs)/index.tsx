@@ -66,6 +66,22 @@ function nextStepFor(citations?: { short_label: string }[]):
 }
 
 /**
+ * Detects FIR/police-complaint drafting intent directly from the citizen's
+ * own message text — independent of whatever the RAG backend returns (which
+ * may have zero verified sources for a request like "draft FIR for me", as
+ * that isn't a legal-information lookup at all). This is what routes a
+ * citizen to the actual Voice FIR Drafting Assistant instead of leaving them
+ * with a generic "no verified source" dead-end.
+ */
+function detectFirIntent(text: string): boolean {
+  const low = text.toLowerCase();
+  return /\b(draft|file|register|write|lodge)\b.{0,20}\b(fir|f\.i\.r|complaint|police report)\b/.test(low)
+    || /\breport\s+(an?\s+)?(incident|crime|theft|assault|harassment)\b/.test(low)
+    || /\bhelp me (draft|file|write)\b.{0,15}\bfir\b/.test(low)
+    || /\bwant to (file|report|draft)\b.{0,20}\b(fir|complaint|incident|crime)\b/.test(low);
+}
+
+/**
  * Summary-first UX: surface a short "Verdict" (first ~2 sentences of the
  * answer) up top, and tuck the longer reasoning + statutory sections behind a
  * "View Legal Details" toggle. Keeps the first glance skimmable while the full
@@ -103,6 +119,8 @@ type Msg = {
   stateNote?: string;
   /** Set once the user has bookmarked this answer for offline use */
   saved?: boolean;
+  /** The user's own message text matched FIR/police-complaint drafting intent */
+  firIntent?: boolean;
 };
 
 /**
@@ -405,7 +423,7 @@ export default function ChatScreen() {
       setMessages((prev) => [
         ...prev,
         { id: userId, role: 'user', content: q },
-        { id: assistantId, role: 'assistant', content: '', mode: modeToSend },
+        { id: assistantId, role: 'assistant', content: '', mode: modeToSend, firIntent: detectFirIntent(q) },
       ]);
       setInput('');
       setStreaming(true);
@@ -1570,6 +1588,24 @@ export default function ChatScreen() {
         )}
       </View>
 
+      {/* Persistent entry point — the flagship Voice FIR Drafting Assistant
+          must be discoverable at all times, not just from an empty-state
+          suggestion chip that disappears once the user starts chatting. */}
+      <Pressable
+        testID="fir-quick-action"
+        style={styles.firQuickAction}
+        onPress={() => router.push('/fir-draft' as any)}
+      >
+        <View style={styles.firQuickActionIconWrap}>
+          <Ionicons name="document-text" size={16} color="#fff" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.firQuickActionTitle}>File a Police Complaint</Text>
+          <Text style={styles.firQuickActionSub}>Get a ready FIR draft in your language</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={theme.colors.brand} />
+      </Pressable>
+
       {/*
         keyboardVerticalOffset MUST be 0 here — it is not "the height of the chrome
         below us". The library computes the lift as
@@ -1810,6 +1846,20 @@ export default function ChatScreen() {
                     </Pressable>
                   );
                 })()}
+                {m.role === 'assistant' && m.firIntent && (
+                  <Pressable
+                    testID={`fir-intent-cta-${m.id}`}
+                    style={styles.firIntentCard}
+                    onPress={() => router.push('/fir-draft' as any)}
+                  >
+                    <Ionicons name="document-text" size={20} color="#fff" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.firIntentTitle}>Start Guided FIR Draft</Text>
+                      <Text style={styles.firIntentSub}>Answer 10 quick questions by voice or text — get a ready FIR draft in your language.</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#fff" />
+                  </Pressable>
+                )}
                 {m.role === 'assistant' && !!m.statePrompt && (
                   <Pressable
                     testID={`state-prompt-${m.id}`}
@@ -2256,6 +2306,42 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 12,
   },
+  firQuickAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    minHeight: 48,
+  },
+  firQuickActionIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  firQuickActionTitle: { fontSize: 13.5, fontWeight: '800', color: theme.colors.onSurface },
+  firQuickActionSub: { fontSize: 11.5, color: theme.colors.onSurfaceSecondary, marginTop: 1 },
+  firIntentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.brand,
+    minHeight: 56,
+  },
+  firIntentTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  firIntentSub: { color: 'rgba(255,255,255,0.85)', fontSize: 11.5, marginTop: 2, lineHeight: 15 },
   scroll: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
   empty: { flex: 1, alignItems: 'center', paddingTop: theme.spacing.xxl, paddingHorizontal: theme.spacing.md },
   emblem: {

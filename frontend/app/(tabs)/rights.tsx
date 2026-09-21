@@ -40,6 +40,22 @@ export default function Rights() {
         <Text style={styles.h2}>Rights that no one can take from you.</Text>
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Flagship feature — always shown first, above the topic cards */}
+        <Pressable
+          testID="fir-entry-card"
+          style={styles.firCard}
+          onPress={() => router.push('/fir-draft' as any)}
+        >
+          <View style={styles.firIconWrap}>
+            <Ionicons name="document-text" size={26} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.firCardTitle}>File a Police Complaint</Text>
+            <Text style={styles.firCardSub}>Get a ready FIR draft in your language — by voice or text</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#fff" />
+        </Pressable>
+
         {loading && <ActivityIndicator color={theme.colors.brand} />}
         {topics.map(t => {
           const open = expanded === t.id;
@@ -96,6 +112,25 @@ const styles = StyleSheet.create({
   h1: { fontFamily: theme.fonts.display, fontSize: 28, color: theme.colors.brand, fontWeight: '700' },
   h2: { color: theme.colors.onSurfaceSecondary, marginTop: 4 },
   scroll: { padding: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: theme.spacing.xxl },
+  firCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.brand,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+  },
+  firIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  firCardTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  firCardSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12.5, marginTop: 2, lineHeight: 17 },
   card: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg, marginBottom: theme.spacing.md },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
   iconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center' },
