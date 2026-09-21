@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, Pressable, ScrollView, StyleSheet,
-  ActivityIndicator, Modal, FlatList, Platform,
+  View, Text, Pressable, ScrollView, StyleSheet,
+  ActivityIndicator, Modal, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -21,7 +21,6 @@ const GOLD  = '#D3B675';
 export default function AdvocateRegister() {
   const { token, user } = useAuth();
   const router = useRouter();
-  const [barNumber, setBarNumber] = useState('');
   const [stateBar, setStateBar]   = useState('');
   const [specs, setSpecs]         = useState<string[]>([]);
   const [loading, setLoading]     = useState(false);
@@ -32,8 +31,8 @@ export default function AdvocateRegister() {
     setSpecs(prev => prev.includes(s) ? prev.filter(x => x !== s) : prev.length < 5 ? [...prev, s] : prev);
 
   const submit = async () => {
-    if (!barNumber.trim() || !stateBar || specs.length === 0) {
-      setError('Please fill in all required fields and select at least one specialization.');
+    if (!stateBar || specs.length === 0) {
+      setError('Please select your State Bar Council and at least one specialization.');
       return;
     }
     setLoading(true); setError(null);
@@ -41,7 +40,7 @@ export default function AdvocateRegister() {
       const r = await fetch(`${API_BASE}/api/advocate/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ user_id: user?.id, bar_council_number: barNumber.trim(), state_bar: stateBar, specializations: specs }),
+        body: JSON.stringify({ user_id: user?.id, bar_council_number: '', state_bar: stateBar, specializations: specs }),
       });
       if (!r.ok) throw new Error((await r.json()).detail ?? 'Registration failed');
       router.replace('/lawyer-home' as any);
@@ -58,17 +57,7 @@ export default function AdvocateRegister() {
         <Text style={s.headerTitle}>Register as Advocate</Text>
       </View>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={s.label}>Bar Council Enrollment Number <Text style={s.req}>*</Text></Text>
-        <TextInput
-          style={s.input}
-          placeholder="e.g. MH/12345/2018"
-          placeholderTextColor="#9CA3AF"
-          value={barNumber}
-          onChangeText={setBarNumber}
-          autoCapitalize="characters"
-        />
-
-        <Text style={[s.label, { marginTop: 16 }]}>State Bar Council <Text style={s.req}>*</Text></Text>
+        <Text style={[s.label, { marginTop: 4 }]}>State Bar Council <Text style={s.req}>*</Text></Text>
         <Pressable style={s.picker} onPress={() => setShowBarPicker(true)}>
           <Text style={stateBar ? s.pickerText : s.pickerPlaceholder}>
             {stateBar || 'Select your State Bar Council'}
@@ -91,8 +80,7 @@ export default function AdvocateRegister() {
         <View style={s.disclaimerCard}>
           <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
           <Text style={s.disclaimerText}>
-            DHARA verifies Bar Council numbers manually within 48 hours. You can access Lawyer Mode
-            immediately; a 'Verified' badge appears after confirmation.
+            You can access Lawyer Mode immediately after registration.
           </Text>
         </View>
 

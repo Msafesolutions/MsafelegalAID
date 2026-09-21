@@ -66,7 +66,7 @@ def is_dead_law(act_name: str, section: str) -> bool:
 class OffenceDef(TypedDict):
     bns_section: str
     bns_heading: str
-    ipc_equivalent: str
+    legacy_ipc: str
     confidence_weight: int           # keyword hit multiplier
     keywords_en: list[str]
     keywords_hi: list[str]           # romanised Hindi / common usage
@@ -79,7 +79,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "303",
         "bns_heading": "Theft",
-        "ipc_equivalent": "IPC 379",
+        "legacy_ipc": "IPC 379",
         "confidence_weight": 3,
         "keywords_en": [
             "stole", "stolen", "theft", "steal", "stole", "pickpocket",
@@ -103,7 +103,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "115",
         "bns_heading": "Voluntarily causing hurt",
-        "ipc_equivalent": "IPC 323",
+        "legacy_ipc": "IPC 323",
         "confidence_weight": 3,
         "keywords_en": [
             "hit", "beat", "punch", "slap", "kick", "attack", "assault",
@@ -126,7 +126,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "117",
         "bns_heading": "Voluntarily causing grievous hurt",
-        "ipc_equivalent": "IPC 325",
+        "legacy_ipc": "IPC 325",
         "confidence_weight": 3,
         "keywords_en": [
             "grievous", "serious injury", "broken", "fracture", "permanent", "disability",
@@ -149,7 +149,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "318",
         "bns_heading": "Cheating",
-        "ipc_equivalent": "IPC 420",
+        "legacy_ipc": "IPC 420",
         "confidence_weight": 3,
         "keywords_en": [
             "cheated", "fraud", "fraudulent", "deceived", "deception", "fake",
@@ -173,7 +173,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "351",
         "bns_heading": "Criminal intimidation",
-        "ipc_equivalent": "IPC 506",
+        "legacy_ipc": "IPC 506",
         "confidence_weight": 3,
         "keywords_en": [
             "threatened", "threat", "intimidate", "intimidation", "blackmail",
@@ -196,7 +196,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "309",
         "bns_heading": "Robbery",
-        "ipc_equivalent": "IPC 390",
+        "legacy_ipc": "IPC 390",
         "confidence_weight": 3,
         "keywords_en": [
             "rob", "robbed", "robbery", "snatched at gunpoint", "snatched at knifepoint",
@@ -218,7 +218,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "101",
         "bns_heading": "Culpable homicide amounting to murder",
-        "ipc_equivalent": "IPC 302",
+        "legacy_ipc": "IPC 302",
         "confidence_weight": 4,
         "keywords_en": [
             "killed", "kill", "murder", "murdered", "dead", "died", "death",
@@ -240,7 +240,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "109",
         "bns_heading": "Attempt to commit murder",
-        "ipc_equivalent": "IPC 307",
+        "legacy_ipc": "IPC 307",
         "confidence_weight": 4,
         "keywords_en": [
             "tried to kill", "attempt to murder", "attempted murder", "tried to stab",
@@ -261,7 +261,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "329",
         "bns_heading": "Criminal trespass",
-        "ipc_equivalent": "IPC 447",
+        "legacy_ipc": "IPC 447",
         "confidence_weight": 2,
         "keywords_en": [
             "trespass", "trespassing", "entered without permission", "broke into",
@@ -283,7 +283,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "140",
         "bns_heading": "Kidnapping or abducting in order to murder",
-        "ipc_equivalent": "IPC 364",
+        "legacy_ipc": "IPC 364",
         "confidence_weight": 4,
         "keywords_en": [
             "kidnap", "kidnapped", "abduct", "abducted", "taken away by force",
@@ -304,7 +304,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "308",
         "bns_heading": "Extortion",
-        "ipc_equivalent": "IPC 384",
+        "legacy_ipc": "IPC 384",
         "confidence_weight": 3,
         "keywords_en": [
             "extortion", "extort", "demanded money with threat",
@@ -324,7 +324,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "334",
         "bns_heading": "Forgery",
-        "ipc_equivalent": "IPC 465",
+        "legacy_ipc": "IPC 465",
         "confidence_weight": 2,
         "keywords_en": [
             "forged", "forgery", "fake document", "fake signature",
@@ -346,7 +346,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "85",
         "bns_heading": "Husband or relative of husband of a woman subjecting her to cruelty",
-        "ipc_equivalent": "IPC 498A",
+        "legacy_ipc": "IPC 498A",
         "confidence_weight": 3,
         "keywords_en": [
             "husband beat", "husband hit", "dowry", "in-laws harassment",
@@ -371,7 +371,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "74",
         "bns_heading": "Assault or use of criminal force on woman with intent to outrage her modesty",
-        "ipc_equivalent": "IPC 354",
+        "legacy_ipc": "IPC 354",
         "confidence_weight": 4,
         "keywords_en": [
             "molested", "molestation", "groped", "touched inappropriately",
@@ -396,7 +396,7 @@ OFFENCES: list[OffenceDef] = [
     {
         "bns_section": "POCSO_4",
         "bns_heading": "POCSO Act 2012 — Penetrative sexual assault on child",
-        "ipc_equivalent": "POCSO Act 2012",
+        "legacy_ipc": "POCSO Act 2012",
         "confidence_weight": 5,
         "keywords_en": [
             "child abuse", "minor abused", "minor raped", "child raped",
@@ -491,7 +491,7 @@ def classify_incident(narrative: str, top_n: int = 3) -> dict:
             {
                 "bns_section": str,
                 "bns_heading": str,
-                "ipc_equivalent": str,
+                "legacy_ipc": str,
                 "confidence": "medium" | "low",
                 "doc_checklist": [...],
                 "safety_flag": str | None,
@@ -524,7 +524,7 @@ def classify_incident(narrative: str, top_n: int = 3) -> dict:
         candidates.append({
             "bns_section": off["bns_section"],
             "bns_heading": off["bns_heading"],
-            "ipc_equivalent": off["ipc_equivalent"],
+            "legacy_ipc": off["legacy_ipc"],
             "confidence": _confidence_label(score, max_score),
             "doc_checklist": off["doc_checklist"],
             "safety_flag": off["safety_flag"],

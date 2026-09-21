@@ -131,15 +131,6 @@ export default function AdvocateTab() {
       </View>
 
       <ScrollView contentContainerStyle={s.dashScroll}>
-        {!profile?.verified && (
-          <View style={s.verifyCard}>
-            <Ionicons name="time-outline" size={18} color="#92400E" />
-            <Text style={s.verifyCardText}>
-              Your Bar Council number is being verified (usually within 48 hours).
-              You can use all features in the meantime.
-            </Text>
-          </View>
-        )}
 
         {cards.map(card => (
           <Pressable key={card.title} style={s.card} onPress={card.onPress}>
@@ -155,9 +146,7 @@ export default function AdvocateTab() {
         ))}
 
         <View style={s.profileCard}>
-          <Text style={s.profileLabel}>Bar Council No.</Text>
-          <Text style={s.profileValue}>{profile?.bar_council_number}</Text>
-          <Text style={[s.profileLabel, { marginTop: 10 }]}>State Bar</Text>
+          <Text style={s.profileLabel}>State Bar</Text>
           <Text style={s.profileValue}>{profile?.state_bar}</Text>
           {profile?.specializations?.length > 0 && (
             <>

@@ -249,7 +249,7 @@ export default function FIRResult() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.sectionHead}>{c.bns_heading}</Text>
-                  <Text style={s.sectionSub}>{c.ipc_equivalent} | Confidence: {c.confidence}</Text>
+                  <Text style={s.sectionSub}>formerly {c.legacy_ipc} · Confidence: {c.confidence}</Text>
                 </View>
               </View>
             ))}

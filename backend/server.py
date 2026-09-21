@@ -223,7 +223,7 @@ class AcceptTermsIn(BaseModel):
 
 class AdvocateRegisterIn(BaseModel):
     user_id: str
-    bar_council_number: str
+    bar_council_number: str = ""   # optional — verification added later
     state_bar: str
     specializations: List[str]
 
@@ -2678,15 +2678,14 @@ async def advocate_register(body: AdvocateRegisterIn, user: dict = Depends(curre
     existing = await db.advocate_profiles.find_one({"user_id": body.user_id})
     if existing:
         return {k: v for k, v in existing.items() if k != "_id"}
-    if len(body.bar_council_number.strip()) < 4:
-        raise HTTPException(400, "Invalid bar council number")
+    # bar_council_number is optional for now — will be verified later
     if not body.specializations:
         raise HTTPException(400, "Select at least one specialization")
     now = datetime.now(timezone.utc).isoformat()
     doc = {
         "id": str(uuid.uuid4()),
         "user_id": body.user_id,
-        "bar_council_number": body.bar_council_number.strip().upper(),
+        "bar_council_number": body.bar_council_number.strip().upper() if body.bar_council_number else "",
         "state_bar": body.state_bar,
         "specializations": body.specializations[:5],
         "verified": False,
@@ -3046,7 +3045,7 @@ def _build_fir_text(answers: dict, classification: dict, ps_info: dict, date_str
     for c in classification.get("candidates", []):
         sections_text += (
             f"  • BNS Section {c['bns_section']} — {c['bns_heading']}\n"
-            f"    (Previously {c['ipc_equivalent']}) [Confidence: {c['confidence']} — suggested only]\n"
+            f"    (formerly {c['legacy_ipc']}) [Confidence: {c['confidence']} — suggested only]\n"
         )
     if not sections_text:
         sections_text = "  (Offence sections could not be determined — to be recorded by the officer)\n"
