@@ -4,9 +4,9 @@
  * Uses the device's built-in speech engine so there is NO cloud round-trip
  * and no API credits are consumed.
  *
- *  • Web  : window.speechSynthesis — prefers an en-IN / te-IN / kn-IN voice
- *           when one is installed; falls back gracefully to the default voice
- *           with the correct lang tag so the OS still applies an Indian cadence.
+ *  • Web  : window.speechSynthesis — checks that the browser has a voice for
+ *           the requested locale (e.g. mr-IN) before speaking.  Returns false
+ *           (cloud-TTS fallback) when no matching voice is installed.
  *  • Native: expo-speech — same lang tags and pitch offsets.
  *
  * Gender is simulated by adjusting pitch only (device voices are mono-gender
@@ -40,49 +40,62 @@ function toBCP47(langCode: string): string {
 
 // ─── Web ─────────────────────────────────────────────────────────────────────
 
-function speakWeb(
+/**
+ * Attempt to speak using window.speechSynthesis.
+ *
+ * Returns `true` when a voice matching `bcp47` was found and speech was
+ * started.  Returns `false` when no matching voice exists so the caller can
+ * fall through to cloud TTS.  `onDone` is NOT called on a `false` return —
+ * the cloud-TTS path will own that callback.
+ */
+async function speakWeb(
   text: string,
   bcp47: string,
   gender: VoiceGender,
   onDone?: () => void,
-): void {
+): Promise<boolean> {
   if (typeof window === 'undefined' || !window.speechSynthesis) {
-    onDone?.();
-    return;
+    return false;
   }
+
+  // Resolve voice list — Chrome/Edge populate it asynchronously.
+  const getVoicesAsync = (): Promise<SpeechSynthesisVoice[]> => {
+    const v = window.speechSynthesis.getVoices();
+    if (v.length > 0) return Promise.resolve(v);
+    return new Promise((resolve) => {
+      window.speechSynthesis.addEventListener(
+        'voiceschanged',
+        () => resolve(window.speechSynthesis.getVoices()),
+        { once: true },
+      );
+    });
+  };
+
+  const voices = await getVoicesAsync();
+
+  // 1st choice: exact locale match (e.g. mr-IN)
+  // 2nd choice: same language + any Indian region (e.g. hi-IN)
+  // 3rd choice: same base language (e.g. hi-*)
+  const langBase = bcp47.split('-')[0];
+  const best =
+    voices.find((v) => v.lang === bcp47) ??
+    voices.find((v) => v.lang.startsWith(langBase + '-IN')) ??
+    voices.find((v) => v.lang.startsWith(langBase));
+
+  // No matching voice installed → signal caller to use cloud TTS instead
+  if (!best) return false;
 
   window.speechSynthesis.cancel();
 
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang  = bcp47;
-  utter.rate  = 0.88;
-  // Female: slightly higher pitch; Male: slightly lower
-  utter.pitch = gender === 'female' ? 1.18 : 0.82;
-
-  const pickAndSpeak = () => {
-    const voices = window.speechSynthesis.getVoices();
-    // 1st choice: exact locale match
-    // 2nd choice: same language family (e.g. en-GB for en-IN fallback)
-    // 3rd choice: no filter — use OS default with the lang tag set
-    const langBase = bcp47.split('-')[0];
-    const best =
-      voices.find((v) => v.lang === bcp47) ??
-      voices.find((v) => v.lang.startsWith(langBase + '-IN')) ??
-      voices.find((v) => v.lang.startsWith(langBase));
-
-    if (best) utter.voice = best;
-    utter.onend   = () => onDone?.();
-    utter.onerror = () => onDone?.();
-    window.speechSynthesis.speak(utter);
-  };
-
-  // getVoices() is populated asynchronously on Chrome / Edge
-  const voices = window.speechSynthesis.getVoices();
-  if (voices.length > 0) {
-    pickAndSpeak();
-  } else {
-    window.speechSynthesis.addEventListener('voiceschanged', pickAndSpeak, { once: true });
-  }
+  const utter       = new SpeechSynthesisUtterance(text);
+  utter.lang        = bcp47;
+  utter.rate        = 0.88;
+  utter.pitch       = gender === 'female' ? 1.18 : 0.82;
+  utter.voice       = best;
+  utter.onend       = () => onDone?.();
+  utter.onerror     = () => onDone?.();
+  window.speechSynthesis.speak(utter);
+  return true;
 }
 
 // ─── Native ───────────────────────────────────────────────────────────────────
@@ -150,8 +163,11 @@ export async function speakNative(
   const bcp47 = toBCP47(lang);
 
   if (Platform.OS === 'web') {
-    speakWeb(text, bcp47, gender, onDone);
-    return true;
+    const used = await speakWeb(text, bcp47, gender, onDone);
+    // No matching voice → call onDone so callers that don't check the return
+    // value aren't left hanging, then return false for cloud-TTS fallback.
+    if (!used) onDone?.();
+    return used;
   }
 
   // Check device has a voice for this locale before committing
