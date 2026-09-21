@@ -2998,6 +2998,253 @@ async def cross_reference(
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ============================================================================
+# ─── Voice FIR Drafting Assistant ────────────────────────────────────────────
+# ============================================================================
+from fir_classifier import classify_incident, detect_safety_flags
+from fir_police_stations import find_police_station
+
+class FirDraftIn(BaseModel):
+    draft_id: Optional[str] = None          # None → create new
+    user_id: str
+    language: str = "en"
+    answers: Optional[dict] = None          # {q_id: answer_text}
+    status: str = "in_progress"             # in_progress | completed
+
+class FirClassifyIn(BaseModel):
+    narrative: str
+    location: Optional[str] = None
+    language: str = "en"
+
+class FirGenerateIn(BaseModel):
+    draft_id: str
+    user_id: str
+    language: str = "en"
+
+class FirEventIn(BaseModel):
+    user_id: Optional[str] = None
+    draft_id: Optional[str] = None
+    event: str                               # fir_draft_generated | fir_draft_downloaded | fir_user_confirmed_filed
+    meta: Optional[dict] = None
+
+_FIR_DISCLAIMER = (
+    "⚠️  IMPORTANT DISCLAIMER — READ BEFORE PRESENTING AT THE POLICE STATION\n\n"
+    "This document is a citizen-prepared DRAFT for reference purposes only.\n"
+    "It is NOT a registered First Information Report (FIR).\n"
+    "An FIR can only be formally recorded by the Officer-in-Charge under Section 173(1) BNSS.\n"
+    "The suggested BNS sections are indicative only — the investigating officer will determine "
+    "the applicable sections after investigation.\n"
+    "This document does NOT constitute legal advice.\n\n"
+    "For free legal aid: NALSA helpline 15100 (toll-free, 24×7)\n"
+    "Women/DV helpline: 181 | Child helpline: 1098 | Police: 100\n\n"
+    "*** THIS DISCLAIMER TEXT IS FLAGGED FOR COUNSEL REVIEW AND HAS NOT BEEN LEGALLY APPROVED ***"
+)
+
+def _build_fir_text(answers: dict, classification: dict, ps_info: dict, date_str: str) -> str:
+    """Build a Section 173 BNSS format FIR draft text."""
+    sections_text = ""
+    for c in classification.get("candidates", []):
+        sections_text += (
+            f"  • BNS Section {c['bns_section']} — {c['bns_heading']}\n"
+            f"    (Previously {c['ipc_equivalent']}) [Confidence: {c['confidence']} — suggested only]\n"
+        )
+    if not sections_text:
+        sections_text = "  (Offence sections could not be determined — to be recorded by the officer)\n"
+
+    station_text = (
+        f"{ps_info.get('station','Not determined')}\n"
+        f"  {ps_info.get('district','Maharashtra')}\n"
+        f"  {ps_info.get('address','')}\n"
+        f"  Tel: {ps_info.get('phone','100')}"
+    ) if ps_info.get("station") else "  To be filled at the police station"
+
+    return f"""{_FIR_DISCLAIMER}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+       FIRST INFORMATION REPORT — CITIZEN DRAFT
+  (To be presented under Section 173 BNSS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIR No.:          [To be assigned by police station]
+Police Station:   {station_text}
+Date of Report:   {date_str}
+Time of Report:   [Time of filing]
+
+─────────────────────────────────────────
+A. INFORMANT DETAILS
+─────────────────────────────────────────
+Name:            {answers.get('informant_name', '[Not provided]')}
+Address:         {answers.get('informant_address', '[Not provided]')}
+Contact Number:  {answers.get('informant_contact', '[Not provided]')}
+Relation to Incident: {answers.get('informant_relation', 'Complainant')}
+
+─────────────────────────────────────────
+B. INCIDENT DETAILS
+─────────────────────────────────────────
+Date & Time of Incident:  {answers.get('incident_datetime', '[Not provided]')}
+Place of Incident:        {answers.get('location', '[Not provided]')}
+
+Description of Incident:
+{answers.get('what_happened', '[Incident description not provided]')}
+
+─────────────────────────────────────────
+C. PERSONS INVOLVED
+─────────────────────────────────────────
+Accused (if known):
+{answers.get('accused', '[Not known / Not identified]')}
+
+Witnesses (if any):
+{answers.get('witnesses', '[None mentioned]')}
+
+─────────────────────────────────────────
+D. INJURY / LOSS
+─────────────────────────────────────────
+{answers.get('injury_loss', '[Not reported]')}
+
+─────────────────────────────────────────
+E. EVIDENCE AVAILABLE
+─────────────────────────────────────────
+{answers.get('evidence', '[None mentioned]')}
+
+─────────────────────────────────────────
+F. SUGGESTED OFFENCE(S) UNDER BNS
+─────────────────────────────────────────
+{sections_text}
+{classification.get('disclaimer','')}
+
+─────────────────────────────────────────
+G. ZERO FIR NOTE
+─────────────────────────────────────────
+{ps_info.get('zero_fir_note', '')}
+{ps_info.get('pilot_note', '')}
+
+─────────────────────────────────────────
+H. SIGNATURE
+─────────────────────────────────────────
+Signature of Informant: _______________________
+Name (Block Letters):   _______________________
+Date:                   {date_str}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generated by DHARA AI Legal Aid  |  NALSA: 15100
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+
+@api.post("/fir/draft")
+async def fir_upsert_draft(body: FirDraftIn, user: dict = Depends(current_user)):
+    """Create or update a FIR draft (upsert by draft_id)."""
+    now = datetime.now(timezone.utc).isoformat()
+    if body.draft_id:
+        doc = await db.fir_drafts.find_one({"id": body.draft_id, "user_id": body.user_id})
+        if doc:
+            await db.fir_drafts.update_one(
+                {"id": body.draft_id},
+                {"$set": {"answers": body.answers or {}, "status": body.status,
+                          "language": body.language, "updated_at": now}}
+            )
+            return {"draft_id": body.draft_id, "status": body.status}
+    # Create new
+    draft_id = str(uuid.uuid4())
+    await db.fir_drafts.insert_one({
+        "id": draft_id, "user_id": body.user_id, "language": body.language,
+        "answers": body.answers or {}, "status": body.status,
+        "draft_text": "", "document_checklist": [], "classification": {},
+        "police_station": {}, "safety_flags": [], "created_at": now, "updated_at": now,
+    })
+    return {"draft_id": draft_id, "status": body.status}
+
+
+@api.get("/fir/drafts/{user_id}")
+async def fir_list_drafts(user_id: str, user: dict = Depends(current_user)):
+    docs = await db.fir_drafts.find(
+        {"user_id": user_id}, {"_id": 0}
+    ).sort("updated_at", -1).to_list(50)
+    return docs
+
+
+@api.get("/fir/draft/{draft_id}")
+async def fir_get_draft(draft_id: str, user: dict = Depends(current_user)):
+    doc = await db.fir_drafts.find_one({"id": draft_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Draft not found")
+    return doc
+
+
+@api.post("/fir/classify")
+async def fir_classify(body: FirClassifyIn):
+    """Classify incident narrative → BNS sections + police station + safety flags."""
+    classification = classify_incident(body.narrative)
+    ps_info = find_police_station(body.location or "") if body.location else {
+        "matched": False, "station": None, "district": None,
+        "confidence": "none",
+        "zero_fir_note": (
+            "📌 Zero FIR: Under Section 173(1) BNSS you can file at ANY police station. "
+            "They MUST accept it."
+        ),
+        "pilot_note": "Location not provided — enter a Maharashtra location for station suggestion.",
+    }
+    return {"classification": classification, "police_station": ps_info}
+
+
+@api.post("/fir/generate")
+async def fir_generate(body: FirGenerateIn):
+    """Generate the full FIR draft text from a completed draft."""
+    doc = await db.fir_drafts.find_one({"id": body.draft_id, "user_id": body.user_id})
+    if not doc:
+        raise HTTPException(404, "Draft not found")
+
+    answers = doc.get("answers", {})
+    location = answers.get("location", "")
+    # Build combined narrative for classification
+    narrative_parts = [answers.get("what_happened", ""), answers.get("incident_type", "")]
+    narrative = " ".join(p for p in narrative_parts if p)
+
+    classification = classify_incident(narrative)
+    ps_info = find_police_station(location)
+
+    # Build doc checklist from top candidate
+    checklist: list[str] = []
+    for c in classification["candidates"]:
+        checklist.extend(c["doc_checklist"])
+    # Dedupe while preserving order
+    seen: set[str] = set()
+    checklist_deduped = [x for x in checklist if not (x in seen or seen.add(x))]  # type: ignore
+
+    now_str = datetime.now(timezone.utc).strftime("%d %B %Y")
+    draft_text = _build_fir_text(answers, classification, ps_info, now_str)
+
+    await db.fir_drafts.update_one(
+        {"id": body.draft_id},
+        {"$set": {
+            "draft_text": draft_text, "classification": classification,
+            "police_station": ps_info, "safety_flags": classification["safety_flags"],
+            "document_checklist": checklist_deduped, "status": "completed",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    return {
+        "draft_id": body.draft_id,
+        "draft_text": draft_text,
+        "classification": classification,
+        "police_station": ps_info,
+        "document_checklist": checklist_deduped,
+        "safety_flags": classification["safety_flags"],
+    }
+
+
+@api.post("/fir/event")
+async def fir_event(body: FirEventIn):
+    """Log a FIR analytics event."""
+    await db.fir_events.insert_one({
+        "event": body.event, "user_id": body.user_id,
+        "draft_id": body.draft_id, "meta": body.meta or {},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"ok": True}
+
+
+
 app.include_router(api)
 
 app.add_middleware(
