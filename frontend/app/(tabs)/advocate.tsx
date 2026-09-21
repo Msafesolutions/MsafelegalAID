@@ -132,6 +132,22 @@ export default function AdvocateTab() {
 
       <ScrollView contentContainerStyle={s.dashScroll}>
 
+        {/* Verification pending banner */}
+        {!profile?.verified && (
+          <View style={s.verifyCard}>
+            <Ionicons name="time-outline" size={20} color="#92400E" style={{ marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[s.verifyCardText, { fontWeight: '700', marginBottom: 2 }]}>
+                Verification Pending
+              </Text>
+              <Text style={s.verifyCardText}>
+                Your enrolment no. <Text style={{ fontWeight: '700' }}>{profile?.bar_council_number}</Text> is under review.
+                You'll receive a "Verified" badge within 24–48 hours.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {cards.map(card => (
           <Pressable key={card.title} style={s.card} onPress={card.onPress}>
             <View style={s.cardIcon}>
@@ -148,6 +164,12 @@ export default function AdvocateTab() {
         <View style={s.profileCard}>
           <Text style={s.profileLabel}>State Bar</Text>
           <Text style={s.profileValue}>{profile?.state_bar}</Text>
+          {profile?.bar_council_number ? (
+            <>
+              <Text style={[s.profileLabel, { marginTop: 10 }]}>Bar Council Enrolment No.</Text>
+              <Text style={s.profileValue}>{profile.bar_council_number}</Text>
+            </>
+          ) : null}
           {profile?.specializations?.length > 0 && (
             <>
               <Text style={[s.profileLabel, { marginTop: 10 }]}>Specializations</Text>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, Pressable, ScrollView, StyleSheet,
-  ActivityIndicator, Modal, FlatList,
+  ActivityIndicator, Modal, FlatList, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -21,18 +21,19 @@ const GOLD  = '#D3B675';
 export default function AdvocateRegister() {
   const { token, user } = useAuth();
   const router = useRouter();
-  const [stateBar, setStateBar]   = useState('');
-  const [specs, setSpecs]         = useState<string[]>([]);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState<string | null>(null);
+  const [stateBar, setStateBar]       = useState('');
+  const [barCouncil, setBarCouncil]   = useState('');
+  const [specs, setSpecs]             = useState<string[]>([]);
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState<string | null>(null);
   const [showBarPicker, setShowBarPicker] = useState(false);
 
   const toggleSpec = (s: string) =>
     setSpecs(prev => prev.includes(s) ? prev.filter(x => x !== s) : prev.length < 5 ? [...prev, s] : prev);
 
   const submit = async () => {
-    if (!stateBar || specs.length === 0) {
-      setError('Please select your State Bar Council and at least one specialization.');
+    if (!stateBar || !barCouncil.trim() || specs.length === 0) {
+      setError('Please fill in all required fields: State Bar Council, Enrolment Number, and at least one specialization.');
       return;
     }
     setLoading(true); setError(null);
@@ -40,7 +41,7 @@ export default function AdvocateRegister() {
       const r = await fetch(`${API_BASE}/api/advocate/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ user_id: user?.id, bar_council_number: '', state_bar: stateBar, specializations: specs }),
+        body: JSON.stringify({ user_id: user?.id, bar_council_number: barCouncil.trim().toUpperCase(), state_bar: stateBar, specializations: specs }),
       });
       if (!r.ok) throw new Error((await r.json()).detail ?? 'Registration failed');
       router.replace('/lawyer-home' as any);
@@ -65,6 +66,19 @@ export default function AdvocateRegister() {
           <Ionicons name="chevron-down" size={16} color={NAVY} />
         </Pressable>
 
+        <Text style={[s.label, { marginTop: 16 }]}>Bar Council Enrolment No. <Text style={s.req}>*</Text></Text>
+        <TextInput
+          style={s.input}
+          placeholder="e.g. MH/1234/2020"
+          placeholderTextColor="#9CA3AF"
+          value={barCouncil}
+          onChangeText={setBarCouncil}
+          autoCapitalize="characters"
+          returnKeyType="done"
+          maxLength={30}
+        />
+        <Text style={s.helperText}>As appearing on your State Bar Council certificate</Text>
+
         <Text style={[s.label, { marginTop: 16 }]}>Specializations (up to 5) <Text style={s.req}>*</Text></Text>
         <View style={s.chipsRow}>
           {SPECIALIZATIONS.map(sp => {
@@ -78,9 +92,9 @@ export default function AdvocateRegister() {
         </View>
 
         <View style={s.disclaimerCard}>
-          <Ionicons name="information-circle-outline" size={16} color="#6B7280" />
+          <Ionicons name="time-outline" size={16} color="#92400E" />
           <Text style={s.disclaimerText}>
-            You can access Lawyer Mode immediately after registration.
+            Your Bar Council enrolment number will be verified within 24–48 hours. You can access Lawyer Mode immediately and receive a "Verified" badge once approved.
           </Text>
         </View>
 
@@ -131,8 +145,9 @@ const s = StyleSheet.create({
   chipActive: { backgroundColor: NAVY },
   chipText: { fontSize: 13, fontWeight: '600', color: NAVY },
   chipTextActive: { color: '#fff' },
-  disclaimerCard: { flexDirection: 'row', gap: 8, backgroundColor: '#F9FAFB', borderRadius: 10, padding: 12, marginTop: 20, alignItems: 'flex-start' },
-  disclaimerText: { flex: 1, fontSize: 12, color: '#6B7280', lineHeight: 18 },
+  disclaimerCard: { flexDirection: 'row', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 10, padding: 12, marginTop: 20, alignItems: 'flex-start' },
+  disclaimerText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 18 },
+  helperText: { fontSize: 11, color: '#6B7280', marginTop: 4, marginLeft: 2 },
   errorText: { color: '#EF4444', fontSize: 13, marginTop: 12, textAlign: 'center' },
   btn: { backgroundColor: GOLD, paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 24 },
   btnText: { fontSize: 16, fontWeight: '700', color: NAVY },

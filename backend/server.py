@@ -223,7 +223,7 @@ class AcceptTermsIn(BaseModel):
 
 class AdvocateRegisterIn(BaseModel):
     user_id: str
-    bar_council_number: str = ""   # optional — verification added later
+    bar_council_number: str          # required — must be a non-empty enrolment number
     state_bar: str
     specializations: List[str]
 
@@ -2678,7 +2678,9 @@ async def advocate_register(body: AdvocateRegisterIn, user: dict = Depends(curre
     existing = await db.advocate_profiles.find_one({"user_id": body.user_id})
     if existing:
         return {k: v for k, v in existing.items() if k != "_id"}
-    # bar_council_number is optional for now — will be verified later
+    # Validate bar council number
+    if not body.bar_council_number or len(body.bar_council_number.strip()) < 4:
+        raise HTTPException(400, "A valid Bar Council enrolment number is required (min 4 characters)")
     if not body.specializations:
         raise HTTPException(400, "Select at least one specialization")
     now = datetime.now(timezone.utc).isoformat()
@@ -2694,7 +2696,10 @@ async def advocate_register(body: AdvocateRegisterIn, user: dict = Depends(curre
     }
     try:
         await db.advocate_profiles.insert_one(doc)
-    except Exception:
+    except Exception as e:
+        err_str = str(e)
+        if "bar_council_number" in err_str:
+            raise HTTPException(400, "This Bar Council enrolment number is already registered with another account")
         existing = await db.advocate_profiles.find_one({"user_id": body.user_id})
         if existing:
             return {k: v for k, v in existing.items() if k != "_id"}
@@ -3259,7 +3264,10 @@ async def _startup():
     # Advocate Door — ensure indexes exist (idempotent)
     try:
         await db.advocate_profiles.create_index("user_id", unique=True)
-        await db.advocate_profiles.create_index("bar_council_number", unique=True)
+        await db.advocate_profiles.create_index(
+            "bar_council_number", unique=True,
+            partialFilterExpression={"bar_council_number": {"$gt": ""}},
+        )
         await db.client_intakes.create_index("intake_token", unique=True)
         await db.client_intakes.create_index("advocate_id")
         await db.verification_log.create_index("advocate_id")
