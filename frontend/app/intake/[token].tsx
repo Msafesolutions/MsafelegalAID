@@ -1,234 +1,236 @@
-/**
- * Public intake flow — no login required.
- * Clients fill this in after receiving a link from their advocate.
- */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, TextInput, Pressable, ScrollView, StyleSheet,
-  ActivityIndicator, Platform,
+  ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { API_BASE } from '@/src/auth';
+import { INTAKE_TEMPLATES, getTemplate, IntakeTemplate } from '@/src/intakeTemplates';
 
-const API = process.env.EXPO_PUBLIC_BACKEND_URL ?? '';
 const NAVY = '#14365A';
 const GOLD = '#D3B675';
 
-type Step = 1 | 2 | 3 | 'confirm' | 'done' | 'expired';
+// Simple native STT helper — no auth needed (on-device)
+async function startNativeSTT(
+  onPartial: (t: string) => void,
+  onFinal: (t: string) => void,
+  onError: (e: string) => void,
+): Promise<() => void> {
+  if (Platform.OS === 'web') { onError('Voice input not available on web'); return () => {}; }
+  try {
+    const mod = await import('expo-speech-recognition');
+    const { ExpoSpeechRecognitionModule, addSpeechRecognitionListener } = mod;
+    const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync?.();
+    if (perm && !perm.granted) { onError('Microphone permission denied'); return () => {}; }
+    let last = '';
+    const subs: any[] = [];
+    subs.push(addSpeechRecognitionListener('result', (ev: any) => {
+      const t = ev?.results?.[0]?.transcript ?? '';
+      if (ev?.isFinal) { onFinal(t); } else { last = t; onPartial(t); }
+    }));
+    subs.push(addSpeechRecognitionListener('end', () => { if (last) onFinal(last); subs.forEach(s => s?.remove?.()); }));
+    subs.push(addSpeechRecognitionListener('error', (ev: any) => { onError(ev?.error || 'Voice error'); subs.forEach(s => s?.remove?.()); }));
+    ExpoSpeechRecognitionModule.start({ lang: 'en-IN', interimResults: true, continuous: false, requiresOnDeviceRecognition: false });
+    return () => { try { ExpoSpeechRecognitionModule.stop?.(); } catch {} subs.forEach(s => s?.remove?.()); };
+  } catch (e: any) { onError(e?.message || 'Voice unavailable'); return () => {}; }
+}
 
-export default function PublicIntake() {
+export default function ClientIntake() {
   const { token } = useLocalSearchParams<{ token: string }>();
-  const [step, setStep]     = useState<Step>(1);
-  const [loading, setLoading]   = useState(true);
+  const [intake, setIntake] = useState<any>(null);
+  const [template, setTemplate] = useState<IntakeTemplate | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [clientName, setClientName] = useState('');
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [activeVoice, setActiveVoice] = useState<string | null>(null); // question id being recorded
+  const [partialText, setPartialText] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [name, setName]     = useState('');
-  const [situation, setSituation] = useState('');
-  const [outcome, setOutcome]     = useState('');
+  const [done, setDone] = useState(false);
+  const stopRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!token) return;
-    fetch(`${API}/api/advocate/intake/${token}`)
-      .then(r => r.json())
+    fetch(`${API_BASE}/api/advocate/intake/${token}`)
+      .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data.expired || data.status === 'expired') setStep('expired');
-        else if (data.status === 'complete') setStep('done');
-        else setStep(1);
+        setIntake(data);
+        if (data?.template_id) {
+          setTemplate(getTemplate(data.template_id) ?? INTAKE_TEMPLATES[0]);
+        } else {
+          setTemplate(INTAKE_TEMPLATES[0]);
+        }
       })
-      .catch(() => setStep('expired'))
+      .catch(() => setIntake(null))
       .finally(() => setLoading(false));
   }, [token]);
 
-  const submit = async () => {
+  const toggleVoice = async (qId: string) => {
+    if (activeVoice === qId) {
+      // stop
+      stopRef.current?.();
+      stopRef.current = null;
+      setActiveVoice(null);
+      setPartialText('');
+      return;
+    }
+    // stop any active
+    stopRef.current?.();
+    setActiveVoice(qId);
+    setPartialText('');
+    const stop = await startNativeSTT(
+      (t) => setPartialText(t),
+      (t) => {
+        setAnswers(prev => ({ ...prev, [qId]: (prev[qId] ? prev[qId] + ' ' : '') + t }));
+        setActiveVoice(null);
+        setPartialText('');
+        stopRef.current = null;
+      },
+      (err) => {
+        setActiveVoice(null);
+        setPartialText('');
+        stopRef.current = null;
+      },
+    );
+    stopRef.current = stop;
+  };
+
+  const handleSubmit = async () => {
+    if (!clientName.trim()) { alert('Please enter your name.'); return; }
+    const required = template?.questions.filter(q => q.required) ?? [];
+    const missing = required.find(q => !answers[q.id]?.trim());
+    if (missing) { alert(`Please answer: "${missing.label}"`); return; }
     setSubmitting(true);
     try {
-      const r = await fetch(`${API}/api/advocate/intake/${token}/submit`, {
+      const r = await fetch(`${API_BASE}/api/advocate/intake/${token}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_name: name.trim(), transcript: [situation.trim(), outcome.trim()] }),
+        body: JSON.stringify({ client_name: clientName.trim(), transcript: Object.values(answers), answers }),
       });
-      if (!r.ok) throw new Error('Submission failed');
-      setStep('done');
-    } catch { alert('Something went wrong. Please try again.'); }
+      if (!r.ok) throw new Error();
+      setDone(true);
+    } catch { alert('Submission failed. Please try again.'); }
     setSubmitting(false);
   };
 
   if (loading) return (
+    <SafeAreaView style={s.safe}><View style={s.center}><ActivityIndicator color={NAVY} size="large" /></View></SafeAreaView>
+  );
+
+  if (!intake || intake.expired) return (
     <SafeAreaView style={s.safe}>
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color={NAVY} size="large" />
+      <View style={s.center}>
+        <Ionicons name="alert-circle-outline" size={48} color="#DC2626" />
+        <Text style={s.errorTitle}>{intake?.expired ? 'This link has expired' : 'Link not found'}</Text>
+        <Text style={s.errorSub}>Please ask your advocate to send a new link.</Text>
       </View>
     </SafeAreaView>
   );
 
-  if (step === 'expired') return (
+  if (intake.status === 'complete' || done) return (
     <SafeAreaView style={s.safe}>
-      <View style={s.errorCard}>
-        <Ionicons name="time-outline" size={48} color="#DC2626" />
-        <Text style={s.errorTitle}>This link has expired</Text>
-        <Text style={s.errorSub}>Contact your advocate for a new intake link.</Text>
+      <View style={s.center}>
+        <Ionicons name="checkmark-circle" size={64} color="#059669" />
+        <Text style={s.doneTitle}>Submitted Successfully</Text>
+        <Text style={s.doneSub}>Your information has been sent to your advocate securely. They will contact you shortly.</Text>
       </View>
     </SafeAreaView>
   );
-
-  if (step === 'done') return (
-    <SafeAreaView style={s.safe}>
-      <View style={s.doneCard}>
-        <Ionicons name="checkmark-circle" size={56} color={NAVY} />
-        <Text style={s.doneTitle}>Information Sent</Text>
-        <Text style={s.doneSub}>Your information has been sent to your advocate securely. No further action needed.</Text>
-      </View>
-      <Text style={s.footer}>Powered by DHARA · Legal Aid Platform</Text>
-    </SafeAreaView>
-  );
-
-  const totalSteps = 3;
-  const stepNum    = typeof step === 'number' ? step : 3;
 
   return (
-    <SafeAreaView style={s.safe}>
-      {/* Logo header */}
-      <View style={s.topBar}>
-        <Text style={s.brand}>DHARA</Text>
-        <Text style={s.brandSub}>Secure Client Intake</Text>
-      </View>
-
-      {/* Step indicator */}
-      {step !== 'confirm' && (
-        <View style={s.stepRow}>
-          {[1, 2, 3].map(n => (
-            <View key={n} style={[s.stepDot, stepNum >= n && s.stepDotActive]} />
-          ))}
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <SafeAreaView style={s.safe}>
+        {/* Header */}
+        <View style={s.header}>
+          <View style={[s.headerIcon, { backgroundColor: (template?.color ?? NAVY) + '22' }]}>
+            <Ionicons name={(template?.icon ?? 'document-text-outline') as any} size={20} color={template?.color ?? NAVY} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.headerTitle}>{template?.title ?? 'Client Intake'}</Text>
+            <Text style={s.headerSub}>Powered by DHARA AI — Secure &amp; Confidential</Text>
+          </View>
         </View>
-      )}
 
-      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-        {step === 1 && (
-          <>
-            <Text style={s.question}>What should we call you?</Text>
-            <Text style={s.questionSub}>Step 1 of 3 · Your name</Text>
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+          {/* Name */}
+          <View style={s.fieldWrap}>
+            <Text style={s.label}>Your Full Name <Text style={s.req}>*</Text></Text>
             <TextInput
               style={s.input}
-              placeholder="Your full name"
+              value={clientName}
+              onChangeText={setClientName}
+              placeholder="Enter your full name"
               placeholderTextColor="#9CA3AF"
-              value={name}
-              onChangeText={setName}
-              autoCapitalize="words"
+              returnKeyType="next"
             />
-            <Pressable style={[s.btn, !name.trim() && s.btnDisabled]} disabled={!name.trim()} onPress={() => setStep(2)}>
-              <Text style={s.btnText}>Next</Text>
-              <Ionicons name="arrow-forward" size={18} color="#fff" />
-            </Pressable>
-          </>
-        )}
+          </View>
 
-        {step === 2 && (
-          <>
-            <Text style={s.question}>Tell us what happened</Text>
-            <Text style={s.questionSub}>Step 2 of 3 · In your own words</Text>
-            <TextInput
-              style={[s.input, s.textarea]}
-              placeholder="Describe the situation. You can write in Hindi or English."
-              placeholderTextColor="#9CA3AF"
-              value={situation}
-              onChangeText={setSituation}
-              multiline
-              textAlignVertical="top"
-            />
-            <View style={s.navRow}>
-              <Pressable style={s.backBtn} onPress={() => setStep(1)}>
-                <Ionicons name="arrow-back" size={18} color={NAVY} />
-                <Text style={s.backBtnText}>Back</Text>
-              </Pressable>
-              <Pressable style={[s.btn, { flex: 1 }, !situation.trim() && s.btnDisabled]} disabled={!situation.trim()} onPress={() => setStep(3)}>
-                <Text style={s.btnText}>Next</Text>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
-              </Pressable>
-            </View>
-          </>
-        )}
-
-        {step === 3 && (
-          <>
-            <Text style={s.question}>What do you need help with?</Text>
-            <Text style={s.questionSub}>Step 3 of 3 · Your goal</Text>
-            <TextInput
-              style={[s.input, s.textarea]}
-              placeholder="What outcome are you hoping for?"
-              placeholderTextColor="#9CA3AF"
-              value={outcome}
-              onChangeText={setOutcome}
-              multiline
-              textAlignVertical="top"
-            />
-            <View style={s.navRow}>
-              <Pressable style={s.backBtn} onPress={() => setStep(2)}>
-                <Ionicons name="arrow-back" size={18} color={NAVY} />
-                <Text style={s.backBtnText}>Back</Text>
-              </Pressable>
-              <Pressable style={[s.btn, { flex: 1 }, !outcome.trim() && s.btnDisabled]} disabled={!outcome.trim()} onPress={() => setStep('confirm')}>
-                <Text style={s.btnText}>Review</Text>
-                <Ionicons name="checkmark" size={18} color="#fff" />
-              </Pressable>
-            </View>
-          </>
-        )}
-
-        {step === 'confirm' && (
-          <>
-            <Text style={s.confirmTitle}>Review your answers</Text>
-            {([{ label: 'Your name', value: name }, { label: 'What happened', value: situation }, { label: 'What you need', value: outcome }] as const).map(row => (
-              <View key={row.label} style={s.confirmRow}>
-                <Text style={s.confirmLabel}>{row.label}</Text>
-                <Text style={s.confirmValue}>{row.value}</Text>
+          {/* Template questions */}
+          {template?.questions.map((q) => {
+            const isRecording = activeVoice === q.id;
+            const showMic = Platform.OS !== 'web';
+            return (
+              <View key={q.id} style={s.fieldWrap}>
+                <Text style={s.label}>{q.label}{q.required ? <Text style={s.req}> *</Text> : null}</Text>
+                <View style={s.inputRow}>
+                  <TextInput
+                    style={[s.input, q.type === 'textarea' && s.textarea, { flex: 1 }]}
+                    value={isRecording && partialText ? answers[q.id] + (answers[q.id] ? ' ' : '') + partialText : answers[q.id] ?? ''}
+                    onChangeText={t => setAnswers(prev => ({ ...prev, [q.id]: t }))}
+                    placeholder={q.placeholder ?? ''}
+                    placeholderTextColor="#9CA3AF"
+                    multiline={q.type === 'textarea'}
+                    numberOfLines={q.type === 'textarea' ? 3 : 1}
+                    textAlignVertical={q.type === 'textarea' ? 'top' : 'center'}
+                  />
+                  {showMic && (
+                    <Pressable style={[s.micBtn, isRecording && s.micBtnActive]} onPress={() => toggleVoice(q.id)}>
+                      <Ionicons name={isRecording ? 'stop' : 'mic-outline'} size={20} color={isRecording ? '#fff' : NAVY} />
+                    </Pressable>
+                  )}
+                </View>
+                {isRecording && <Text style={s.recording}>🎙 Listening…</Text>}
               </View>
-            ))}
-            <Pressable style={[s.btn, submitting && { opacity: 0.6 }]} disabled={submitting} onPress={submit}>
-              {submitting
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <><Text style={s.btnText}>Submit</Text><Ionicons name="send" size={16} color="#fff" /></>}
-            </Pressable>
-            <Pressable style={s.editBtn} onPress={() => setStep(1)}>
-              <Text style={s.editBtnText}>Edit answers</Text>
-            </Pressable>
-          </>
-        )}
-      </ScrollView>
-      <Text style={s.footer}>Powered by DHARA · Legal Aid Platform</Text>
-    </SafeAreaView>
+            );
+          })}
+
+          <Pressable style={[s.submitBtn, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting}>
+            {submitting
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <><Ionicons name="send" size={18} color="#fff" /><Text style={s.submitText}>Submit to Advocate</Text></>
+            }
+          </Pressable>
+
+          <Text style={s.privacy}>🔒 Your information is encrypted and only visible to your advocate.</Text>
+        </ScrollView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
 const s = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: '#FDFBF7' },
-  topBar:  { alignItems: 'center', paddingVertical: 16, backgroundColor: NAVY },
-  brand:   { fontSize: 20, fontWeight: '900', color: GOLD, letterSpacing: 3 },
-  brandSub: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-  stepRow: { flexDirection: 'row', gap: 8, justifyContent: 'center', paddingVertical: 14 },
-  stepDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#E5E7EB' },
-  stepDotActive: { backgroundColor: NAVY },
-  scroll:  { padding: 24, paddingBottom: 40 },
-  question: { fontSize: 22, fontWeight: '800', color: NAVY, marginBottom: 4 },
-  questionSub: { fontSize: 13, color: '#9CA3AF', marginBottom: 20 },
-  input:   { borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 12, padding: 14, fontSize: 15, color: '#1F2937', backgroundColor: '#fff', marginBottom: 20 },
-  textarea: { minHeight: 130, paddingTop: 12 },
-  navRow:  { flexDirection: 'row', gap: 12, alignItems: 'center' },
-  btn:     { backgroundColor: NAVY, paddingVertical: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 },
-  btnDisabled: { opacity: 0.4 },
-  btnText: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 14, paddingHorizontal: 16, borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 12 },
-  backBtnText: { fontSize: 15, fontWeight: '600', color: NAVY },
-  confirmTitle: { fontSize: 20, fontWeight: '800', color: NAVY, marginBottom: 20 },
-  confirmRow: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB' },
-  confirmLabel: { fontSize: 11, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 6 },
-  confirmValue: { fontSize: 15, color: '#1F2937', lineHeight: 22 },
-  editBtn: { alignItems: 'center', paddingVertical: 12 },
-  editBtnText: { fontSize: 14, color: NAVY, fontWeight: '600' },
-  errorCard: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 },
-  errorTitle: { fontSize: 20, fontWeight: '800', color: '#DC2626', textAlign: 'center' },
-  errorSub:   { fontSize: 14, color: '#6B7280', textAlign: 'center' },
-  doneCard: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 },
-  doneTitle: { fontSize: 22, fontWeight: '800', color: NAVY },
-  doneSub:  { fontSize: 15, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
-  footer:  { textAlign: 'center', fontSize: 11, color: '#D1D5DB', paddingBottom: 16 },
+  safe: { flex: 1, backgroundColor: '#FDFBF7' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
+  header: { backgroundColor: NAVY, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 12 },
+  headerIcon: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  headerSub: { fontSize: 11, color: GOLD, marginTop: 2 },
+  scroll: { padding: 20, gap: 16, paddingBottom: 40 },
+  fieldWrap: { gap: 6 },
+  label: { fontSize: 14, fontWeight: '700', color: '#1F2937' },
+  req: { color: '#DC2626' },
+  inputRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#1F2937' },
+  textarea: { minHeight: 80, paddingTop: 12 },
+  micBtn: { width: 46, height: 46, borderRadius: 12, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#D1D5DB', marginTop: 0 },
+  micBtnActive: { backgroundColor: '#DC2626', borderColor: '#DC2626' },
+  recording: { fontSize: 12, color: '#DC2626', fontWeight: '600' },
+  submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: NAVY, borderRadius: 14, paddingVertical: 16, marginTop: 8 },
+  submitText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  privacy: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', marginTop: 4 },
+  errorTitle: { fontSize: 18, fontWeight: '800', color: '#1F2937' },
+  errorSub: { fontSize: 14, color: '#6B7280', textAlign: 'center' },
+  doneTitle: { fontSize: 22, fontWeight: '800', color: '#059669' },
+  doneSub: { fontSize: 14, color: '#374151', textAlign: 'center', lineHeight: 22 },
 });

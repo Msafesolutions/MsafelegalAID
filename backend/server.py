@@ -229,10 +229,13 @@ class AdvocateRegisterIn(BaseModel):
 
 class IntakeCreateIn(BaseModel):
     advocate_id: str
+    template_id: str = "general"
+    template_title: str = "General Intake"
 
 class IntakeSubmitIn(BaseModel):
     client_name: str
-    transcript: List[str]  # [situation, outcome]
+    transcript: List[str] = []
+    answers: Optional[dict] = None  # structured {question_id: answer}
 
 # ---------- Helpers ----------
 def hash_pw(pw: str) -> str:
@@ -2738,9 +2741,12 @@ async def intake_create(request: Request, body: IntakeCreateIn, user: dict = Dep
         "intake_token": token,
         "intake_url": intake_url,
         "advocate_id": body.advocate_id,
+        "template_id": body.template_id,
+        "template_title": body.template_title,
         "client_name": "",
         "status": "pending",
         "transcript": [],
+        "answers": {},
         "summary": "",
         "dhara_analysis": "",
         "created_at": now,
@@ -2761,11 +2767,14 @@ async def intake_get(token: str):
     return {
         "id": intake.get("id", ""),
         "intake_token": intake.get("intake_token", ""),
+        "template_id": intake.get("template_id", "general"),
+        "template_title": intake.get("template_title", "General Intake"),
         "status": intake.get("status", "pending"),
         "client_name": intake.get("client_name", ""),
         "summary": intake.get("summary", ""),
         "dhara_analysis": intake.get("dhara_analysis", ""),
         "transcript": intake.get("transcript", []),
+        "answers": intake.get("answers", {}),
         "created_at": intake.get("created_at", ""),
         "completed_at": intake.get("completed_at"),
         "expired": intake.get("status") == "expired",
@@ -2783,18 +2792,24 @@ async def intake_submit(token: str, body: IntakeSubmitIn):
         raise HTTPException(400, "This intake link has already been used or has expired")
     now = datetime.now(timezone.utc).isoformat()
     transcript = [t.strip() for t in (body.transcript or []) if t.strip()]
+    answers = body.answers or {}
     await db.client_intakes.update_one(
         {"intake_token": token},
         {"$set": {
             "client_name": body.client_name.strip()[:120],
             "transcript": transcript,
+            "answers": answers,
             "status": "processing",
             "completed_at": now,
         }},
     )
-    # Generate AI summary (non-blocking best-effort)
-    situation = transcript[0] if len(transcript) > 0 else ""
-    outcome = transcript[1] if len(transcript) > 1 else ""
+    # Build context for AI brief from structured answers if available
+    if answers:
+        situation = "\n".join(f"{k}: {v}" for k, v in answers.items() if v)
+        outcome = answers.get("relief", "")
+    else:
+        situation = transcript[0] if len(transcript) > 0 else ""
+        outcome = transcript[1] if len(transcript) > 1 else ""
     summary, analysis = await _generate_intake_summary(body.client_name, situation, outcome)
     await db.client_intakes.update_one(
         {"intake_token": token},

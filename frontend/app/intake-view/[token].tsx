@@ -77,7 +77,7 @@ export default function IntakeView() {
           </View>
         ) : null}
 
-        {Array.isArray(intake.transcript) && intake.transcript.length > 0 ? (
+        {Array.isArray(intake.transcript) && intake.transcript.length > 0 && !intake.answers ? (
           <View style={s.section}>
             <Pressable style={s.accordionHeader} onPress={() => setTranscriptOpen(v => !v)}>
               <Text style={s.sectionTitle}>Full Transcript</Text>
@@ -89,6 +89,21 @@ export default function IntakeView() {
                 <Text style={s.transcriptText}>{item}</Text>
               </View>
             ))}
+          </View>
+        ) : null}
+
+        {intake.answers && Object.keys(intake.answers).length > 0 ? (
+          <View style={s.section}>
+            <Pressable style={s.accordionHeader} onPress={() => setTranscriptOpen(v => !v)}>
+              <Text style={s.sectionTitle}>Client Answers</Text>
+              <Ionicons name={transcriptOpen ? 'chevron-up' : 'chevron-down'} size={18} color={NAVY} />
+            </Pressable>
+            {transcriptOpen && Object.entries(intake.answers as Record<string, string>).map(([k, v]) => v ? (
+              <View key={k} style={s.transcriptItem}>
+                <Text style={s.transcriptLabel}>{k.replace(/_/g, ' ')}</Text>
+                <Text style={s.transcriptText}>{v}</Text>
+              </View>
+            ) : null)}
           </View>
         ) : null}
 
