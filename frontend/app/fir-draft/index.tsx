@@ -11,7 +11,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, Pressable, ScrollView, StyleSheet,
-  ActivityIndicator, Platform, Alert, KeyboardAvoidingView, Modal,
+  ActivityIndicator, Platform, Alert, KeyboardAvoidingView, Modal, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -200,6 +200,13 @@ export default function FIRDraftIntake() {
   const [anonId, setAnonId] = useState<string | null>(null);
   const effectiveUserId = user?.id ?? anonId;
 
+  // Voice-first input mode: 'voice' (mic idle) | 'text' (keyboard) | 'review' (post-transcription)
+  const [inputMode, setInputMode] = useState<'voice' | 'text' | 'review'>('voice');
+  const [reviewText, setReviewText] = useState('');
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  // Ref so step-change effect can read current answers without stale closure
+  const answersRef = useRef(answers);
+
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   useEffect(() => {
@@ -228,6 +235,43 @@ export default function FIRDraftIntake() {
       }
     });
   }, [user?.id]);
+
+  // Keep answersRef up-to-date so step-change effect sees fresh answers
+  useEffect(() => { answersRef.current = answers; }, [answers]);
+
+  // Reset input mode each time step changes
+  useEffect(() => {
+    if (step === 0) return;
+    const qId = QUESTIONS[step - 1]?.id;
+    if (Platform.OS === 'web') {
+      setInputMode('text');
+      setReviewText('');
+      return;
+    }
+    const existing = answersRef.current[qId ?? ''];
+    if (existing?.trim()) {
+      setReviewText(existing);
+      setInputMode('review');
+    } else {
+      setInputMode('voice');
+      setReviewText('');
+    }
+  }, [step]);
+
+  // Pulsing animation while recording
+  useEffect(() => {
+    if (isRecording) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.38, duration: 650, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 650, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+      Animated.timing(pulseAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+    }
+  }, [isRecording, pulseAnim]);
 
   // Auto-save to local storage on every change
   useEffect(() => {
@@ -282,10 +326,16 @@ export default function FIRDraftIntake() {
       const result = await whisperTranscribeFile(uri, token ?? '', sttLang);
       const text = typeof result === 'string' ? result : (result as any)?.transcript ?? '';
       if (text) {
-        setAnswers(prev => ({ ...prev, [qId]: (prev[qId] ? prev[qId] + ' ' : '') + text.trim() }));
+        const cleaned = text.trim();
+        setAnswers(prev => ({ ...prev, [qId]: cleaned }));
+        setReviewText(cleaned);
+        setInputMode('review');
+      } else {
+        setInputMode('voice');
       }
     } catch {
       Alert.alert('Transcription Error', 'Could not transcribe. Please type your answer.');
+      setInputMode('text');
     } finally {
       setTranscribing(false);
       setAudioModeAsync({ allowsRecording: false, playsInSilentMode: false }).catch(() => {});
@@ -426,36 +476,112 @@ export default function FIRDraftIntake() {
                 {currentQ.hint ? <Text style={s.questionHint}>{currentQ.hint}</Text> : null}
               </View>
 
-              {/* Voice button + TextInput */}
-              <View style={{ gap: 8 }}>
-                {Platform.OS !== 'web' && (
-                  <Pressable
-                    style={[s.voiceBtn, isRecording && s.voiceBtnActive]}
-                    onPress={isRecording ? () => stopAndTranscribe(currentQ.id) : startRecording}
-                    disabled={transcribing}
-                  >
-                    {transcribing
-                      ? <><ActivityIndicator color="#fff" size="small" /><Text style={s.voiceBtnText}>Transcribing…</Text></>
-                      : isRecording
-                        ? <><Ionicons name="stop-circle" size={24} color="#fff" /><Text style={s.voiceBtnText}>Tap to Stop &amp; Transcribe</Text></>
-                        : <><Ionicons name="mic" size={24} color={NAVY} /><Text style={[s.voiceBtnText, { color: NAVY }]}>Hold to Speak</Text></>
-                    }
-                  </Pressable>
+              {/* ─── Voice-first input section ─────────────────────────── */}
+              <View style={s.inputSection}>
+
+                {/* ── IDLE: large mic button ── */}
+                {Platform.OS !== 'web' && inputMode === 'voice' && !isRecording && !transcribing && (
+                  <View style={s.voiceIdle}>
+                    <Animated.View style={[s.micRing, { transform: [{ scale: pulseAnim }] }]}>
+                      <Pressable style={s.micBig} onPress={startRecording}>
+                        <Ionicons name="mic" size={44} color="#fff" />
+                      </Pressable>
+                    </Animated.View>
+                    <Text style={s.micIdleLabel}>Tap mic to speak</Text>
+                    <Pressable onPress={() => setInputMode('text')} style={s.switchModeBtn}>
+                      <Ionicons name="create-outline" size={14} color="#6B7280" />
+                      <Text style={s.switchModeText}>Type instead</Text>
+                    </Pressable>
+                  </View>
                 )}
-                <TextInput
-                  style={[s.input, currentQ.type === 'textarea' && s.textarea]}
-                  value={answers[currentQ.id] ?? ''}
-                  onChangeText={t => setAnswers(prev => ({ ...prev, [currentQ.id]: t }))}
-                  placeholder={currentQ.hint}
-                  placeholderTextColor="#9CA3AF"
-                  multiline={currentQ.type === 'textarea'}
-                  numberOfLines={currentQ.type === 'textarea' ? 5 : 1}
-                  textAlignVertical={currentQ.type === 'textarea' ? 'top' : 'center'}
-                />
+
+                {/* ── RECORDING: pulsing stop button ── */}
+                {Platform.OS !== 'web' && isRecording && (
+                  <View style={s.voiceIdle}>
+                    <Animated.View style={[s.micRing, s.micRingRecording, { transform: [{ scale: pulseAnim }] }]}>
+                      <Pressable style={[s.micBig, s.micBigRecording]} onPress={() => stopAndTranscribe(currentQ.id)}>
+                        <Ionicons name="stop" size={40} color="#fff" />
+                      </Pressable>
+                    </Animated.View>
+                    <Text style={s.recordingLabel}>● Recording…  Tap to stop</Text>
+                  </View>
+                )}
+
+                {/* ── TRANSCRIBING: spinner ── */}
+                {Platform.OS !== 'web' && transcribing && (
+                  <View style={s.voiceIdle}>
+                    <View style={[s.micBig, { backgroundColor: '#6B7280' }]}>
+                      <ActivityIndicator color="#fff" size="large" />
+                    </View>
+                    <Text style={s.micIdleLabel}>Transcribing your voice…</Text>
+                  </View>
+                )}
+
+                {/* ── REVIEW: "We heard…" card ── */}
+                {Platform.OS !== 'web' && inputMode === 'review' && !isRecording && !transcribing && (
+                  <View style={s.reviewCard}>
+                    <View style={s.reviewHeader}>
+                      <Ionicons name="checkmark-circle" size={20} color={GREEN} />
+                      <Text style={s.reviewHeaderText}>We heard:</Text>
+                    </View>
+                    <Text style={s.reviewBodyText}>{reviewText}</Text>
+                    <View style={s.reviewActions}>
+                      <Pressable
+                        style={s.rerecordBtn}
+                        onPress={() => {
+                          const qId = currentQ.id;
+                          setAnswers(prev => { const n = { ...prev }; delete n[qId]; return n; });
+                          setReviewText('');
+                          setInputMode('voice');
+                        }}
+                      >
+                        <Ionicons name="mic-outline" size={15} color={RED} />
+                        <Text style={s.rerecordText}>Re-record</Text>
+                      </Pressable>
+                      <Pressable
+                        style={s.editAnswerBtn}
+                        onPress={() => setInputMode('text')}
+                      >
+                        <Ionicons name="create-outline" size={15} color={NAVY} />
+                        <Text style={s.editAnswerText}>Edit text</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+
+                {/* ── TEXT (fallback / edit mode) ── */}
+                {(inputMode === 'text' || Platform.OS === 'web') && !isRecording && !transcribing && (
+                  <View style={{ gap: 8 }}>
+                    <TextInput
+                      style={[s.input, currentQ.type === 'textarea' && s.textarea]}
+                      value={answers[currentQ.id] ?? ''}
+                      onChangeText={t => setAnswers(prev => ({ ...prev, [currentQ.id]: t }))}
+                      placeholder={currentQ.hint}
+                      placeholderTextColor="#9CA3AF"
+                      multiline={currentQ.type === 'textarea'}
+                      numberOfLines={currentQ.type === 'textarea' ? 5 : 1}
+                      textAlignVertical={currentQ.type === 'textarea' ? 'top' : 'center'}
+                      autoFocus={Platform.OS !== 'web'}
+                    />
+                    {Platform.OS !== 'web' && (
+                      <Pressable onPress={() => setInputMode('voice')} style={s.switchModeBtn}>
+                        <Ionicons name="mic-outline" size={14} color="#6B7280" />
+                        <Text style={s.switchModeText}>Use voice instead</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+
               </View>
 
               <Pressable style={s.nextBtn} onPress={nextStep}>
-                <Text style={s.nextBtnText}>{step >= QUESTIONS.length ? 'Generate FIR Draft' : 'Next'}</Text>
+                <Text style={s.nextBtnText}>
+                  {step >= QUESTIONS.length
+                    ? 'Generate FIR Draft'
+                    : inputMode === 'review'
+                      ? 'Looks correct — Next'
+                      : 'Next'}
+                </Text>
                 <Ionicons name={step >= QUESTIONS.length ? 'document-text' : 'arrow-forward'} size={20} color="#fff" />
               </Pressable>
             </View>
@@ -507,4 +633,55 @@ const s = StyleSheet.create({
   textarea: { minHeight: 120, paddingTop: 14 },
   nextBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: NAVY, borderRadius: 14, paddingVertical: 16, marginTop: 8 },
   nextBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+
+  // ── Voice-first input styles ──────────────────────────────────────────
+  inputSection: { gap: 0 },
+  voiceIdle: { alignItems: 'center', paddingVertical: 28, gap: 14 },
+  // Outer ring that animates (scale)
+  micRing: {
+    width: 104, height: 104, borderRadius: 52,
+    backgroundColor: 'rgba(20,54,90,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  micRingRecording: { backgroundColor: 'rgba(220,38,38,0.15)' },
+  // Inner filled button
+  micBig: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: NAVY,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: NAVY, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
+  },
+  micBigRecording: { backgroundColor: RED, shadowColor: RED },
+  micIdleLabel: { fontSize: 16, fontWeight: '600', color: '#374151' },
+  recordingLabel: { fontSize: 16, fontWeight: '700', color: RED },
+  switchModeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 20, backgroundColor: '#F3F4F6',
+  },
+  switchModeText: { fontSize: 13, color: '#6B7280' },
+  // Review card
+  reviewCard: {
+    backgroundColor: '#F0FDF4', borderRadius: 14,
+    padding: 16, gap: 10,
+    borderWidth: 1.5, borderColor: '#86EFAC',
+    marginVertical: 8,
+  },
+  reviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  reviewHeaderText: { fontSize: 14, fontWeight: '800', color: GREEN },
+  reviewBodyText: { fontSize: 15, color: '#1F2937', lineHeight: 24, fontStyle: 'italic' },
+  reviewActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  rerecordBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: 10,
+    borderWidth: 1.5, borderColor: RED, backgroundColor: '#FEF2F2',
+  },
+  rerecordText: { fontSize: 13, fontWeight: '700', color: RED },
+  editAnswerBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: 10,
+    borderWidth: 1.5, borderColor: NAVY, backgroundColor: '#EEF2FF',
+  },
+  editAnswerText: { fontSize: 13, fontWeight: '700', color: NAVY },
 });
