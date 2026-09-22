@@ -207,6 +207,10 @@ export default function FIRDraftIntake() {
   // Ref so step-change effect can read current answers without stale closure
   const answersRef = useRef(answers);
 
+  // ── Web Speech API (browser only) ─────────────────────────────────────
+  const webRecognitionRef = useRef<any>(null);
+  const [liveTranscript, setLiveTranscript] = useState('');
+
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   useEffect(() => {
@@ -243,11 +247,6 @@ export default function FIRDraftIntake() {
   useEffect(() => {
     if (step === 0) return;
     const qId = QUESTIONS[step - 1]?.id;
-    if (Platform.OS === 'web') {
-      setInputMode('text');
-      setReviewText('');
-      return;
-    }
     const existing = answersRef.current[qId ?? ''];
     if (existing?.trim()) {
       setReviewText(existing);
@@ -255,6 +254,7 @@ export default function FIRDraftIntake() {
     } else {
       setInputMode('voice');
       setReviewText('');
+      setLiveTranscript('');
     }
   }, [step]);
 
@@ -263,13 +263,13 @@ export default function FIRDraftIntake() {
     if (isRecording) {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.38, duration: 650, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 650, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.38, duration: 650, useNativeDriver: false }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 650, useNativeDriver: false }),
         ])
       ).start();
     } else {
       pulseAnim.stopAnimation();
-      Animated.timing(pulseAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+      Animated.timing(pulseAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
     }
   }, [isRecording, pulseAnim]);
 
@@ -339,6 +339,84 @@ export default function FIRDraftIntake() {
     } finally {
       setTranscribing(false);
       setAudioModeAsync({ allowsRecording: false, playsInSilentMode: false }).catch(() => {});
+    }
+  };
+
+  // ── Web Speech API recording (browser only) ───────────────────────────
+  const startWebRecording = (qId: string) => {
+    if (typeof window === 'undefined') return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      Alert.alert(
+        'Voice not supported',
+        'Your browser does not support voice input. Please use Chrome or Safari, or type your answer.'
+      );
+      setInputMode('text');
+      return;
+    }
+    const rec = new SR();
+    rec.lang = FIR_LANGUAGES.find(l => l.code === lang)?.sttLang ?? 'en-IN';
+    rec.continuous = false;
+    rec.interimResults = true;
+    webRecognitionRef.current = rec;
+    setLiveTranscript('');
+    setIsRecording(true);
+
+    rec.onresult = (e: any) => {
+      const interim = Array.from(e.results as any[])
+        .map((r: any) => r[0].transcript)
+        .join('');
+      setLiveTranscript(interim);
+    };
+
+    rec.onend = () => {
+      setIsRecording(false);
+      webRecognitionRef.current = null;
+      // Use functional state to grab the latest liveTranscript value
+      setLiveTranscript(prev => {
+        const final = prev.trim();
+        if (final) {
+          setAnswers(ans => ({ ...ans, [qId]: final }));
+          setReviewText(final);
+          setInputMode('review');
+        } else {
+          setInputMode('voice');
+        }
+        return '';
+      });
+    };
+
+    rec.onerror = (e: any) => {
+      setIsRecording(false);
+      webRecognitionRef.current = null;
+      setLiveTranscript('');
+      if (e.error !== 'no-speech') {
+        Alert.alert('Voice Error', 'Could not capture voice. Please try again or type your answer.');
+      }
+      setInputMode('voice');
+    };
+
+    rec.start();
+  };
+
+  const stopWebRecording = () => {
+    webRecognitionRef.current?.stop();
+  };
+
+  // Unified mic press handler — routes to the right engine
+  const handleMicPress = (qId: string) => {
+    if (Platform.OS === 'web') {
+      startWebRecording(qId);
+    } else {
+      startRecording();
+    }
+  };
+
+  const handleStopPress = (qId: string) => {
+    if (Platform.OS === 'web') {
+      stopWebRecording();
+    } else {
+      stopAndTranscribe(qId);
     }
   };
 
@@ -479,15 +557,18 @@ export default function FIRDraftIntake() {
               {/* ─── Voice-first input section ─────────────────────────── */}
               <View style={s.inputSection}>
 
-                {/* ── IDLE: large mic button ── */}
-                {Platform.OS !== 'web' && inputMode === 'voice' && !isRecording && !transcribing && (
+                {/* ── IDLE: large mic button (native + web) ── */}
+                {inputMode === 'voice' && !isRecording && !transcribing && (
                   <View style={s.voiceIdle}>
                     <Animated.View style={[s.micRing, { transform: [{ scale: pulseAnim }] }]}>
-                      <Pressable style={s.micBig} onPress={startRecording}>
+                      <Pressable style={s.micBig} onPress={() => handleMicPress(currentQ.id)}>
                         <Ionicons name="mic" size={44} color="#fff" />
                       </Pressable>
                     </Animated.View>
                     <Text style={s.micIdleLabel}>Tap mic to speak</Text>
+                    {Platform.OS === 'web' && (
+                      <Text style={s.micWebHint}>Works in Chrome & Safari</Text>
+                    )}
                     <Pressable onPress={() => setInputMode('text')} style={s.switchModeBtn}>
                       <Ionicons name="create-outline" size={14} color="#6B7280" />
                       <Text style={s.switchModeText}>Type instead</Text>
@@ -495,11 +576,11 @@ export default function FIRDraftIntake() {
                   </View>
                 )}
 
-                {/* ── RECORDING: pulsing stop button ── */}
+                {/* ── RECORDING: native pulsing stop button ── */}
                 {Platform.OS !== 'web' && isRecording && (
                   <View style={s.voiceIdle}>
                     <Animated.View style={[s.micRing, s.micRingRecording, { transform: [{ scale: pulseAnim }] }]}>
-                      <Pressable style={[s.micBig, s.micBigRecording]} onPress={() => stopAndTranscribe(currentQ.id)}>
+                      <Pressable style={[s.micBig, s.micBigRecording]} onPress={() => handleStopPress(currentQ.id)}>
                         <Ionicons name="stop" size={40} color="#fff" />
                       </Pressable>
                     </Animated.View>
@@ -507,7 +588,26 @@ export default function FIRDraftIntake() {
                   </View>
                 )}
 
-                {/* ── TRANSCRIBING: spinner ── */}
+                {/* ── RECORDING: web — pulsing + live transcript ── */}
+                {Platform.OS === 'web' && isRecording && (
+                  <View style={s.voiceIdle}>
+                    <Animated.View style={[s.micRing, s.micRingRecording, { transform: [{ scale: pulseAnim }] }]}>
+                      <Pressable style={[s.micBig, s.micBigRecording]} onPress={() => handleStopPress(currentQ.id)}>
+                        <Ionicons name="stop" size={40} color="#fff" />
+                      </Pressable>
+                    </Animated.View>
+                    <Text style={s.recordingLabel}>● Listening…  Tap to stop</Text>
+                    {liveTranscript ? (
+                      <View style={s.liveBox}>
+                        <Text style={s.liveText}>{liveTranscript}</Text>
+                      </View>
+                    ) : (
+                      <Text style={s.liveHint}>Speak now — text will appear here</Text>
+                    )}
+                  </View>
+                )}
+
+                {/* ── TRANSCRIBING: native Whisper spinner ── */}
                 {Platform.OS !== 'web' && transcribing && (
                   <View style={s.voiceIdle}>
                     <View style={[s.micBig, { backgroundColor: '#6B7280' }]}>
@@ -518,7 +618,7 @@ export default function FIRDraftIntake() {
                 )}
 
                 {/* ── REVIEW: "We heard…" card ── */}
-                {Platform.OS !== 'web' && inputMode === 'review' && !isRecording && !transcribing && (
+                {inputMode === 'review' && !isRecording && !transcribing && (
                   <View style={s.reviewCard}>
                     <View style={s.reviewHeader}>
                       <Ionicons name="checkmark-circle" size={20} color={GREEN} />
@@ -532,6 +632,7 @@ export default function FIRDraftIntake() {
                           const qId = currentQ.id;
                           setAnswers(prev => { const n = { ...prev }; delete n[qId]; return n; });
                           setReviewText('');
+                          setLiveTranscript('');
                           setInputMode('voice');
                         }}
                       >
@@ -550,7 +651,7 @@ export default function FIRDraftIntake() {
                 )}
 
                 {/* ── TEXT (fallback / edit mode) ── */}
-                {(inputMode === 'text' || Platform.OS === 'web') && !isRecording && !transcribing && (
+                {inputMode === 'text' && !isRecording && !transcribing && (
                   <View style={{ gap: 8 }}>
                     <TextInput
                       style={[s.input, currentQ.type === 'textarea' && s.textarea]}
@@ -561,14 +662,11 @@ export default function FIRDraftIntake() {
                       multiline={currentQ.type === 'textarea'}
                       numberOfLines={currentQ.type === 'textarea' ? 5 : 1}
                       textAlignVertical={currentQ.type === 'textarea' ? 'top' : 'center'}
-                      autoFocus={Platform.OS !== 'web'}
                     />
-                    {Platform.OS !== 'web' && (
-                      <Pressable onPress={() => setInputMode('voice')} style={s.switchModeBtn}>
-                        <Ionicons name="mic-outline" size={14} color="#6B7280" />
-                        <Text style={s.switchModeText}>Use voice instead</Text>
-                      </Pressable>
-                    )}
+                    <Pressable onPress={() => { setLiveTranscript(''); setInputMode('voice'); }} style={s.switchModeBtn}>
+                      <Ionicons name="mic-outline" size={14} color="#6B7280" />
+                      <Text style={s.switchModeText}>Use voice instead</Text>
+                    </Pressable>
                   </View>
                 )}
 
@@ -661,6 +759,15 @@ const s = StyleSheet.create({
     borderRadius: 20, backgroundColor: '#F3F4F6',
   },
   switchModeText: { fontSize: 13, color: '#6B7280' },
+  micWebHint: { fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' },
+  // Live transcript box shown while Web Speech API is recording
+  liveBox: {
+    maxWidth: 280, backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
+    marginTop: 4,
+  },
+  liveText: { fontSize: 14, color: '#1F2937', textAlign: 'center', fontStyle: 'italic', lineHeight: 22 },
+  liveHint: { fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' },
   // Review card
   reviewCard: {
     backgroundColor: '#F0FDF4', borderRadius: 14,
