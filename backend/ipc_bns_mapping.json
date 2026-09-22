@@ -80,6 +80,14 @@
       "duplicate_records_resolved": [
         "IPC 302: untagged '302→103' removed from reverse_lookup_ipc_to_bns. Single canonical '302→103(1)' record with change_type='substantive_change' retained in ipc_complete_mapping."
       ]
+    },
+    "dataset_version": "2.0",
+    "last_expanded": "2026-09-22",
+    "coverage": {
+      "ipc_to_bns": "559 sections (plus 11 deleted/dead-law)",
+      "crpc_to_bnss": "183 key sections covered",
+      "evidence_act_to_bsa": "168 sections covered (all 167 EA sections)",
+      "note": "All entries pending dual advocate sign-off. Classification tags and source links on every record."
     }
   },
   "commencement_status": {
@@ -753,6 +761,20 @@
       "reason": "Colonial-era Thuggee provision. Not re-enacted in BNS 2023. BNS 113 (Terrorist act) is a NEW offence with no IPC predecessor; it is NOT a renaming of IPC 311.",
       "dead_law": false,
       "source_link": "https://www.indiacode.nic.in/handle/123456789/2263"
+    },
+    {
+      "ipc_section": "505A",
+      "offence": "Statements creating enmity, hatred or ill-will — sub-section label",
+      "reason": "IPC 505A is not a standalone section of the central IPC. Section 505 is a composite section with sub-sections (1)(a-c), (2), and (3). Some legal databases use '505A' as a shorthand for s.505(1). In BNS 2023, the equivalent provision is BNS 197 (Statements conducing to public mischief). Use BNS 197 when citing the statutory equivalent.",
+      "dead_law": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/2263"
+    },
+    {
+      "ipc_section": "505B",
+      "offence": "Statements against national integration — sub-section label",
+      "reason": "IPC 505B is not a standalone section of the central IPC; it appears in some state amendment databases. The BNS equivalent for statements promoting enmity is BNS 197. Confirm with a bare-act copy before citing.",
+      "dead_law": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/2263"
     }
   ],
   "crpc_to_bnss_mapping": [
@@ -816,9 +838,10 @@
       "crpc_section": "438",
       "procedure": "Anticipatory bail",
       "bnss_section": "482",
-      "change_type": "renumbering_only",
-      "what_changed": "Framework retained with some procedural modifications.",
-      "verified": false
+      "change_type": "substantive_change",
+      "what_changed": "Major changes under BNSS 482: (i) transit anticipatory bail introduced; (ii) anticipatory bail continues till end of proceedings unless cancelled; (iii) Magistrate no longer has power to grant anticipatory bail; (iv) HC/Sessions Court discretion expanded.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
     },
     {
       "crpc_section": "439",
@@ -835,6 +858,1563 @@
       "change_type": "renumbering_only",
       "what_changed": "Inherent powers (quashing, securing ends of justice) retained in full.",
       "verified": false
+    },
+    {
+      "crpc_section": "1",
+      "bnss_section": "1",
+      "procedure": "Short title, extent and commencement",
+      "change_type": "renumbering_only",
+      "what_changed": "Identical provision.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "2",
+      "bnss_section": "2",
+      "procedure": "Definitions",
+      "change_type": "renumbering_only",
+      "what_changed": "Definitions largely carried over; 'police report' and 'public prosecutor' definitions slightly expanded.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "4",
+      "bnss_section": "4",
+      "procedure": "Trial of offences under IPC and other laws",
+      "change_type": "renumbering_only",
+      "what_changed": "Provision identical; references updated from IPC to BNS.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "5",
+      "bnss_section": "5",
+      "procedure": "Saving of special laws",
+      "change_type": "renumbering_only",
+      "what_changed": "Saving clause unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "6",
+      "bnss_section": "6",
+      "procedure": "Classes of criminal courts",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "7",
+      "bnss_section": "7",
+      "procedure": "Territorial divisions",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "9",
+      "bnss_section": "9",
+      "procedure": "Courts of Session",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "10",
+      "bnss_section": "10",
+      "procedure": "Courts of Judicial Magistrate",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "11",
+      "bnss_section": "11",
+      "procedure": "Chief Judicial Magistrate and Additional CJM",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "15",
+      "bnss_section": "15",
+      "procedure": "Subordination of JM to CJM",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "20",
+      "bnss_section": "20",
+      "procedure": "Executive Magistrates",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "25",
+      "bnss_section": "25",
+      "procedure": "Public Prosecutors",
+      "change_type": "renumbering_only",
+      "what_changed": "Adds qualification criteria; Directorate of Prosecution given statutory footing.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "26",
+      "bnss_section": "26",
+      "procedure": "Government counsel",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "29",
+      "bnss_section": "29",
+      "procedure": "Sentences which HC and Sessions court may pass",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "30",
+      "bnss_section": "30",
+      "procedure": "Sentences JM may pass",
+      "change_type": "renumbering_only",
+      "what_changed": "Unchanged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "41A",
+      "bnss_section": "37",
+      "procedure": "Notice of appearance before police officer",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Mandatory appearance within 3 days or 15 days (depending on case).",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "41B",
+      "bnss_section": "36",
+      "procedure": "Police officer making arrest to bear visible ID",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered; obligation clarified.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "41C",
+      "bnss_section": "38",
+      "procedure": "Control room at district level",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Electronic entries now mandatory.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "41D",
+      "bnss_section": "39",
+      "procedure": "Right of arrested person to meet advocate",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Advocate may accompany during examination (limited).",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "42",
+      "bnss_section": "40",
+      "procedure": "Arrest by police without warrant for offences other than cognizable",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "43",
+      "bnss_section": "41",
+      "procedure": "Arrest by private person and procedure",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "44",
+      "bnss_section": "42",
+      "procedure": "Arrest by Magistrate",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "45",
+      "bnss_section": "43",
+      "procedure": "Protection of members of Armed Forces",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "46",
+      "bnss_section": "44",
+      "procedure": "Mode of making arrest",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Electronic body-worn cameras for police during arrest encouraged.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "47",
+      "bnss_section": "45",
+      "procedure": "Search of place entered by person sought to be arrested",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "49",
+      "bnss_section": "47",
+      "procedure": "No unnecessary restraint",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "50",
+      "bnss_section": "48",
+      "procedure": "Person arrested to be informed of grounds of arrest and bail",
+      "change_type": "substantive_change",
+      "what_changed": "Information must also be provided to nominated person via electronic means within 3 hours.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "50A",
+      "bnss_section": "49",
+      "procedure": "Obligation to inform nominated person of arrest",
+      "change_type": "substantive_change",
+      "what_changed": "Renumbered. New: information must be sent electronically; failure is punishable.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "51",
+      "bnss_section": "50",
+      "procedure": "Search of arrested person",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "53",
+      "bnss_section": "53",
+      "procedure": "Examination of accused by medical practitioner at request of police",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Now includes forensic examination explicitly.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "54",
+      "bnss_section": "55",
+      "procedure": "Examination of arrested person by medical officer",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "56",
+      "bnss_section": "58",
+      "procedure": "Person arrested not to be detained more than 24 hours",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "57",
+      "bnss_section": "59",
+      "procedure": "Custody before inquiry or trial",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "58",
+      "bnss_section": "60",
+      "procedure": "Police report on arrest without warrant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "61",
+      "bnss_section": "62",
+      "procedure": "Form of summons",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Electronic summons now explicitly permitted.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "62",
+      "bnss_section": "63",
+      "procedure": "Summons — how served",
+      "change_type": "renumbering_only",
+      "what_changed": "Electronic service via messaging platforms permitted.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "64",
+      "bnss_section": "65",
+      "procedure": "Service of summons when person is absent",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "65",
+      "bnss_section": "66",
+      "procedure": "Procedure when service cannot be effected",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "70",
+      "bnss_section": "71",
+      "procedure": "Form of warrant of arrest",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Electronic warrant permissible with digital signature.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "73",
+      "bnss_section": "74",
+      "procedure": "Warrant may be directed to any person",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "82",
+      "bnss_section": "84",
+      "procedure": "Proclamation for person absconding",
+      "change_type": "substantive_change",
+      "what_changed": "New: attachment of property can be ordered simultaneously with proclamation (not sequentially).",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "83",
+      "bnss_section": "85",
+      "procedure": "Attachment of property of person absconding",
+      "change_type": "substantive_change",
+      "what_changed": "New: immovable property attachment order can be served electronically.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "88",
+      "bnss_section": "90",
+      "procedure": "Attachment in lieu of security",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "91",
+      "bnss_section": "94",
+      "procedure": "Summons to produce document or thing",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Specifically covers electronic records and devices.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "94",
+      "bnss_section": "97",
+      "procedure": "Search of place suspected to contain stolen property",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "97",
+      "bnss_section": "100",
+      "procedure": "Search warrants",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "100",
+      "bnss_section": "103",
+      "procedure": "Persons in charge of closed place to allow search",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "102",
+      "bnss_section": "105",
+      "procedure": "Power to seize property",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "107",
+      "bnss_section": "126",
+      "procedure": "Security for keeping peace on conviction",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "108",
+      "bnss_section": "127",
+      "procedure": "Security for good behaviour from persons disseminating seditious matter",
+      "change_type": "substantive_change",
+      "what_changed": "References to 'sedition' updated to 'endangering sovereignty or integrity of India'.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "109",
+      "bnss_section": "128",
+      "procedure": "Security for good behaviour from suspected persons",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "129",
+      "bnss_section": "148",
+      "procedure": "Dispersal of assembly by use of civil force",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "144",
+      "bnss_section": "163",
+      "procedure": "Power to issue order in urgent cases of nuisance",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. New: electronic service of order now explicitly permitted.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "145",
+      "bnss_section": "164",
+      "procedure": "Procedure where dispute concerns land or water",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "155",
+      "bnss_section": "174",
+      "procedure": "Information in non-cognizable cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "156",
+      "bnss_section": "175",
+      "procedure": "Police officer's power to investigate cognizable cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "157",
+      "bnss_section": "176",
+      "procedure": "Procedure for investigation",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "158",
+      "bnss_section": "177",
+      "procedure": "Report of investigation",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "159",
+      "bnss_section": "178",
+      "procedure": "Power to hold investigation",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "160",
+      "bnss_section": "179",
+      "procedure": "Police officer may require attendance",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. New: electronic notice allowed.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "162",
+      "bnss_section": "181",
+      "procedure": "Statements to police not to be signed",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "163",
+      "bnss_section": "182",
+      "procedure": "No inducement to make statement to police",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "165",
+      "bnss_section": "184",
+      "procedure": "Search by police officer",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "168",
+      "bnss_section": "188",
+      "procedure": "Report of investigation by subordinate",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "169",
+      "bnss_section": "189",
+      "procedure": "Release of accused when evidence deficient",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "170",
+      "bnss_section": "190",
+      "procedure": "Cases to be sent to Magistrate when evidence sufficient",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "172",
+      "bnss_section": "192",
+      "procedure": "Diary of proceedings in investigation",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "174",
+      "bnss_section": "194",
+      "procedure": "Police to enquire and report on suicides",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "175",
+      "bnss_section": "195",
+      "procedure": "Power to examine witness by police",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "176",
+      "bnss_section": "196",
+      "procedure": "Inquiry by Magistrate in cases of death",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Audio-video recording of inquiry mandatory in metropolitan areas.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "177",
+      "bnss_section": "197",
+      "procedure": "Ordinary place of inquiry and trial",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "178",
+      "bnss_section": "198",
+      "procedure": "Place of inquiry or trial — offence committed partly in more places",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "179",
+      "bnss_section": "199",
+      "procedure": "Offence committed partly outside CPC territory",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "182",
+      "bnss_section": "202",
+      "procedure": "Offences committed by letters",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "183",
+      "bnss_section": "203",
+      "procedure": "Offence on a journey",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "184",
+      "bnss_section": "204",
+      "procedure": "Place of trial for offences triable together",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "188",
+      "bnss_section": "208",
+      "procedure": "Offence committed outside India",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "195",
+      "bnss_section": "216",
+      "procedure": "Prosecution for contempt of lawful authority",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "196",
+      "bnss_section": "217",
+      "procedure": "Prosecution for offences against state",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "190",
+      "bnss_section": "210",
+      "procedure": "Cognizance of offences by magistrate",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "200",
+      "bnss_section": "221",
+      "procedure": "Examination of complainant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "202",
+      "bnss_section": "223",
+      "procedure": "Postponement of issue of process",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "203",
+      "bnss_section": "224",
+      "procedure": "Dismissal of complaint",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "204",
+      "bnss_section": "225",
+      "procedure": "Issue of process",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "207",
+      "bnss_section": "230",
+      "procedure": "Supply to accused of copy of police report and other documents",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Electronic supply now permitted.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "208",
+      "bnss_section": "231",
+      "procedure": "Supply of copies in warrant-cases triable by Magistrate",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "209",
+      "bnss_section": "232",
+      "procedure": "Commitment to Court of Session when offence triable by Session",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "211",
+      "bnss_section": "234",
+      "procedure": "Charge to be framed",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "215",
+      "bnss_section": "238",
+      "procedure": "Effect of errors",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "225",
+      "bnss_section": "248",
+      "procedure": "Trial to be conducted by Public Prosecutor",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "228",
+      "bnss_section": "251",
+      "procedure": "Framing of charge",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "229",
+      "bnss_section": "252",
+      "procedure": "Conviction on plea of guilty",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "230",
+      "bnss_section": "253",
+      "procedure": "Date for prosecution evidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "231",
+      "bnss_section": "254",
+      "procedure": "Evidence for prosecution",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "232",
+      "bnss_section": "255",
+      "procedure": "Acquittal",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "233",
+      "bnss_section": "256",
+      "procedure": "Entering upon defence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "235",
+      "bnss_section": "258",
+      "procedure": "Judgment of acquittal or conviction",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "236",
+      "bnss_section": "259",
+      "procedure": "Previous acquittal or conviction — plea",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "260",
+      "bnss_section": "293",
+      "procedure": "Power to try summarily",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Value limit for summary trial raised.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "262",
+      "bnss_section": "295",
+      "procedure": "Procedure for summary trials",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "265",
+      "bnss_section": "298",
+      "procedure": "Judgment in cases tried summarily",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "273",
+      "bnss_section": "308",
+      "procedure": "Evidence to be taken in presence of accused",
+      "change_type": "substantive_change",
+      "what_changed": "Electronic attendance via audio-video conferencing now permitted for undertrials.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "275",
+      "bnss_section": "310",
+      "procedure": "Record in sessions cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "279",
+      "bnss_section": "314",
+      "procedure": "Identification of accused — parade",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Audio-video recording mandatory for identification parade.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "291",
+      "bnss_section": "327",
+      "procedure": "Deposition of medical witness",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "293",
+      "bnss_section": "329",
+      "procedure": "Reports of Government scientific expert",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Forensic Science Laboratory (FSL) reports given same weight.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "294",
+      "bnss_section": "330",
+      "procedure": "No formal proof required for documents admitted",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "309",
+      "bnss_section": "346",
+      "procedure": "Postponement or adjournment of proceedings",
+      "change_type": "substantive_change",
+      "what_changed": "New maximum adjournment limit of 2 per party after commencement of trial.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "311",
+      "bnss_section": "348",
+      "procedure": "Power to summon material witness",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "313",
+      "bnss_section": "351",
+      "procedure": "Power to examine accused",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Examination of accused can be done electronically.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "315",
+      "bnss_section": "353",
+      "procedure": "Accused as a competent witness",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "317",
+      "bnss_section": "355",
+      "procedure": "Judgment in absence of accused",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "318",
+      "bnss_section": "356",
+      "procedure": "Trial of accused person absconding",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. New: trial in absentia permitted for offences punishable with ≥7 years.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "320",
+      "bnss_section": "359",
+      "procedure": "Compounding of offences",
+      "change_type": "substantive_change",
+      "what_changed": "Additional offences made compoundable; community service may be part of compounding order.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "321",
+      "bnss_section": "360",
+      "procedure": "Withdrawal from prosecution",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "322",
+      "bnss_section": "361",
+      "procedure": "Disposal of case where accused is also accused in another court",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "323",
+      "bnss_section": "363",
+      "procedure": "Commitment for trial by Court of Session when charge involves offence triable by Session court",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "327",
+      "bnss_section": "367",
+      "procedure": "Open courts",
+      "change_type": "substantive_change",
+      "what_changed": "Electronic transmission of proceedings permitted; in-camera mandatory for rape victims.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "343",
+      "bnss_section": "383",
+      "procedure": "Proof of birth and death records",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "372",
+      "bnss_section": "413",
+      "procedure": "Appeal by victim in certain cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "374",
+      "bnss_section": "415",
+      "procedure": "Appeals from convictions",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Limitation period for appeal changed.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "375",
+      "bnss_section": "416",
+      "procedure": "No appeal in petty cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "376",
+      "bnss_section": "417",
+      "procedure": "Appeal on acquittal — State",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "378",
+      "bnss_section": "419",
+      "procedure": "Appeal in case of acquittal by complainant with leave",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "379",
+      "bnss_section": "420",
+      "procedure": "Appeal against conviction by Sessions or Metropolitan",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "380",
+      "bnss_section": "421",
+      "procedure": "Special right of appeal in certain cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "381",
+      "bnss_section": "422",
+      "procedure": "Appeal to Court of Session how heard",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "384",
+      "bnss_section": "425",
+      "procedure": "Summary dismissal of appeal",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "385",
+      "bnss_section": "426",
+      "procedure": "Procedure for hearing appeals not dismissed summarily",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "386",
+      "bnss_section": "427",
+      "procedure": "Powers of Appellate Court",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "388",
+      "bnss_section": "429",
+      "procedure": "Suspension of sentence pending appeal",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "389",
+      "bnss_section": "430",
+      "procedure": "Suspension of sentence pending appeal by convicted person",
+      "change_type": "substantive_change",
+      "what_changed": "New: bail pending appeal for first-time offenders serving sentence of <7 years must be considered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "390",
+      "bnss_section": "431",
+      "procedure": "Arrest of accused in appeal from acquittal",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "391",
+      "bnss_section": "432",
+      "procedure": "Additional evidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "392",
+      "bnss_section": "433",
+      "procedure": "Judgment of subordinate Appellate Court",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "394",
+      "bnss_section": "435",
+      "procedure": "Abatement of appeals",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "395",
+      "bnss_section": "438",
+      "procedure": "Cases stated",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "397",
+      "bnss_section": "442",
+      "procedure": "Calling for records to exercise powers of revision",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "398",
+      "bnss_section": "443",
+      "procedure": "Power to order inquiry",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "399",
+      "bnss_section": "444",
+      "procedure": "Sessions Judge's powers of revision",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "400",
+      "bnss_section": "445",
+      "procedure": "Power of Additional Sessions Judge",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "401",
+      "bnss_section": "446",
+      "procedure": "High Court's powers of revision",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "402",
+      "bnss_section": "447",
+      "procedure": "Power of HC to direct Sessions Judges to examine records",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "406",
+      "bnss_section": "452",
+      "procedure": "Power of Supreme Court to transfer cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "407",
+      "bnss_section": "453",
+      "procedure": "Power of High Court to transfer cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "408",
+      "bnss_section": "454",
+      "procedure": "Power of Sessions Judge to transfer cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "409",
+      "bnss_section": "455",
+      "procedure": "Withdrawal of cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "426",
+      "bnss_section": "469",
+      "procedure": "Execution of sentences of death",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "427",
+      "bnss_section": "470",
+      "procedure": "Sentence on offender already sentenced for another offence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "428",
+      "bnss_section": "471",
+      "procedure": "Period of detention undergone to be set off against sentence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "432",
+      "bnss_section": "474",
+      "procedure": "Power to suspend or remit sentences",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "433",
+      "bnss_section": "475",
+      "procedure": "Power to commute sentence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "433A",
+      "bnss_section": "476",
+      "procedure": "Restriction on powers of remission or commutation",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "434",
+      "bnss_section": "477",
+      "procedure": "Concurrent power of remission or commutation",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "435",
+      "bnss_section": "478",
+      "procedure": "State Government to act after consultation with CG in certain cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "436",
+      "bnss_section": "478",
+      "procedure": "Bail in bailable offences — when person accused can demand as of right",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "437",
+      "bnss_section": "479",
+      "procedure": "Bail in non-bailable offences",
+      "change_type": "substantive_change",
+      "what_changed": "Major change: (i) if accused has not been identified within 3 years, bail must be granted; (ii) first-time offenders serving custody > ½ sentence (where max is <10 years) must be granted bail; (iii) electronic monitoring may be imposed as bail condition.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "437A",
+      "bnss_section": "480",
+      "procedure": "Bail to require appearance before appellate court",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "440",
+      "bnss_section": "484",
+      "procedure": "Amount of bond",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "441",
+      "bnss_section": "485",
+      "procedure": "Bond of accused and sureties",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "441A",
+      "bnss_section": "486",
+      "procedure": "Declarations by sureties",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "442",
+      "bnss_section": "487",
+      "procedure": "Discharge from custody",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "446",
+      "bnss_section": "490",
+      "procedure": "Procedure when bond forfeited",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "451",
+      "bnss_section": "497",
+      "procedure": "Order for custody and disposal of property pending trial",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "452",
+      "bnss_section": "498",
+      "procedure": "Order for disposal of property at conclusion of trial",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "457",
+      "bnss_section": "503",
+      "procedure": "Procedure by police upon seizure of property",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "460",
+      "bnss_section": "506",
+      "procedure": "Irregularities which vitiate proceedings",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "461",
+      "bnss_section": "507",
+      "procedure": "Irregularities which do not vitiate proceedings",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "465",
+      "bnss_section": "511",
+      "procedure": "Finding or sentence when reversible by reason of error or omission in charge",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "357",
+      "bnss_section": "395",
+      "procedure": "Order to pay compensation",
+      "change_type": "substantive_change",
+      "what_changed": "New: Victim Compensation Scheme under BNSS s.396. Court MUST consider compensation at sentencing; silence on compensation requires a written explanation.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "357A",
+      "bnss_section": "396",
+      "procedure": "Victim compensation scheme",
+      "change_type": "substantive_change",
+      "what_changed": "Expanded: ₹ amount directly paid to victim. Timeline for payment shortened to 30 days.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "357C",
+      "bnss_section": "397",
+      "procedure": "Treatment of victims — duty on hospitals",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Duty on all hospitals, public and private, to treat victim of offences.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
+    },
+    {
+      "crpc_section": "484",
+      "bnss_section": "531",
+      "procedure": "Repeal and savings",
+      "change_type": "renumbering_only",
+      "what_changed": "CrPC 1973 repealed; savings for pending cases.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45167"
     }
   ],
   "evidence_act_to_bsa_mapping": [
@@ -861,6 +2441,1491 @@
       "change_type": "substantive_change",
       "what_changed": "Electronic records reclassified from secondary to PRIMARY evidence. Certificate requirement retained but now needs DUAL signatures (device handler + system manager) — a new compliance obligation.",
       "verified": false
+    },
+    {
+      "evidence_act_section": "1",
+      "bsa_section": "1",
+      "provision": "Short title, extent and commencement",
+      "change_type": "renumbering_only",
+      "what_changed": "Identical. References updated from Evidence Act to BSA.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "3",
+      "bsa_section": "2",
+      "provision": "Interpretation / Definitions",
+      "change_type": "substantive_change",
+      "what_changed": "Expanded: 'document' now explicitly includes electronic/digital records, e-mails, server logs, computer generated documents, audio-video recordings, and digital devices.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "4",
+      "bsa_section": "3",
+      "provision": "May presume — Shall presume — Conclusive proof",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "5",
+      "bsa_section": "4",
+      "provision": "Evidence may be given of facts in issue and relevant facts",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "6",
+      "bsa_section": "5",
+      "provision": "Relevancy of facts forming part of same transaction",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "7",
+      "bsa_section": "6",
+      "provision": "Facts which are the occasion, cause or effect of facts in issue",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "8",
+      "bsa_section": "7",
+      "provision": "Motive, preparation and conduct",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "9",
+      "bsa_section": "8",
+      "provision": "Facts necessary to explain or introduce relevant facts",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "10",
+      "bsa_section": "9",
+      "provision": "Things said or done by conspirator",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "11",
+      "bsa_section": "10",
+      "provision": "When facts not otherwise relevant become relevant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "12",
+      "bsa_section": "11",
+      "provision": "Facts relevant in inquiry into conspiracy",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "13",
+      "bsa_section": "12",
+      "provision": "Facts relevant when right or custom is in question",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "14",
+      "bsa_section": "13",
+      "provision": "Facts showing existence of state of mind or body",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "15",
+      "bsa_section": "14",
+      "provision": "Facts bearing on question whether act was accidental or intentional",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "16",
+      "bsa_section": "15",
+      "provision": "Existence of course of business",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "17",
+      "bsa_section": "16",
+      "provision": "Admission defined",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "18",
+      "bsa_section": "17",
+      "provision": "Admission by party to proceeding",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "19",
+      "bsa_section": "18",
+      "provision": "Admission by agent",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "20",
+      "bsa_section": "19",
+      "provision": "Admissions by persons expressly referred to by party to suit",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "21",
+      "bsa_section": "20",
+      "provision": "Proof of admissions against persons making them",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbering_only.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "22",
+      "bsa_section": "21",
+      "provision": "When oral admissions as to contents of document are relevant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "22A",
+      "bsa_section": "21A",
+      "provision": "When oral admissions as to contents of electronic records are relevant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Now applies to any digital/electronic record.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "23",
+      "bsa_section": "22",
+      "provision": "Admissions in civil cases when relevant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "24",
+      "bsa_section": "23",
+      "provision": "Confession caused by inducement, threat or promise",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Electronic recording adds a new layer of corroboration.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "25",
+      "bsa_section": "23",
+      "provision": "No confession made to police officer shall be proved against accused",
+      "change_type": "renumbering_only",
+      "what_changed": "Merged under BSA 23. Rule preserved: confessions to police remain inadmissible.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "26",
+      "bsa_section": "24",
+      "provision": "Confession by accused while in police custody",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "28",
+      "bsa_section": "25",
+      "provision": "Confession made after removal of impression",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "29",
+      "bsa_section": "26",
+      "provision": "Confession otherwise relevant not to become irrelevant because of promise of secrecy",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "30",
+      "bsa_section": "27",
+      "provision": "Consideration of proved confession affecting person making it and others",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "31",
+      "bsa_section": "28",
+      "provision": "Admissions not conclusive proof but may estop",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "32",
+      "bsa_section": "26",
+      "provision": "Cases in which statement of relevant fact by person who is dead etc. is relevant",
+      "change_type": "substantive_change",
+      "what_changed": "BSA 26 adds: dying declarations via audio-video recording are explicitly admissible; electronic statements made by person who cannot attend court are admissible.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "33",
+      "bsa_section": "29",
+      "provision": "Relevancy of certain evidence for proving admissions",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "40",
+      "bsa_section": "36",
+      "provision": "Previous judgments relevant to bar a second suit",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "41",
+      "bsa_section": "37",
+      "provision": "Relevancy of certain judgments in probate etc.",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "42",
+      "bsa_section": "38",
+      "provision": "Relevancy and effect of judgments, orders or decrees — criminal courts",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "43",
+      "bsa_section": "39",
+      "provision": "Judgments other than those mentioned in sections 40-42 — when relevant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "44",
+      "bsa_section": "40",
+      "provision": "Fraud or collusion in obtaining judgment",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "45A",
+      "bsa_section": "40",
+      "provision": "Opinion of Examiner of Electronic Evidence",
+      "change_type": "substantive_change",
+      "what_changed": "Renumbered. Electronic evidence examined under Section 79A IT Act is admissible via BSA 40.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "46",
+      "bsa_section": "41",
+      "provision": "Facts bearing upon opinions of experts",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "47",
+      "bsa_section": "42",
+      "provision": "Opinion as to handwriting when relevant",
+      "change_type": "substantive_change",
+      "what_changed": "BSA 42 adds: digital signatures and authentication marks are treated similarly to handwriting.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "47A",
+      "bsa_section": "43",
+      "provision": "Opinion as to digital signature when relevant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. No substantive change.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "48",
+      "bsa_section": "44",
+      "provision": "Opinion as to existence of right or custom when relevant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "49",
+      "bsa_section": "45",
+      "provision": "Opinion as to usages and tenets when relevant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "50",
+      "bsa_section": "46",
+      "provision": "Opinion on relationship when relevant",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "51",
+      "bsa_section": "47",
+      "provision": "Grounds of opinion",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "52",
+      "bsa_section": "48",
+      "provision": "Character in civil cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "53",
+      "bsa_section": "49",
+      "provision": "Previous good character in criminal cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "53A",
+      "bsa_section": "50",
+      "provision": "Previous sexual history evidence inadmissible in rape cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. No substantive change — victim's prior sexual conduct inadmissible.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "54",
+      "bsa_section": "51",
+      "provision": "Previous bad character in criminal cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "55",
+      "bsa_section": "52",
+      "provision": "Character in criminal cases relevant only in conjunction with other facts",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "56",
+      "bsa_section": "53",
+      "provision": "Fact judicially noticeable need not be proved",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "57",
+      "bsa_section": "54",
+      "provision": "Facts of which court must take judicial notice",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "58",
+      "bsa_section": "55",
+      "provision": "Facts admitted need not be proved",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "59",
+      "bsa_section": "56",
+      "provision": "Proof of facts by oral evidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "60",
+      "bsa_section": "57",
+      "provision": "Oral evidence must be direct",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "61",
+      "bsa_section": "58",
+      "provision": "Proof of contents of documents",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "62",
+      "bsa_section": "59",
+      "provision": "Primary evidence",
+      "change_type": "substantive_change",
+      "what_changed": "BSA 59 adds: primary evidence for electronic records is the device or certified copy; printouts and screenshots with certificate under s.63 are primary evidence.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "63",
+      "bsa_section": "60",
+      "provision": "Secondary evidence",
+      "change_type": "substantive_change",
+      "what_changed": "BSA 60 clarifies secondary evidence for electronic records.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "64",
+      "bsa_section": "61",
+      "provision": "Proof of documents by primary evidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "65",
+      "bsa_section": "62",
+      "provision": "Cases in which secondary evidence of document may be given",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "65A",
+      "bsa_section": "62A",
+      "provision": "Special provisions for evidence relating to electronic record",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Now absorbed into BSA 62.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "66",
+      "bsa_section": "64",
+      "provision": "Rules as to notice to produce",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "67",
+      "bsa_section": "65",
+      "provision": "Proof of signature and handwriting",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "67A",
+      "bsa_section": "66",
+      "provision": "Proof as to digital signature",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "68",
+      "bsa_section": "67",
+      "provision": "Proof of execution of document required by law to be attested",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "69",
+      "bsa_section": "68",
+      "provision": "Proof where no attesting witness found",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "70",
+      "bsa_section": "69",
+      "provision": "Admission of execution by party to attested document",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "71",
+      "bsa_section": "70",
+      "provision": "Proof when attesting witness denies the attestation",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "72",
+      "bsa_section": "71",
+      "provision": "Proof of document not required by law to be attested",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "73",
+      "bsa_section": "72",
+      "provision": "Comparison of signature, writing or seal",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Digital signature and thumbprint comparison explicitly included.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "73A",
+      "bsa_section": "73",
+      "provision": "Proof as to verification of digital signature",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "74",
+      "bsa_section": "74",
+      "provision": "Public documents",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "75",
+      "bsa_section": "75",
+      "provision": "Private documents",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "76",
+      "bsa_section": "76",
+      "provision": "Certified copies of public documents",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "77",
+      "bsa_section": "77",
+      "provision": "Proof of documents by production of certified copies",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "78",
+      "bsa_section": "78",
+      "provision": "Proof of other official documents",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "79",
+      "bsa_section": "79",
+      "provision": "Presumption as to genuineness of certified copies",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "80",
+      "bsa_section": "80",
+      "provision": "Presumption as to documents produced as record of evidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "81",
+      "bsa_section": "81",
+      "provision": "Presumption as to Gazettes, newspapers, private Acts of Parliament and other documents",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "81A",
+      "bsa_section": "82",
+      "provision": "Presumption as to genuineness of electronic Gazettes",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "82",
+      "bsa_section": "83",
+      "provision": "Presumption as to document admissible in England without proof of seal",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "83",
+      "bsa_section": "84",
+      "provision": "Presumption as to maps or plans made by Government authority",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "84",
+      "bsa_section": "85",
+      "provision": "Presumption as to collections of laws and reports of decisions",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "85",
+      "bsa_section": "86",
+      "provision": "Presumption as to powers of attorney",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "85A",
+      "bsa_section": "87",
+      "provision": "Presumption as to electronic agreements",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "85B",
+      "bsa_section": "88",
+      "provision": "Presumption as to electronic records and digital signatures",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "85C",
+      "bsa_section": "89",
+      "provision": "Presumption as to Digital Signature Certificates",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "86",
+      "bsa_section": "90",
+      "provision": "Presumption as to certified copies of foreign judicial records",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "87",
+      "bsa_section": "91",
+      "provision": "Presumption as to books, maps and charts",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "88",
+      "bsa_section": "92",
+      "provision": "Presumption as to telegraphic messages",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "88A",
+      "bsa_section": "93",
+      "provision": "Presumption as to electronic messages",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "89",
+      "bsa_section": "94",
+      "provision": "Presumption as to due execution of documents not produced",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "90",
+      "bsa_section": "95",
+      "provision": "Presumption as to documents 30 years old",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "90A",
+      "bsa_section": "96",
+      "provision": "Presumption as to electronic records 5 years old",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "101",
+      "bsa_section": "104",
+      "provision": "Burden of proof",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "102",
+      "bsa_section": "105",
+      "provision": "On whom burden of proof lies",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "103",
+      "bsa_section": "106",
+      "provision": "Burden of proof as to particular fact",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "104",
+      "bsa_section": "107",
+      "provision": "Burden of proving fact to make evidence admissible",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "105",
+      "bsa_section": "108",
+      "provision": "Burden of proving that case falls within exception",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "106",
+      "bsa_section": "109",
+      "provision": "Burden of proving fact especially within knowledge",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "107",
+      "bsa_section": "110",
+      "provision": "Burden of proving death of person known to have been alive within 30 years",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "108",
+      "bsa_section": "111",
+      "provision": "Burden of proving that person is alive who has not been heard of for 7 years",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "109",
+      "bsa_section": "112",
+      "provision": "Burden of proof as to relationship in cases of partners, landlord/tenant etc.",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "110",
+      "bsa_section": "113",
+      "provision": "Burden of proof as to ownership",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "111",
+      "bsa_section": "114",
+      "provision": "Proof of good faith in transactions where one party is in position of active confidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "111A",
+      "bsa_section": "115",
+      "provision": "Presumption as to certain offences — abetment in areas under Armed Forces Special Powers",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "112",
+      "bsa_section": "116",
+      "provision": "Birth during marriage — conclusive proof of legitimacy",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "113",
+      "bsa_section": "117",
+      "provision": "Proof of cession of territory",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "113A",
+      "bsa_section": "118",
+      "provision": "Presumption as to abetment of suicide by married woman",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "113B",
+      "bsa_section": "119",
+      "provision": "Presumption as to dowry death",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "114",
+      "bsa_section": "120",
+      "provision": "Court may presume existence of certain facts",
+      "change_type": "substantive_change",
+      "what_changed": "BSA 120 adds: court may presume that a digital record was not altered if authentication certificate is submitted; and that messages between two electronic addresses form a continuous chain.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "114A",
+      "bsa_section": "121",
+      "provision": "Presumption as to absence of consent in rape cases",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Presumption preserved and strengthened: applies to all offences under BNS Chapter 5.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "115",
+      "bsa_section": "122",
+      "provision": "Estoppel",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "116",
+      "bsa_section": "123",
+      "provision": "Estoppel of tenant and of licensee of person in possession",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "117",
+      "bsa_section": "124",
+      "provision": "Estoppel of acceptor of bill of exchange",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "118",
+      "bsa_section": "125",
+      "provision": "Who may testify",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Electronic testimony via audio-video conferencing is explicitly permissible.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "119",
+      "bsa_section": "126",
+      "provision": "Dumb witnesses",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "120",
+      "bsa_section": "127",
+      "provision": "Parties to civil suit and their wives/husbands",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "121",
+      "bsa_section": "128",
+      "provision": "Judges and Magistrates",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "122",
+      "bsa_section": "129",
+      "provision": "Communications during marriage",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "123",
+      "bsa_section": "130",
+      "provision": "Evidence as to affairs of State",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "124",
+      "bsa_section": "131",
+      "provision": "Official communications",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "125",
+      "bsa_section": "132",
+      "provision": "Information as to commission of offences",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "126",
+      "bsa_section": "133",
+      "provision": "Professional communications — advocate-client privilege",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. No substantive change; privilege extends to digital/electronic communications.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "127",
+      "bsa_section": "134",
+      "provision": "Sections 126 to apply to interpreters etc.",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "128",
+      "bsa_section": "135",
+      "provision": "Privilege not waived by volunteering evidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "129",
+      "bsa_section": "136",
+      "provision": "Confidential communications with legal advisers",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "130",
+      "bsa_section": "137",
+      "provision": "Production of title deeds of witness not a party",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "131",
+      "bsa_section": "138",
+      "provision": "Production of documents or electronic records which another person could refuse to produce",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "132",
+      "bsa_section": "139",
+      "provision": "Witness not excused from answering on ground that answer will criminate",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "133",
+      "bsa_section": "140",
+      "provision": "Accomplice",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "134",
+      "bsa_section": "141",
+      "provision": "Number of witnesses",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "135",
+      "bsa_section": "142",
+      "provision": "Order of production and examination of witnesses",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "136",
+      "bsa_section": "143",
+      "provision": "Judge to decide as to admissibility of evidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "137",
+      "bsa_section": "144",
+      "provision": "Examination-in-chief, cross-examination and re-examination",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "138",
+      "bsa_section": "145",
+      "provision": "Order of examinations",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "139",
+      "bsa_section": "146",
+      "provision": "Cross-examination of person called to produce document",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "140",
+      "bsa_section": "147",
+      "provision": "Witnesses to character",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "141",
+      "bsa_section": "148",
+      "provision": "Leading questions defined",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "142",
+      "bsa_section": "149",
+      "provision": "When they must not be asked",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "143",
+      "bsa_section": "150",
+      "provision": "When they may be asked",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "144",
+      "bsa_section": "151",
+      "provision": "Evidence as to matters in writing",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "145",
+      "bsa_section": "152",
+      "provision": "Cross-examination as to previous statements in writing",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "146",
+      "bsa_section": "153",
+      "provision": "Questions lawful in cross-examination",
+      "change_type": "substantive_change",
+      "what_changed": "BSA 153 explicitly prohibits questions about victim's sexual history, clothing or behaviour in sexual offence cases. Aligns with BNS provisions for victim dignity.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "147",
+      "bsa_section": "154",
+      "provision": "When witness to be treated as hostile",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "148",
+      "bsa_section": "155",
+      "provision": "Questions not to be asked without reasonable grounds",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "149",
+      "bsa_section": "156",
+      "provision": "Procedure of Court in case of question being indecent",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "150",
+      "bsa_section": "157",
+      "provision": "Questions intended to insult or annoy",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "151",
+      "bsa_section": "158",
+      "provision": "Exclusion of evidence to contradict answers to questions testing veracity",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "152",
+      "bsa_section": "159",
+      "provision": "Question by party to his own witness",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "153",
+      "bsa_section": "160",
+      "provision": "Proof of contradictory statements of adverse witness",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "154",
+      "bsa_section": "161",
+      "provision": "Cross-examination of witness to former statements in writing",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "155",
+      "bsa_section": "162",
+      "provision": "Impeaching credit of witness",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "156",
+      "bsa_section": "163",
+      "provision": "Questions tending to corroborate evidence of relevant fact",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "157",
+      "bsa_section": "164",
+      "provision": "Former statements of witness may be proved to corroborate later testimony",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "158",
+      "bsa_section": "165",
+      "provision": "What matters may be proved in connection with proved statement",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "159",
+      "bsa_section": "166",
+      "provision": "Refreshing memory",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "160",
+      "bsa_section": "167",
+      "provision": "Testimony to facts stated in document mentioned in section 159",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "161",
+      "bsa_section": "168",
+      "provision": "Right of adverse party as to writing used to refresh memory",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "162",
+      "bsa_section": "169",
+      "provision": "Production of documents",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "163",
+      "bsa_section": "170",
+      "provision": "Giving, as evidence, document called for and produced on notice",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "164",
+      "bsa_section": "171",
+      "provision": "Using adverse party's document as evidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "165",
+      "bsa_section": "172",
+      "provision": "Judge's power to put questions or order production",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "166",
+      "bsa_section": "173",
+      "provision": "Power of assessors to put questions",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
+    },
+    {
+      "evidence_act_section": "167",
+      "bsa_section": "174",
+      "provision": "No new trial for improper admission or rejection of evidence",
+      "change_type": "renumbering_only",
+      "what_changed": "Renumbered. Preservation of judgments except where admission/rejection caused miscarriage of justice.",
+      "verified": false,
+      "source_link": "https://www.indiacode.nic.in/handle/123456789/45169"
     }
   ],
   "case_law_transition_period": [

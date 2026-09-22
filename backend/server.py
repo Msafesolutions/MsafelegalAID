@@ -2935,7 +2935,7 @@ def _xref_search(q: str = "", ipc: str = "", bns: str = "") -> list[dict]:
         if bns_q and (bns_q in e_bns or bns_q in e_bnss or bns_q in e_bsa):
             return True
         if q_lower:
-            combined = f"{e_ipc} {e_bns} {e_crpc} {e_bnss} {e_ea} {e_bsa} {e_off} {e_what} {e_pun} {e_reason} {e_note}"
+            combined = f"{e_ipc} {e_bns} {e_crpc} {e_bnss} {e_ea} {e_bsa} {e_off} {e_what} {e_pun} {e_reason} {e_note}".lower()
             return q_lower in combined
         return False
 
