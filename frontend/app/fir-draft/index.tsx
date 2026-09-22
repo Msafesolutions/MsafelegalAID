@@ -18,11 +18,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth, API_BASE } from '@/src/auth';
+import { t } from '@/src/i18n';
 import {
   useAudioRecorder, RecordingPresets, setAudioModeAsync, AudioModule,
 } from 'expo-audio';
 import { whisperTranscribeFile } from '@/src/voice/stt';
-import { File, Paths } from 'expo-file-system';
+// expo-file-system Paths removed (was used by dead code in stopAndTranscribe)
 
 const NAVY  = '#14365A';
 const GOLD  = '#D3B675';
@@ -209,6 +210,9 @@ export default function FIRDraftIntake() {
 
   // Voice-first input mode: 'voice' (mic idle) | 'text' (keyboard) | 'review' (post-transcription)
   const [inputMode, setInputMode] = useState<'voice' | 'text' | 'review'>('voice');
+  // Global preferred input mode — persists across wizard steps so the user
+  // doesn't have to tap "Type instead" on every question after choosing text once.
+  const [preferredInputMode, setPreferredInputMode] = useState<'voice' | 'text'>('voice');
   const [reviewText, setReviewText] = useState('');
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const answersRef = useRef(answers);
@@ -249,7 +253,12 @@ export default function FIRDraftIntake() {
           if (saved.userId === user?.id) {
             setAnswers(saved.answers || {});
             setDraftId(saved.draftId || null);
-            setLang(saved.lang || language?.code || 'en');
+            // Only restore the saved language if the user has already moved
+            // past the language-selection screen (step > 0). If they never
+            // clicked "Start", use the current global language preference so
+            // Settings changes are always reflected on a fresh visit.
+            const restoredLang = (saved.step > 0 && saved.lang) ? saved.lang : (language?.code || 'en');
+            setLang(restoredLang);
             setStep(saved.step || 0);
           }
         } catch {}
@@ -282,11 +291,14 @@ export default function FIRDraftIntake() {
       setReviewText(existing);
       setInputMode('review');
     } else {
-      setInputMode('voice');
+      // Respect the user's global preferred input mode instead of always
+      // defaulting to 'voice'. If they switched to text on step 1, steps 2+
+      // should also open in text mode — not force them back to voice every time.
+      setInputMode(preferredInputMode);
       setReviewText('');
       setLiveTranscript('');
     }
-  }, [step]);
+  }, [step, preferredInputMode]);
 
   // Pulsing animation while recording
   useEffect(() => {
@@ -350,21 +362,31 @@ export default function FIRDraftIntake() {
       const uri = await recorder.stop();
       if (!uri) { setTranscribing(false); return; }
 
-      const sttLang = firLanguages.find(l => l.code === lang)?.sttLang ?? 'en-IN';
-      const tempFile = new File(Paths.cache, `fir_q_${Date.now()}.m4a`);
-      // Transcribe
-      const result = await whisperTranscribeFile(uri, token ?? '', sttLang);
-      const text = typeof result === 'string' ? result : (result as any)?.transcript ?? '';
-      if (text) {
+      // Language hint: use the ISO 639-1 code only (e.g. "hi" not "hi-IN") for
+      // Whisper — shorter codes give slightly better accuracy on Indian languages.
+      const langHint = lang?.split('-')[0] ?? 'hi';
+      // Correct argument order: (apiBase, token, uri, languageHint)
+      const result = await whisperTranscribeFile(API_BASE, token ?? '', uri, langHint);
+      // `result` is WhisperTranscribeResult → { text, scriptMismatch, detectedScript }
+      const text = (result as any)?.text ?? (typeof result === 'string' ? result : '');
+      if (text?.trim()) {
         const cleaned = text.trim();
         setAnswers(prev => ({ ...prev, [qId]: cleaned }));
         setReviewText(cleaned);
         setInputMode('review');
       } else {
+        // Empty transcript (silence / too short) — stay in voice mode so user can try again
         setInputMode('voice');
       }
-    } catch {
-      Alert.alert('Transcription Error', 'Could not transcribe. Please type your answer.');
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (msg.includes('daily voice limit') || msg.includes('429')) {
+        Alert.alert('Daily limit reached', msg);
+      } else if (msg.includes('session_expired')) {
+        Alert.alert('Session expired', 'Please sign in again.');
+      } else {
+        Alert.alert('Transcription Error', 'Could not transcribe. Please tap the mic and try again, or type your answer.');
+      }
       setInputMode('text');
     } finally {
       setTranscribing(false);
@@ -607,8 +629,8 @@ export default function FIRDraftIntake() {
             <Ionicons name={step > 0 ? 'chevron-back' : 'arrow-back'} size={22} color="#fff" />
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Text style={s.headerTitle}>FIR Draft Assistant</Text>
-            <Text style={s.headerSub}>Powered by DHARA AI</Text>
+            <Text style={s.headerTitle}>{t('fir.title', lang)}</Text>
+            <Text style={s.headerSub}>{t('fir.subtitle', lang)}</Text>
           </View>
           {syncing && <ActivityIndicator size="small" color={GOLD} />}
         </View>
@@ -627,7 +649,7 @@ export default function FIRDraftIntake() {
             <View style={{ gap: 16 }}>
               <View style={s.introCard}>
                 <Ionicons name="document-text-outline" size={40} color={GOLD} />
-                <Text style={s.introTitle}>Voice FIR Draft Assistant</Text>
+                <Text style={s.introTitle}>{t('fir.title', lang)}</Text>
                 <Text style={s.introBody}>
                   Describe your incident by voice. DHARA will generate a ready-to-present FIR draft with the correct BNS sections and suggest your nearest police station.
                 </Text>
@@ -638,7 +660,7 @@ export default function FIRDraftIntake() {
                   </Text>
                 </View>
               </View>
-              <Text style={s.sectionLabel}>Select your language</Text>
+              <Text style={s.sectionLabel}>{t('fir.selectLang', lang)}</Text>
               {firLanguages.map(l => (
                 <Pressable key={l.code} style={[s.langCard, lang === l.code && s.langCardActive]} onPress={() => setLang(l.code)}>
                   <Text style={[s.langCardLabel, lang === l.code && { color: NAVY }]}>{l.native}</Text>
@@ -647,7 +669,7 @@ export default function FIRDraftIntake() {
                 </Pressable>
               ))}
               <Pressable style={s.nextBtn} onPress={nextStep}>
-                <Text style={s.nextBtnText}>Start — Describe Incident</Text>
+                <Text style={s.nextBtnText}>{t('fir.startBtn', lang)}</Text>
                 <Ionicons name="arrow-forward" size={20} color="#fff" />
               </Pressable>
             </View>
@@ -672,13 +694,13 @@ export default function FIRDraftIntake() {
                         <Ionicons name="mic" size={44} color="#fff" />
                       </Pressable>
                     </Animated.View>
-                    <Text style={s.micIdleLabel}>Tap mic to speak</Text>
+                    <Text style={s.micIdleLabel}>{t('fir.tapMic', lang)}</Text>
                     {Platform.OS === 'web' && (
                       <Text style={s.micWebHint}>Works in Chrome & Safari</Text>
                     )}
-                    <Pressable onPress={() => setInputMode('text')} style={s.switchModeBtn}>
+                    <Pressable onPress={() => { setPreferredInputMode('text'); setInputMode('text'); }} style={s.switchModeBtn}>
                       <Ionicons name="create-outline" size={14} color="#6B7280" />
-                      <Text style={s.switchModeText}>Type instead</Text>
+                      <Text style={s.switchModeText}>{t('fir.typeInstead', lang)}</Text>
                     </Pressable>
                   </View>
                 )}
@@ -733,7 +755,7 @@ export default function FIRDraftIntake() {
                   <View style={s.reviewCard}>
                     <View style={s.reviewHeader}>
                       <Ionicons name="checkmark-circle" size={20} color={GREEN} />
-                      <Text style={s.reviewHeaderText}>We heard:</Text>
+                      <Text style={s.reviewHeaderText}>{t('fir.weHeard', lang)}</Text>
                     </View>
                     <Text style={s.reviewBodyText}>{reviewText}</Text>
                     <View style={s.reviewActions}>
@@ -748,14 +770,14 @@ export default function FIRDraftIntake() {
                         }}
                       >
                         <Ionicons name="mic-outline" size={15} color={RED} />
-                        <Text style={s.rerecordText}>Re-record</Text>
+                        <Text style={s.rerecordText}>{t('fir.reRecord', lang)}</Text>
                       </Pressable>
                       <Pressable
                         style={s.editAnswerBtn}
                         onPress={() => setInputMode('text')}
                       >
                         <Ionicons name="create-outline" size={15} color={NAVY} />
-                        <Text style={s.editAnswerText}>Edit text</Text>
+                        <Text style={s.editAnswerText}>{t('fir.editText', lang)}</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -779,9 +801,9 @@ export default function FIRDraftIntake() {
                       textAlignVertical={currentQ.type === 'textarea' ? 'top' : 'center'}
                       autoFocus
                     />
-                    <Pressable onPress={() => { setLiveTranscript(''); setInputMode('voice'); }} style={s.switchModeBtn}>
+                    <Pressable onPress={() => { setPreferredInputMode('voice'); setLiveTranscript(''); setInputMode('voice'); }} style={s.switchModeBtn}>
                       <Ionicons name="mic-outline" size={14} color="#6B7280" />
-                      <Text style={s.switchModeText}>Use voice instead</Text>
+                      <Text style={s.switchModeText}>{t('fir.useMic', lang)}</Text>
                     </Pressable>
                   </View>
                 )}
@@ -840,10 +862,10 @@ export default function FIRDraftIntake() {
                     <>
                       <Text style={s.nextBtnText}>
                         {step >= QUESTIONS.length
-                          ? 'Generate FIR Draft'
+                          ? t('fir.generateBtn', lang)
                           : inputMode === 'review'
-                            ? 'Looks correct — Next'
-                            : 'Next'}
+                            ? t('fir.nextBtn', lang)
+                            : t('fir.nextBtn', lang)}
                       </Text>
                       <Ionicons name={step >= QUESTIONS.length ? 'document-text' : 'arrow-forward'} size={20} color="#fff" />
                     </>

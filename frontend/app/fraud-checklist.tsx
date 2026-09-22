@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Linking } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Alert } from 'react-native';
 import { crossAlert } from '@/src/utils/crossAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -73,11 +73,31 @@ const STEPS: Step[] = [
   },
 ];
 
+/** Format elapsed seconds into a human-readable string.
+ * < 1 hour  → MM:SS (countdown feel)
+ * < 24 hours → Xh Ym
+ * ≥ 24 hours → X days ago (stale) */
+function formatElapsed(seconds: number): string {
+  if (seconds < 3600) {
+    const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+    const ss = String(seconds % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  }
+  if (seconds < 86400) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+  const days = Math.floor(seconds / 86400);
+  return days === 1 ? '1 day ago' : `${days} days ago`;
+}
+
 export default function FraudChecklist() {
   const router = useRouter();
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+  const staleAlertShownRef = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -85,11 +105,37 @@ export default function FraudChecklist() {
         const raw = await AsyncStorage.getItem(KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          setDone(parsed.done || {});
-          setStartedAt(parsed.startedAt || null);
+          const savedDone: Record<string, boolean> = parsed.done || {};
+          const savedStart: number | null = parsed.startedAt || null;
+          const hasProgress = Object.values(savedDone).some(Boolean);
+          // If there's existing progress and the checklist is stale (> 24 h), prompt user
+          if (hasProgress && savedStart && !staleAlertShownRef.current) {
+            staleAlertShownRef.current = true;
+            const ageSeconds = Math.floor((Date.now() - savedStart) / 1000);
+            if (ageSeconds > 86400) {
+              // Stale checklist — ask to continue or start fresh
+              Alert.alert(
+                'Previous checklist found',
+                `You started a fraud checklist ${formatElapsed(ageSeconds)}. Would you like to continue from where you left off, or start a fresh one?`,
+                [
+                  {
+                    text: 'Start Fresh',
+                    style: 'destructive',
+                    onPress: () => { setDone({}); setStartedAt(null); AsyncStorage.setItem(KEY, JSON.stringify({ done: {}, startedAt: null })).catch(() => {}); },
+                  },
+                  { text: 'Continue', onPress: () => { setDone(savedDone); setStartedAt(savedStart); } },
+                ],
+                { cancelable: false },
+              );
+              return;
+            }
+          }
+          setDone(savedDone);
+          setStartedAt(savedStart);
         }
       } catch {}
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -127,8 +173,8 @@ export default function FraudChecklist() {
 
   const completed = STEPS.filter((s) => done[s.id]).length;
   const elapsed = startedAt ? Math.floor((now - startedAt) / 1000) : 0;
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
-  const ss = String(elapsed % 60).padStart(2, '0');
+  const timerDisplay = startedAt ? formatElapsed(elapsed) : '--:--';
+  const isStale = elapsed >= 86400;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']} testID="fraud-checklist-screen">
@@ -143,10 +189,18 @@ export default function FraudChecklist() {
       <View style={styles.timerBar} testID="fraud-timer">
         <View>
           <Text style={styles.timerLabel}>{startedAt ? 'Time since you started' : 'Tick the first step to start'}</Text>
-          <Text style={styles.timer}>{startedAt ? `${mm}:${ss}` : '--:--'}</Text>
+          <Text style={[styles.timer, isStale && styles.timerStale]}>{timerDisplay}</Text>
         </View>
-        <View style={styles.progressPill}>
-          <Text style={styles.progressText}>{completed} / {STEPS.length} done</Text>
+        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+          <View style={styles.progressPill}>
+            <Text style={styles.progressText}>{completed} / {STEPS.length} done</Text>
+          </View>
+          {startedAt && (
+            <Pressable testID="fraud-new-top" onPress={reset} style={styles.newTopBtn}>
+              <Ionicons name="refresh" size={12} color={theme.colors.brand} />
+              <Text style={styles.newTopText}>Start New</Text>
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -215,6 +269,13 @@ const styles = StyleSheet.create({
   },
   timerLabel: { color: theme.colors.brand, fontSize: 12, fontWeight: '600' },
   timer: { color: theme.colors.brand, fontSize: 26, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  timerStale: { color: theme.colors.onSurfaceSecondary, fontSize: 16 },
+  newTopBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: theme.radius.pill, borderWidth: 1, borderColor: theme.colors.brand,
+  },
+  newTopText: { color: theme.colors.brand, fontSize: 11, fontWeight: '700' },
   progressPill: {
     backgroundColor: theme.colors.brand, borderRadius: theme.radius.pill,
     paddingHorizontal: theme.spacing.md, paddingVertical: 6,

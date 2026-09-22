@@ -3109,6 +3109,14 @@ class FirFollowupIn(BaseModel):
     language: str = "en"
     language_name: str = "English"
 
+
+class ChatFollowupIn(BaseModel):
+    message: str          # original user question
+    answer: str           # AI answer (first 500 chars used)
+    language: str = "en"
+    language_name: str = "English"
+
+
 _FIR_DISCLAIMER = (
     "⚠️  IMPORTANT DISCLAIMER — READ BEFORE PRESENTING AT THE POLICE STATION\n\n"
     "This document is a citizen-prepared DRAFT for reference purposes only.\n"
@@ -3328,6 +3336,59 @@ async def fir_event(body: FirEventIn):
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     return {"ok": True}
+
+
+@api.post("/chat/followup")
+async def chat_followup(body: ChatFollowupIn, user: dict = Depends(current_user)):
+    """
+    Generate 2-3 short follow-up question chips after an AI chat answer.
+    These appear as tappable chips below the answer to guide the next question.
+    Returns { questions: ["q1", "q2", "q3"] } or { questions: [] }.
+    """
+    if not body.answer or len(body.answer.strip()) < 20:
+        return {"questions": []}
+
+    lang_instruction = f"in {body.language_name}" if body.language_name.lower() != "english" else "in English"
+
+    prompt = f"""A citizen asked a legal question.
+
+Question: "{body.message[:200]}"
+Answer summary: "{body.answer[:400]}"
+
+Generate exactly 2-3 SHORT natural follow-up questions the citizen might ask next, {lang_instruction}.
+
+Rules:
+- Each question must be under 9 words
+- Must be directly relevant to the topic
+- Phrased as a brief question (not statements)
+- No duplicates of the original question
+
+Reply ONLY with a valid JSON array of strings, nothing else:
+["question 1", "question 2", "question 3"]"""
+
+    try:
+        import json as _json
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"chat-followup-{id(body)}",
+            system_message="Generate short follow-up questions as a JSON array only."
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+
+        result = await chat.send_message(UserMessage(text=prompt))
+        raw = (result or "[]").strip()
+
+        # Find JSON array in response
+        start = raw.find('[')
+        end = raw.rfind(']') + 1
+        if start >= 0 and end > start:
+            questions = _json.loads(raw[start:end])
+            if isinstance(questions, list):
+                valid = [str(q).strip() for q in questions if isinstance(q, str) and q.strip()][:3]
+                return {"questions": valid}
+    except Exception as e:
+        logger.error(f"[chat_followup] Error: {e}")
+
+    return {"questions": []}
 
 
 @api.post("/fir/followup")

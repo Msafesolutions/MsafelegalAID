@@ -35,6 +35,18 @@ import { useAuth, API_BASE, logClientError } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 import { addBookmark } from '@/src/bookmarks';
+import { t } from '@/src/i18n';
+
+/** Strip raw markdown markers from streaming text so asterisks/hashes never
+ *  flash in the UI while the LLM is still mid-sentence. Called only on the
+ *  accumulated delta text; the sanitized `final` frame is displayed as-is. */
+function stripStreamMarkdown(text: string): string {
+  return text
+    .replace(/\*{1,3}([^*\n]+)\*{1,3}/g, '$1') // **bold** / *italic*
+    .replace(/^#{1,6}\s+/gm, '')                 // ## headings
+    .replace(/^---+$/gm, '')                     // horizontal rules
+    .replace(/`{1,3}([^`]*)`{1,3}/g, '$1');      // `code`
+}
 
 const CANCEL_THRESHOLD = -80; // px the user must drag left to cancel
 const LOCK_THRESHOLD = -55; // px the user must drag up to lock hands-free recording
@@ -131,6 +143,8 @@ type Msg = {
   saved?: boolean;
   /** The user's own message text matched FIR/police-complaint drafting intent */
   firIntent?: boolean;
+  /** 2-3 contextual follow-up questions generated after the answer */
+  followUpQuestions?: string[];
 };
 
 /**
@@ -145,6 +159,25 @@ const generateId = (): string =>
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+
+/** Suggestion chips — translated per user language. */
+function getBasicSuggestions(langCode: string): { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] {
+  return [
+    { text: t('home.suggestion1', langCode), icon: 'receipt-outline' },
+    { text: t('home.suggestion2', langCode), icon: 'shield-outline' },
+    { text: t('home.suggestion3', langCode), icon: 'car-outline' },
+    { text: t('home.suggestion4', langCode), icon: 'shield-checkmark-outline' },
+  ];
+}
+
+function getProSuggestions(langCode: string): { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] {
+  return [
+    { text: t('home.proSuggestion1', langCode), icon: 'document-text-outline' },
+    { text: t('home.proSuggestion2', langCode), icon: 'bag-handle-outline' },
+    { text: t('home.proSuggestion3', langCode), icon: 'eye-outline' },
+    { text: t('home.proSuggestion4', langCode), icon: 'trending-up-outline' },
+  ];
+}
 
 const BASIC_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
   { text: 'My cheque bounced — what is the notice deadline?', icon: 'receipt-outline' },
@@ -629,7 +662,7 @@ export default function ChatScreen() {
               citations = parsed.citations;
               buffer = parsed.rest;
               if (parsed.hadError) hadError = true;
-              const displayText = finalText !== null ? finalText : acc;
+              const displayText = finalText !== null ? finalText : stripStreamMarkdown(acc);
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId ? { ...m, content: displayText, citations } : m,
@@ -711,6 +744,36 @@ export default function ChatScreen() {
           setTimeout(() => {
             speakRef.current?.(assistantId, displayText);
           }, 250);
+        }
+
+        // Fetch follow-up question chips in the background (fire-and-forget).
+        // Never blocks the main answer — if it fails, chips simply don't appear.
+        if (!hadError && displayText.trim().length > 20 && token) {
+          (async () => {
+            try {
+              const fqRes = await fetch(`${API_BASE}/api/chat/followup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                  message: q,
+                  answer: displayText.slice(0, 500),
+                  language: language.code,
+                  language_name: language.name,
+                }),
+              });
+              if (fqRes.ok) {
+                const fqData = await fqRes.json();
+                const questions: string[] = Array.isArray(fqData.questions)
+                  ? fqData.questions.filter((x: any) => typeof x === 'string' && x.trim().length > 0).slice(0, 3)
+                  : [];
+                if (questions.length > 0) {
+                  setMessages((prev) =>
+                    prev.map((m) => m.id === assistantId ? { ...m, followUpQuestions: questions } : m),
+                  );
+                }
+              }
+            } catch {}
+          })();
         }
 
         try {
@@ -1418,7 +1481,7 @@ export default function ChatScreen() {
     setSamplesRemaining(null);
   }, []);
 
-  const activeSuggestions = proMode ? PRO_SUGGESTIONS : BASIC_SUGGESTIONS;
+  const activeSuggestions = proMode ? getProSuggestions(language.code) : getBasicSuggestions(language.code);
 
   /** Keep an answer on this phone so it opens with no network at all. */
   const saveAnswer = useCallback(
@@ -1506,7 +1569,7 @@ export default function ChatScreen() {
           )}
           <Pressable testID="new-chat-button" style={styles.newChatBtn} onPress={startNewChat}>
             <Ionicons name="add" size={16} color={theme.colors.brand} />
-            <Text style={styles.newChatText}>New Chat</Text>
+            <Text style={styles.newChatText}>{t('home.newChat', language.code)}</Text>
           </Pressable>
           <Pressable
             testID="history-header-btn"
@@ -1571,7 +1634,7 @@ export default function ChatScreen() {
                 color={theme.colors.brand}
               />
               <Text style={styles.modeLabelCompact}>
-                {proMode ? 'Pro mode' : 'Basic mode'}
+                {proMode ? t('home.proMode', language.code) : t('home.basicMode', language.code)}
               </Text>
             </View>
             <Text style={styles.modeSubCompact}>
@@ -1610,8 +1673,8 @@ export default function ChatScreen() {
           <Ionicons name="document-text" size={16} color="#fff" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.firQuickActionTitle}>File a Police Complaint</Text>
-          <Text style={styles.firQuickActionSub}>Get a ready FIR draft in your language</Text>
+          <Text style={styles.firQuickActionTitle}>{t('home.fileComplaint', language.code)}</Text>
+          <Text style={styles.firQuickActionSub}>{t('home.fileComplaintSub', language.code)}</Text>
         </View>
         <Ionicons name="chevron-forward" size={16} color={theme.colors.brand} />
       </Pressable>
@@ -1644,9 +1707,9 @@ export default function ChatScreen() {
               <View style={styles.emblem}>
                 <Ionicons name="library" size={40} color={theme.colors.brandSecondary} />
               </View>
-              <Text style={styles.emptyTitle}>Ask any question about your rights</Text>
+              <Text style={styles.emptyTitle}>{t('home.headline', language.code)}</Text>
               <Text style={styles.emptySub}>
-                Bharatiya Nyaya Sanhita · Constitution · Supreme Court judgments — quoted directly from government sources.
+                {t('home.sub', language.code)}
               </Text>
               <View style={{ marginTop: theme.spacing.xl, gap: theme.spacing.sm, alignSelf: 'stretch', width: '100%' }}>
                 {activeSuggestions.map((s, i) => (
@@ -1794,10 +1857,12 @@ export default function ChatScreen() {
                                   style={styles.citationSource}
                                   numberOfLines={1}
                                   onPress={() => {
-                                    import('expo-linking').then((L) => L.openURL(c.source_url));
+                                    if (c.source_url) import('expo-linking').then((L) => L.openURL(c.source_url));
                                   }}
                                 >
-                                  Source: indiacode.nic.in ↗
+                                  {c.source_url
+                                    ? `Source: ${(() => { try { return new URL(c.source_url).hostname.replace(/^www\./, ''); } catch { return 'indiacode.gov.in'; } })()} ↗`
+                                    : 'Source: indiacode.gov.in'}
                                 </Text>
                               </View>
                             ))}
@@ -1831,10 +1896,12 @@ export default function ChatScreen() {
                           style={styles.citationSource}
                           numberOfLines={1}
                           onPress={() => {
-                            import('expo-linking').then((L) => L.openURL(c.source_url));
+                            if (c.source_url) import('expo-linking').then((L) => L.openURL(c.source_url));
                           }}
                         >
-                          Source: indiacode.nic.in ↗
+                          {c.source_url
+                            ? `Source: ${(() => { try { return new URL(c.source_url).hostname.replace(/^www\./, ''); } catch { return 'indiacode.gov.in'; } })()} ↗`
+                            : 'Source: indiacode.gov.in'}
                         </Text>
                       </View>
                     ))}
@@ -1885,6 +1952,23 @@ export default function ChatScreen() {
                   <View testID={`state-note-${m.id}`} style={styles.stateNote}>
                     <Ionicons name="information-circle-outline" size={16} color={theme.colors.onSurfaceSecondary} />
                     <Text style={styles.stateNoteText}>{m.stateNote}</Text>
+                  </View>
+                )}
+                {/* Follow-up question chips — appear after the last assistant answer */}
+                {m.role === 'assistant' && !streaming && !!m.followUpQuestions && m.followUpQuestions.length > 0 && (
+                  <View testID={`followup-chips-${m.id}`} style={styles.followUpChipsWrap}>
+                    {m.followUpQuestions.map((q, qi) => (
+                      <Pressable
+                        key={qi}
+                        testID={`followup-chip-${m.id}-${qi}`}
+                        style={styles.followUpChip}
+                        onPress={() => send(q)}
+                        hitSlop={6}
+                      >
+                        <Ionicons name="arrow-redo-outline" size={13} color={theme.colors.brand} />
+                        <Text style={styles.followUpChipText} numberOfLines={2}>{q}</Text>
+                      </Pressable>
+                    ))}
                   </View>
                 )}
               </View>
@@ -2449,6 +2533,16 @@ const styles = StyleSheet.create({
     borderLeftColor: theme.colors.gold,
   },
   stateNoteText: { flex: 1, color: theme.colors.onSurfaceSecondary, fontSize: 12, lineHeight: 18 },
+  followUpChipsWrap: {
+    flexDirection: 'column', gap: 6, marginTop: 8,
+  },
+  followUpChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: theme.radius.pill, borderWidth: 1, borderColor: '#D6E4F0',
+    backgroundColor: '#EEF5FB', alignSelf: 'flex-start',
+  },
+  followUpChipText: { color: theme.colors.brand, fontSize: 12.5, fontWeight: '600', flexShrink: 1 },
   msgRole: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   userRole: { color: theme.colors.brandSecondary },
   aiRole: { color: theme.colors.brand },
