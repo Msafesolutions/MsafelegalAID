@@ -76,7 +76,7 @@ const QUESTIONS = [
   {
     id: 'location',
     label: 'Where did it happen?',
-    hint: 'Area / locality / city in Maharashtra. e.g., Dadar, Mumbai',
+    hint: 'Area / locality / city / state. e.g., Dadar, Mumbai or Panaji, Goa',
     type: 'text' as const,
     required: true,
   },
@@ -116,9 +116,16 @@ const QUESTIONS = [
     required: true,
   },
   {
-    id: 'informant_contact',
-    label: 'Your address and contact number',
-    hint: 'Address and mobile number for the police to reach you.',
+    id: 'informant_address',
+    label: 'Your full address',
+    hint: 'House/flat no., street, area, city, PIN code. e.g., 12 MG Road, Andheri West, Mumbai 400058',
+    type: 'textarea' as const,
+    required: true,
+  },
+  {
+    id: 'informant_phone',
+    label: 'Your contact number',
+    hint: 'Mobile number the police can reach you on. e.g., 98765 43210',
     type: 'text' as const,
     required: true,
   },
@@ -181,11 +188,11 @@ function SafetyCard({ flags, onContinue }: { flags: string[]; onContinue: () => 
 
 // ─── Main Screen ──────────────────────────────────────────────────────────
 export default function FIRDraftIntake() {
-  const { token, user } = useAuth();
+  const { token, user, language } = useAuth();
   const router = useRouter();
 
   const [step, setStep]         = useState(0);  // 0 = lang select, 1-10 = questions
-  const [lang, setLang]         = useState('en');
+  const [lang, setLang]         = useState(() => language?.code || 'en');
   const [answers, setAnswers]   = useState<Record<string, string>>({});
   const [draftId, setDraftId]   = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -194,18 +201,28 @@ export default function FIRDraftIntake() {
   const [safetyFlags, setSafetyFlags] = useState<string[]>([]);
   const [showSafety, setShowSafety] = useState(false);
   const [safetyAcknowledged, setSafetyAcknowledged] = useState(false);
-  // Anonymous-first: the Voice FIR flow must work without login. When the
-  // citizen isn't signed in, we generate and persist a local id so their
-  // draft can still be created/synced/generated server-side.
   const [anonId, setAnonId] = useState<string | null>(null);
   const effectiveUserId = user?.id ?? anonId;
+
+  // Full language list — fetched from API on mount, falls back to FIR_LANGUAGES
+  const [firLanguages, setFirLanguages] = useState(FIR_LANGUAGES);
 
   // Voice-first input mode: 'voice' (mic idle) | 'text' (keyboard) | 'review' (post-transcription)
   const [inputMode, setInputMode] = useState<'voice' | 'text' | 'review'>('voice');
   const [reviewText, setReviewText] = useState('');
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  // Ref so step-change effect can read current answers without stale closure
   const answersRef = useRef(answers);
+
+  // Fix 1: VAD silence timer
+  const [stillListening, setStillListening] = useState(false);
+  const silenceTimerRef = useRef<any>(null);
+
+  // Fix 2: LLM follow-up state
+  const [followUpState, setFollowUpState] = useState<{
+    question: string; parentQId: string; answer: string;
+  } | null>(null);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
+  const followUpCheckedRef = useRef<Set<string>>(new Set());
 
   // ── Web Speech API (browser only) ─────────────────────────────────────
   const webRecognitionRef = useRef<any>(null);
@@ -223,7 +240,7 @@ export default function FIRDraftIntake() {
     });
   }, [user?.id]);
 
-  // Restore in-progress draft from local storage
+  // Restore in-progress draft from local storage; default lang to user's preference
   useEffect(() => {
     AsyncStorage.getItem('fir_draft_state').then(raw => {
       if (raw) {
@@ -232,13 +249,26 @@ export default function FIRDraftIntake() {
           if (saved.userId === user?.id) {
             setAnswers(saved.answers || {});
             setDraftId(saved.draftId || null);
-            setLang(saved.lang || 'en');
+            setLang(saved.lang || language?.code || 'en');
             setStep(saved.step || 0);
           }
         } catch {}
       }
     });
-  }, [user?.id]);
+  }, [user?.id, language?.code]);
+
+  // Fix 3: Fetch full language list from the API, fall back to local constant
+  useEffect(() => {
+    fetch(`${API_BASE}/api/reference/languages`)
+      .then(r => r.json())
+      .then((langs: Array<{ code: string; name: string; native: string; tts: string }>) => {
+        const mapped = langs.map(l => ({
+          code: l.code, label: l.name, native: l.native, sttLang: l.tts,
+        }));
+        if (mapped.length > 0) setFirLanguages(mapped);
+      })
+      .catch(() => {}); // keep defaults on error
+  }, []);
 
   // Keep answersRef up-to-date so step-change effect sees fresh answers
   useEffect(() => { answersRef.current = answers; }, [answers]);
@@ -320,7 +350,7 @@ export default function FIRDraftIntake() {
       const uri = await recorder.stop();
       if (!uri) { setTranscribing(false); return; }
 
-      const sttLang = FIR_LANGUAGES.find(l => l.code === lang)?.sttLang ?? 'en-IN';
+      const sttLang = firLanguages.find(l => l.code === lang)?.sttLang ?? 'en-IN';
       const tempFile = new File(Paths.cache, `fir_q_${Date.now()}.m4a`);
       // Transcribe
       const result = await whisperTranscribeFile(uri, token ?? '', sttLang);
@@ -355,21 +385,40 @@ export default function FIRDraftIntake() {
       return;
     }
     const rec = new SR();
-    rec.lang = FIR_LANGUAGES.find(l => l.code === lang)?.sttLang ?? 'en-IN';
-    rec.continuous = false;
-    rec.interimResults = true;
+    rec.lang = firLanguages.find(l => l.code === lang)?.sttLang ?? 'en-IN';
+    // Fix 1: continuous mode so natural pauses do NOT end the session
+    rec.continuous      = true;
+    rec.interimResults  = true;
     webRecognitionRef.current = rec;
     setLiveTranscript('');
+    setStillListening(false);
     setIsRecording(true);
 
+    const clearSilence = () => {
+      if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    };
+
     rec.onresult = (e: any) => {
+      // Reset the silence timer on every new speech chunk
+      clearSilence();
+      setStillListening(false);
       const interim = Array.from(e.results as any[])
         .map((r: any) => r[0].transcript)
         .join('');
       setLiveTranscript(interim);
+      // Show "Still listening…" after 1 s of silence, then auto-stop after 2.5 s total
+      silenceTimerRef.current = setTimeout(() => {
+        setStillListening(true);
+        silenceTimerRef.current = setTimeout(() => {
+          setStillListening(false);
+          webRecognitionRef.current?.stop();
+        }, 1500);
+      }, 1000);
     };
 
     rec.onend = () => {
+      clearSilence();
+      setStillListening(false);
       setIsRecording(false);
       webRecognitionRef.current = null;
       // Use functional state to grab the latest liveTranscript value
@@ -387,6 +436,8 @@ export default function FIRDraftIntake() {
     };
 
     rec.onerror = (e: any) => {
+      clearSilence();
+      setStillListening(false);
       setIsRecording(false);
       webRecognitionRef.current = null;
       setLiveTranscript('');
@@ -400,6 +451,8 @@ export default function FIRDraftIntake() {
   };
 
   const stopWebRecording = () => {
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
+    setStillListening(false);
     webRecognitionRef.current?.stop();
   };
 
@@ -439,27 +492,18 @@ export default function FIRDraftIntake() {
     } catch {}
   };
 
-  const nextStep = async () => {
-    if (step === 0) {
-      // Lang selected
-      setStep(1);
-      return;
-    }
-    const q = QUESTIONS[step - 1];
-    if (q.required && !answers[q.id]?.trim()) {
-      Alert.alert('Required', `Please answer: "${q.label}"`);
-      return;
-    }
-    // After "what happened" (question 2, step 2), run safety check
-    if (q.id === 'what_happened' && !safetyAcknowledged) {
-      await checkSafety(answers['what_happened'] ?? '');
-    }
-    // Sync to backend (best-effort, no block)
-    syncToBackend(answers).catch(() => {});
+  // ── Fix 2: follow-up helpers ──────────────────────────────────────────
+  const FOLLOW_UP_QIDS = ['what_happened', 'accused', 'injury_loss'];
 
+  const advanceFromCurrentStep = async (latestAnswers: Record<string, string>) => {
+    const q = QUESTIONS[step - 1];
+    if (!q) return;
+    if (q.id === 'what_happened' && !safetyAcknowledged) {
+      await checkSafety(latestAnswers['what_happened'] ?? '');
+    }
+    syncToBackend(latestAnswers).catch(() => {});
     if (step >= QUESTIONS.length) {
-      // Done — go to result
-      await syncToBackend(answers, 'completed');
+      await syncToBackend(latestAnswers, 'completed');
       router.push({
         pathname: '/fir-draft/result',
         params: { draftId: draftId ?? '', lang, userId: effectiveUserId ?? '' },
@@ -467,6 +511,69 @@ export default function FIRDraftIntake() {
     } else {
       setStep(s => s + 1);
     }
+  };
+
+  const handleFollowUpContinue = async () => {
+    const latestAnswers = { ...answersRef.current };
+    if (followUpState?.answer?.trim()) {
+      const parentQId = followUpState.parentQId;
+      latestAnswers[parentQId] =
+        (latestAnswers[parentQId] || '') + '\n\nAdditional details: ' + followUpState.answer.trim();
+      setAnswers(latestAnswers);
+      answersRef.current = latestAnswers;
+    }
+    setFollowUpState(null);
+    await advanceFromCurrentStep(latestAnswers);
+  };
+
+  const handleFollowUpSkip = async () => {
+    setFollowUpState(null);
+    await advanceFromCurrentStep(answersRef.current);
+  };
+
+  const nextStep = async () => {
+    if (step === 0) { setStep(1); return; }
+    const q = QUESTIONS[step - 1];
+    const latestAnswers = answersRef.current;
+
+    if (q.required && !latestAnswers[q.id]?.trim()) {
+      Alert.alert('Required', `Please answer: "${q.label}"`);
+      return;
+    }
+
+    // Fix 2: Check for LLM follow-up on key narrative questions (once per question)
+    if (
+      FOLLOW_UP_QIDS.includes(q.id) &&
+      !followUpCheckedRef.current.has(q.id) &&
+      latestAnswers[q.id]?.trim()
+    ) {
+      followUpCheckedRef.current.add(q.id);
+      setFollowUpLoading(true);
+      try {
+        const langObj = firLanguages.find(l => l.code === lang);
+        const r = await fetch(`${API_BASE}/api/fir/followup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            answer:        latestAnswers[q.id],
+            question_id:   q.id,
+            language:      lang,
+            language_name: langObj?.label || 'English',
+          }),
+        }).catch(() => null);
+        if (r?.ok) {
+          const data = await r.json();
+          if (data.follow_up) {
+            setFollowUpLoading(false);
+            setFollowUpState({ question: data.follow_up, parentQId: q.id, answer: '' });
+            return; // Wait for user to answer follow-up
+          }
+        }
+      } catch {}
+      setFollowUpLoading(false);
+    }
+
+    await advanceFromCurrentStep(latestAnswers);
   };
 
   const currentQ = step > 0 ? QUESTIONS[step - 1] : null;
@@ -532,7 +639,7 @@ export default function FIRDraftIntake() {
                 </View>
               </View>
               <Text style={s.sectionLabel}>Select your language</Text>
-              {FIR_LANGUAGES.map(l => (
+              {firLanguages.map(l => (
                 <Pressable key={l.code} style={[s.langCard, lang === l.code && s.langCardActive]} onPress={() => setLang(l.code)}>
                   <Text style={[s.langCardLabel, lang === l.code && { color: NAVY }]}>{l.native}</Text>
                   <Text style={s.langCardSub}>{l.label}</Text>
@@ -588,7 +695,7 @@ export default function FIRDraftIntake() {
                   </View>
                 )}
 
-                {/* ── RECORDING: web — pulsing + live transcript ── */}
+                {/* ── RECORDING: web — pulsing + live transcript + still-listening indicator ── */}
                 {Platform.OS === 'web' && isRecording && (
                   <View style={s.voiceIdle}>
                     <Animated.View style={[s.micRing, s.micRingRecording, { transform: [{ scale: pulseAnim }] }]}>
@@ -596,7 +703,11 @@ export default function FIRDraftIntake() {
                         <Ionicons name="stop" size={40} color="#fff" />
                       </Pressable>
                     </Animated.View>
-                    <Text style={s.recordingLabel}>● Listening…  Tap to stop</Text>
+                    {stillListening ? (
+                      <Text style={s.stillListeningLabel}>⏸ Still listening…</Text>
+                    ) : (
+                      <Text style={s.recordingLabel}>● Listening…  Tap to stop</Text>
+                    )}
                     {liveTranscript ? (
                       <View style={s.liveBox}>
                         <Text style={s.liveText}>{liveTranscript}</Text>
@@ -656,12 +767,17 @@ export default function FIRDraftIntake() {
                     <TextInput
                       style={[s.input, currentQ.type === 'textarea' && s.textarea]}
                       value={answers[currentQ.id] ?? ''}
-                      onChangeText={t => setAnswers(prev => ({ ...prev, [currentQ.id]: t }))}
+                      onChangeText={t => setAnswers(prev => {
+                        const next = { ...prev, [currentQ.id]: t };
+                        answersRef.current = next;
+                        return next;
+                      })}
                       placeholder={currentQ.hint}
                       placeholderTextColor="#9CA3AF"
                       multiline={currentQ.type === 'textarea'}
                       numberOfLines={currentQ.type === 'textarea' ? 5 : 1}
                       textAlignVertical={currentQ.type === 'textarea' ? 'top' : 'center'}
+                      autoFocus
                     />
                     <Pressable onPress={() => { setLiveTranscript(''); setInputMode('voice'); }} style={s.switchModeBtn}>
                       <Ionicons name="mic-outline" size={14} color="#6B7280" />
@@ -672,16 +788,68 @@ export default function FIRDraftIntake() {
 
               </View>
 
-              <Pressable style={s.nextBtn} onPress={nextStep}>
-                <Text style={s.nextBtnText}>
-                  {step >= QUESTIONS.length
-                    ? 'Generate FIR Draft'
-                    : inputMode === 'review'
-                      ? 'Looks correct — Next'
-                      : 'Next'}
-                </Text>
-                <Ionicons name={step >= QUESTIONS.length ? 'document-text' : 'arrow-forward'} size={20} color="#fff" />
-              </Pressable>
+              {/* ── Fix 2: Follow-up clarification card ── */}
+              {followUpLoading && (
+                <View style={s.followUpLoading}>
+                  <ActivityIndicator size="small" color={NAVY} />
+                  <Text style={s.followUpLoadingText}>Just a moment…</Text>
+                </View>
+              )}
+
+              {followUpState && (
+                <View style={s.followUpCard}>
+                  <View style={s.followUpHeader}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={18} color={NAVY} />
+                    <Text style={s.followUpTitle}>One more thing:</Text>
+                  </View>
+                  <Text style={s.followUpQuestion}>{followUpState.question}</Text>
+                  <TextInput
+                    style={[s.input, s.textarea, { marginTop: 8 }]}
+                    value={followUpState.answer}
+                    onChangeText={t => setFollowUpState(prev => prev ? { ...prev, answer: t } : null)}
+                    placeholder="Your answer (optional — tap Skip to continue)"
+                    placeholderTextColor="#9CA3AF"
+                    multiline
+                    numberOfLines={3}
+                    autoFocus
+                  />
+                  <View style={s.followUpActions}>
+                    <Pressable style={s.followUpSkipBtn} onPress={handleFollowUpSkip}>
+                      <Text style={s.followUpSkipText}>Skip</Text>
+                    </Pressable>
+                    <Pressable style={s.followUpContinueBtn} onPress={handleFollowUpContinue}>
+                      <Ionicons name="arrow-forward" size={16} color="#fff" />
+                      <Text style={s.followUpContinueText}>
+                        {followUpState.answer.trim() ? 'Add & Continue' : 'Continue'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
+              {/* ── Next button (hidden while follow-up card is shown) ── */}
+              {!followUpState && (
+                <Pressable
+                  style={[s.nextBtn, followUpLoading && { opacity: 0.6 }]}
+                  onPress={nextStep}
+                  disabled={followUpLoading}
+                >
+                  {followUpLoading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <Text style={s.nextBtnText}>
+                        {step >= QUESTIONS.length
+                          ? 'Generate FIR Draft'
+                          : inputMode === 'review'
+                            ? 'Looks correct — Next'
+                            : 'Next'}
+                      </Text>
+                      <Ionicons name={step >= QUESTIONS.length ? 'document-text' : 'arrow-forward'} size={20} color="#fff" />
+                    </>
+                  )}
+                </Pressable>
+              )}
             </View>
           ) : null}
         </ScrollView>
@@ -753,6 +921,35 @@ const s = StyleSheet.create({
   micBigRecording: { backgroundColor: RED, shadowColor: RED },
   micIdleLabel: { fontSize: 16, fontWeight: '600', color: '#374151' },
   recordingLabel: { fontSize: 16, fontWeight: '700', color: RED },
+  stillListeningLabel: {
+    fontSize: 13, color: '#D97706', fontWeight: '600',
+    backgroundColor: '#FEF3C7', paddingHorizontal: 12, paddingVertical: 4,
+    borderRadius: 8, marginTop: 4,
+  },
+  // Follow-up card styles (Fix 2)
+  followUpLoading: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 12,
+  },
+  followUpLoadingText: { fontSize: 13, color: '#6B7280' },
+  followUpCard: {
+    backgroundColor: '#EEF2FF', borderRadius: 14, padding: 16, gap: 8,
+    borderWidth: 1.5, borderColor: '#A5B4FC',
+  },
+  followUpHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  followUpTitle: { fontSize: 13, fontWeight: '700', color: NAVY },
+  followUpQuestion: { fontSize: 16, color: '#1F2937', lineHeight: 24, fontWeight: '600' },
+  followUpActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  followUpSkipBtn: {
+    paddingHorizontal: 18, paddingVertical: 11, borderRadius: 10,
+    borderWidth: 1.5, borderColor: '#D1D5DB', backgroundColor: '#fff',
+  },
+  followUpSkipText: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
+  followUpContinueBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 11, borderRadius: 10, backgroundColor: NAVY,
+  },
+  followUpContinueText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   switchModeBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 14, paddingVertical: 8,

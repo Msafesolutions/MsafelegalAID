@@ -90,10 +90,20 @@ function detectFirIntent(text: string): boolean {
 function splitVerdict(text: string): { verdict: string; rest: string } {
   const trimmed = (text || '').trim();
   if (!trimmed) return { verdict: '', rest: '' };
-  const sentences = trimmed.match(/[^.!?]+[.!?]+(?:\s|$)/g);
+  // Include ।  (Devanagari danda) as a sentence terminator for Hindi/Marathi
+  const sentences = trimmed.match(/[^.!?।]+[.!?।]+(?:\s|$)/g);
   if (!sentences || sentences.length <= 2) return { verdict: trimmed, rest: '' };
-  const verdictRaw = sentences.slice(0, 2).join('');
-  return { verdict: verdictRaw.trim(), rest: trimmed.slice(verdictRaw.length).trim() };
+  // Bug-fix: verdictRaw.length ≠ the true split point when there is a heading or
+  // preamble before the first matched sentence (e.g. "UPI Fraud Help\nYou can…").
+  // Use indexOf(sentences[0]) to find the real start offset so that 'rest' never
+  // begins mid-sentence.
+  const firstStart = trimmed.indexOf(sentences[0]);
+  const twoSentLen = sentences.slice(0, 2).join('').length;
+  const splitAt = firstStart < 0 ? twoSentLen : firstStart + twoSentLen;
+  return {
+    verdict: trimmed.slice(0, splitAt).trim(),
+    rest: trimmed.slice(splitAt).trim(),
+  };
 }
 
 
@@ -1984,6 +1994,19 @@ export default function ChatScreen() {
                   placeholderTextColor={theme.colors.onSurfaceTertiary}
                   multiline
                   editable={!streaming && !transcribing}
+                  returnKeyType={Platform.OS !== 'web' ? 'send' : 'default'}
+                  blurOnSubmit={false}
+                  onSubmitEditing={
+                    Platform.OS !== 'web'
+                      ? () => { if (!streaming && !transcribing && input.trim()) send(input); }
+                      : undefined
+                  }
+                  onKeyPress={(e: any) => {
+                    if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+                      e.preventDefault?.();
+                      if (!streaming && !transcribing && input.trim()) send(input);
+                    }
+                  }}
                 />
               </>
             )}

@@ -6,6 +6,7 @@ import { theme } from '@/src/theme';
 import { DisclaimerBanner } from '@/src/components/DisclaimerBanner';
 import { useAuth } from '@/src/auth';
 import { addNotificationTapListener } from '@/src/push';
+import { t } from '@/src/i18n';
 
 /**
  * Tab layout with a non-dismissible global legal disclaimer banner
@@ -17,7 +18,7 @@ import { addNotificationTapListener } from '@/src/push';
  * page — which was the root cause of the reported "Sign out doesn't work" bug.
  */
 export default function TabsLayout() {
-  const { token, loading } = useAuth();
+  const { token, loading, language } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -63,7 +64,7 @@ export default function TabsLayout() {
           <Tabs.Screen
             name="index"
             options={{
-              title: 'Ask',
+              title: t('tab.ask', language.code),
               tabBarIcon: ({ color, size }) => (
                 <Ionicons name="chatbubbles-outline" size={size} color={color} />
               ),
@@ -73,7 +74,7 @@ export default function TabsLayout() {
           <Tabs.Screen
             name="rights"
             options={{
-              title: 'Rights',
+              title: t('tab.rights', language.code),
               tabBarIcon: ({ color, size }) => (
                 <Ionicons name="shield-checkmark-outline" size={size} color={color} />
               ),
@@ -83,7 +84,7 @@ export default function TabsLayout() {
           <Tabs.Screen
             name="saved"
             options={{
-              title: 'Saved',
+              title: t('tab.saved', language.code),
               tabBarIcon: ({ color, size }) => (
                 <Ionicons name="bookmark-outline" size={size} color={color} />
               ),
@@ -100,7 +101,7 @@ export default function TabsLayout() {
           <Tabs.Screen
             name="lookup"
             options={{
-              title: 'Lookup',
+              title: t('tab.lookup', language.code),
               tabBarIcon: ({ color, size }) => (
                 <Ionicons name="search-outline" size={size} color={color} />
               ),
@@ -110,7 +111,7 @@ export default function TabsLayout() {
           <Tabs.Screen
             name="advocate"
             options={{
-              title: 'Advocate',
+              title: t('tab.advocate', language.code),
               tabBarIcon: ({ color, size }) => (
                 <Ionicons name="briefcase-outline" size={size} color={color} />
               ),
@@ -120,7 +121,7 @@ export default function TabsLayout() {
           <Tabs.Screen
             name="settings"
             options={{
-              title: 'Settings',
+              title: t('tab.settings', language.code),
               tabBarIcon: ({ color, size }) => (
                 <Ionicons name="settings-outline" size={size} color={color} />
               ),

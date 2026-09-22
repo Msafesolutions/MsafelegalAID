@@ -9,6 +9,7 @@ import { useAuth, API_BASE, Language, TtsVoiceMode } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { SOSButton } from '@/src/components/SOSButton';
 import { getPushPermissionState, enablePushNotifications, PushPermissionState } from '@/src/push';
+import { t } from '@/src/i18n';
 
 export default function Settings() {
   const { user, token, logout, language, setLanguage, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, ttsVoiceMode, setTtsVoiceMode, refreshUser } = useAuth();
@@ -127,8 +128,8 @@ export default function Settings() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']} testID="settings-screen">
       <View style={styles.header}>
-        <Text style={styles.h1}>Settings</Text>
-        <Text style={styles.h2}>Personalize your Dhara</Text>
+        <Text style={styles.h1}>{t('settings.title', language.code)}</Text>
+        <Text style={styles.h2}>{t('settings.subtitle', language.code)}</Text>
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.profile}>
@@ -161,12 +162,12 @@ export default function Settings() {
           <Ionicons name="chevron-forward" size={20} color={theme.colors.onBrandPrimary} />
         </Pressable>
 
-        <Text style={styles.section}>Preferences</Text>
+        <Text style={styles.section}>{t('settings.section.preferences', language.code)}</Text>
 
         <Pressable testID="pick-language" style={styles.row} onPress={() => setShowLang(true)}>
           <Ionicons name="language" size={22} color={theme.colors.brand} />
           <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
-            <Text style={styles.rowTitle}>Language</Text>
+            <Text style={styles.rowTitle}>{t('settings.language', language.code)}</Text>
             <Text style={styles.rowValue}>{language.native} · {language.name}</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
@@ -175,7 +176,7 @@ export default function Settings() {
         <Pressable testID="pick-state" style={styles.row} onPress={() => router.push('/state')}>
           <Ionicons name="location-outline" size={22} color={theme.colors.brand} />
           <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
-            <Text style={styles.rowTitle}>State / Union Territory</Text>
+            <Text style={styles.rowTitle}>{t('settings.state', language.code)}</Text>
             <Text style={styles.rowValue}>
               {user?.state_name
                 ? `${user.state_name} · local rent, liquor and fine rules added`

@@ -909,7 +909,10 @@ def _build_candidate(off: OffenceDef, score: int, max_score: int) -> dict | None
 
 
 def classify_incident(narrative: str, top_n: int = 3) -> dict:
-    """Keyword-only sync classification (fallback path)."""
+    """Keyword-only sync classification (fallback path).
+    Only returns 'medium' confidence candidates — 'low' confidence sections
+    are never surfaced on a document the user may hand to police.
+    """
     text_lower = narrative.lower()
     scored = [(s, o) for o in OFFENCES if (s := _score(text_lower, o)) > 0]
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -917,6 +920,7 @@ def classify_incident(narrative: str, top_n: int = 3) -> dict:
     candidates = [
         c for s, o in scored[:top_n]
         if (c := _build_candidate(o, s, max_score)) is not None
+        and c["confidence"] == "medium"   # Bug-fix: drop low-confidence from draft
     ]
     safety_flags = detect_safety_flags(narrative)
     for c in candidates:
@@ -1020,12 +1024,17 @@ async def classify_incident_hybrid(narrative: str, llm_key: str, top_n: int = 3)
             continue
         if is_dead_law("Bharatiya Nyaya Sanhita, 2023", bns):
             continue
+        # Bug-fix: clamp to 'medium' or drop — 'low' confidence never on printed draft
+        raw_conf = item.get("confidence", "low")
+        confidence = raw_conf if raw_conf in ("medium", "low") else "low"
+        if confidence == "low":
+            continue  # suppress low-confidence LLM suggestions from the document
         off = offence_map.get(bns)
         candidate = {
             "bns_section": bns,
             "bns_heading": off["bns_heading"] if off else item.get("reason", "")[:60],
             "legacy_ipc": off["legacy_ipc"] if off else "",
-            "confidence": item.get("confidence", "low") if item.get("confidence") in ("medium", "low") else "low",
+            "confidence": confidence,
             "doc_checklist": off["doc_checklist"] if off else [],
             "safety_flag": off["safety_flag"] if off else None,
             "dead_law": False,

@@ -1,24 +1,24 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
+import { useAuth } from '@/src/auth';
+import { t } from '@/src/i18n';
 
 /**
- * Non-dismissible legal disclaimer banner.
+ * Non-dismissible legal disclaimer banner — localized.
  * Rendered globally above the tab bar via (tabs)/_layout.tsx.
- * Wording is FIXED — do not change without legal review.
- *
- * Contrast: dhara.textSecondary (#4A5A6E) on FFF6E5 = 6.60:1 ✅ WCAG AA
- *           (previously #5A3A00 — adequate but not a brand token)
  */
 export const DISCLAIMER_TEXT =
   'DHARA provides legal information, not legal advice. This does not create an advocate-client relationship. Verify with a qualified advocate before acting. © Callistus Moses · MSafe Solutions.';
 
 export function DisclaimerBanner({ testID = 'global-disclaimer' }: { testID?: string }) {
+  const { language } = useAuth();
+  const text = t('disclaimer', language.code);
   return (
     <View style={styles.wrap} testID={testID}>
       <Ionicons name="shield-half" size={14} color={theme.colors.brand} style={{ marginTop: 1 }} />
       <Text style={styles.text} numberOfLines={4}>
-        {DISCLAIMER_TEXT}
+        {text}
       </Text>
     </View>
   );

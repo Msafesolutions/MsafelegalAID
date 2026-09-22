@@ -1,18 +1,17 @@
 /**
  * IPC → BNS Cross-Reference Lookup Tool — Citation Guard edition
  *
- * Citation Guard rules:
- * A. query_found_in_db === false on a section search → show NOT-IN-DATABASE wall.
- *    Never show a guessed mapping.
- * B. new_section is null / "—" → render "Deleted / No BNS equivalent".
- *    Never substitute a guessed section number.
+ * Citation Guard rules (non-negotiable):
+ * A. query_found_in_db === false → show NOT-IN-DATABASE wall. Never guess.
+ * B. new_section is null / "—" → render "Deleted / No BNS equivalent". Never substitute.
  * C. verified === false → yellow caution banner on every card.
- * D. No LLM / AI call is ever made from this screen.
+ * D. change_type === 'dead_law' → Dead-Law Guard banner. Never render as valid mapping.
+ * E. No LLM / AI call is ever made from this screen.
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, Pressable, ScrollView, StyleSheet,
-  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -25,13 +24,16 @@ const CUTOFF = '2024-07-01';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface XRef {
-  source:       string;
-  old_section:  string;
-  new_section:  string;
-  offence:      string;
-  change_type:  string;
-  what_changed: string;
-  verified:     boolean;
+  source:            string;
+  old_section:       string;
+  new_section:       string;
+  offence:           string;
+  change_type:       string;
+  what_changed:      string;
+  verified:          boolean;
+  source_link?:      string;
+  judicial_citation?: string;
+  dead_law?:         boolean;
 }
 interface CitationGuard {
   database_only:        boolean;
@@ -44,13 +46,14 @@ interface CitationGuard {
 
 // ── Change-type display config ────────────────────────────────────────────────
 const CHANGE_META: Record<string, { label: string; bg: string; color: string }> = {
-  renumbering_only:                { label: 'Renumbered',    bg: '#EEF2FF', color: '#3730A3' },
-  renumbering_plus_relocation:     { label: 'Relocated',     bg: '#F0FDF4', color: '#166534' },
-  wording_change_same_effect:      { label: 'Minor Wording', bg: '#FFF7ED', color: '#9A3412' },
-  substantive_change:              { label: 'Substantive ⚠', bg: '#FEF3C7', color: '#92400E' },
-  deleted_replaced_by_new_offence: { label: 'Replaced',      bg: '#FEF2F2', color: '#991B1B' },
-  deleted:                         { label: 'Deleted',       bg: '#FEE2E2', color: '#B91C1C' },
-  new:                             { label: 'New',           bg: '#ECFDF5', color: '#065F46' },
+  renumbering_only:                { label: 'Renumbered',      bg: '#EEF2FF', color: '#3730A3' },
+  renumbering_plus_relocation:     { label: 'Relocated',       bg: '#F0FDF4', color: '#166534' },
+  wording_change_same_effect:      { label: 'Minor Wording',   bg: '#FFF7ED', color: '#9A3412' },
+  substantive_change:              { label: 'Substantive ⚠',   bg: '#FEF3C7', color: '#92400E' },
+  deleted_replaced_by_new_offence: { label: 'Replaced',        bg: '#FEF2F2', color: '#991B1B' },
+  deleted:                         { label: 'Deleted',         bg: '#FEE2E2', color: '#B91C1C' },
+  new:                             { label: 'New',             bg: '#ECFDF5', color: '#065F46' },
+  dead_law:                        { label: '⚠ Dead Law',      bg: '#1F2937', color: '#FCA5A5' },
 };
 function changeMeta(ct: string) {
   return CHANGE_META[ct] ?? { label: ct.replace(/_/g, ' '), bg: '#F3F4F6', color: '#374151' };
@@ -126,32 +129,66 @@ function CodeAppliesHelper() {
   );
 }
 
+// ── Guard D: Dead-Law banner ───────────────────────────────────────────────────
+function DeadLawBanner({ item }: { item: XRef }) {
+  return (
+    <View style={dl.card}>
+      <View style={dl.headerRow}>
+        <View style={dl.iconWrap}>
+          <Ionicons name="close-circle" size={28} color="#FCA5A5" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={dl.title}>⚠ Dead Law — Never Cite</Text>
+          <Text style={dl.section}>IPC {item.old_section}</Text>
+        </View>
+      </View>
+      <Text style={dl.offence}>{item.offence}</Text>
+      <View style={dl.reasonBox}>
+        <Text style={dl.reasonText}>{item.what_changed}</Text>
+      </View>
+      {!!item.judicial_citation && (
+        <View style={dl.citationRow}>
+          <Ionicons name="library-outline" size={13} color="#F87171" />
+          <Text style={dl.citationText}>{item.judicial_citation}</Text>
+        </View>
+      )}
+      <View style={dl.warningBox}>
+        <Ionicons name="warning-outline" size={14} color="#FBBF24" />
+        <Text style={dl.warningText}>
+          This provision is void and unenforceable. It must never be cited in a pleading,
+          FIR, or legal document as a valid subsisting law.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 // ── Guard A: Not-in-database wall ─────────────────────────────────────────────
-function NotInDatabaseWall({ sectionQuery }: { sectionQuery: string }) {
+function NotInDatabaseWall({ sectionQuery, totalInDb }: { sectionQuery: string; totalInDb: number }) {
   return (
     <View style={w.wall}>
       <View style={w.iconWrap}>
         <Ionicons name="shield-checkmark-outline" size={32} color="#B91C1C" />
       </View>
-      <Text style={w.title}>Section Not in Verified Database</Text>
+      <Text style={w.title}>No Mapping Found for &ldquo;{sectionQuery}&rdquo;</Text>
       <View style={w.secPill}>
         <Text style={w.secPillTxt}>{sectionQuery}</Text>
       </View>
       <Text style={w.body}>
-        Section mapping not yet verified in our database.{'\n'}
-        Please consult a manual or the bare Act directly.
+        This section is not in our verified cross-reference database.{'\n'}
+        The database currently covers <Text style={{ fontWeight: '700' }}>{totalInDb} entries</Text> and is still expanding.
       </Text>
       <View style={w.actionBox}>
         <Ionicons name="book-outline" size={16} color={NAVY} />
         <Text style={w.actionText}>
-          Refer to the official bare Act at{' '}
+          Cross-check against the bare Act at{' '}
           <Text style={{ fontWeight: '700' }}>indiacode.nic.in</Text>
-          {' '}or the Bharatiya Nyaya Sanhita 2023 gazette.
+          {' '}or the Bharatiya Nyaya Sanhita 2023 gazette before filing.
         </Text>
       </View>
       <Text style={w.note}>
         This tool never guesses or infers a BNS equivalent. Only entries
-        present in the verified cross-reference file are shown.
+        present in the verified cross-reference database are shown.
       </Text>
     </View>
   );
@@ -172,7 +209,13 @@ function UnverifiedBanner() {
 
 // ── Result card ───────────────────────────────────────────────────────────────
 function ResultCard({ item }: { item: XRef }) {
+  // Hook must be called unconditionally (Rules of Hooks)
   const [expanded, setExpanded] = useState(false);
+
+  // Guard D: dead-law → dedicated banner, never a normal card
+  if (item.change_type === 'dead_law' || item.dead_law) {
+    return <DeadLawBanner item={item} />;
+  }
   const meta      = changeMeta(item.change_type);
   const hasNewSec = hasBnsEquivalent(item.new_section); // Guard B
 
@@ -235,6 +278,18 @@ function ResultCard({ item }: { item: XRef }) {
           <Text style={rc.expandHintTxt}>{expanded ? 'Collapse' : 'Tap for explanation'}</Text>
         </View>
       )}
+
+      {/* Source link */}
+      {expanded && !!item.source_link && (
+        <Pressable
+          style={rc.srcLinkRow}
+          onPress={() => Linking.openURL(item.source_link!)}
+          hitSlop={6}
+        >
+          <Ionicons name="open-outline" size={12} color="#2563EB" />
+          <Text style={rc.srcLinkTxt}>View on India Code</Text>
+        </Pressable>
+      )}
     </Pressable>
   );
 }
@@ -270,27 +325,42 @@ export default function IpcBnsLookup() {
   const [lastQuery, setLastQuery] = useState('');
   const [error, setError]         = useState('');
 
+  // A3 fix — always read latest query value, not the stale closure
+  const queryRef = useRef('');
+  const modeRef  = useRef<'keyword' | 'ipc' | 'bns'>('keyword');
+  const abortRef = useRef<AbortController | null>(null);
+
   const search = useCallback(async () => {
-    const q = query.trim();
+    const q = queryRef.current.trim();
+    const m = modeRef.current;
     if (!q) return;
+
+    // Cancel any in-flight request
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     setLoading(true); setError(''); setResults([]);
     setGuard(null);   setSearched(false); setLastQuery(q);
     try {
-      const params = mode === 'ipc' ? `ipc=${encodeURIComponent(q)}`
-                   : mode === 'bns' ? `bns=${encodeURIComponent(q)}`
+      const params = m === 'ipc' ? `ipc=${encodeURIComponent(q)}`
+                   : m === 'bns' ? `bns=${encodeURIComponent(q)}`
                    : `q=${encodeURIComponent(q)}`;
-      const res  = await fetch(`${API_BASE}/api/advocate/cross-reference?${params}`);
+      const res  = await fetch(`${API_BASE}/api/advocate/cross-reference?${params}`,
+                               { signal: ctrl.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setResults(data.results ?? []);
       setGuard(data.citation_guard ?? null);
       setSearched(true);
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return; // superseded by newer query
       setError('Search failed. Check your connection and try again.');
+      setSearched(true);
     } finally {
       setLoading(false);
     }
-  }, [query, mode]);
+  }, []); // deps intentionally empty — reads from refs
 
   const tabs: { key: typeof mode; label: string; icon: string }[] = [
     { key: 'keyword', label: 'Keyword',    icon: 'search-outline' },
@@ -299,8 +369,12 @@ export default function IpcBnsLookup() {
   ];
 
   const isSectionSearch = mode === 'ipc' || mode === 'bns';
-  const showWall        = searched && !loading && isSectionSearch && guard?.query_found_in_db === false;
-  const showResults     = searched && !loading && results.length > 0;
+  // Guard A: section search with zero results
+  const showWall    = searched && !loading && isSectionSearch && guard?.query_found_in_db === false;
+  // A3: explicit no-results for BOTH keyword and section mode
+  const showNoMatch = searched && !loading && !showWall && results.length === 0;
+  const showResults = searched && !loading && results.length > 0;
+  const totalInDb   = guard?.total_in_db ?? 655;
 
   return (
     <SafeAreaView style={s.safe}>
@@ -337,7 +411,10 @@ export default function IpcBnsLookup() {
                 key={t.key}
                 style={[s.tab, mode === t.key && s.tabActive]}
                 onPress={() => {
-                  setMode(t.key); setQuery('');
+                  modeRef.current = t.key;
+                  setMode(t.key);
+                  queryRef.current = '';
+                  setQuery('');
                   setResults([]); setSearched(false); setGuard(null);
                 }}
               >
@@ -352,7 +429,7 @@ export default function IpcBnsLookup() {
             <TextInput
               style={s.searchInput}
               value={query}
-              onChangeText={t => { setQuery(t); setSearched(false); }}
+              onChangeText={t => { queryRef.current = t; setQuery(t); setSearched(false); }}
               placeholder={
                 mode === 'ipc' ? 'IPC/CrPC section e.g. 302, 438, 65B' :
                 mode === 'bns' ? 'BNS/BNSS/BSA section e.g. 103, 482' :
@@ -384,7 +461,7 @@ export default function IpcBnsLookup() {
           )}
 
           {/* Guard A wall */}
-          {showWall && <NotInDatabaseWall sectionQuery={lastQuery} />}
+          {showWall && <NotInDatabaseWall sectionQuery={lastQuery} totalInDb={totalInDb} />}
 
           {/* Results */}
           {showResults && guard && (
@@ -396,12 +473,15 @@ export default function IpcBnsLookup() {
             </>
           )}
 
-          {/* Keyword — no results */}
-          {searched && !loading && !showWall && results.length === 0 && (
+          {/* A3: Explicit no-results — shown for both keyword and section mode */}
+          {showNoMatch && (
             <View style={s.noResults}>
               <Ionicons name="search-outline" size={28} color="#D1D5DB" />
-              <Text style={s.noResultsTxt}>
-                No entries match &ldquo;{lastQuery}&rdquo; in the verified database.
+              <Text style={s.noResultsTitle}>No mapping found for &ldquo;{lastQuery}&rdquo;</Text>
+              <Text style={s.noResultsSub}>
+                This query returned no results from a database of {totalInDb} entries
+                (still expanding). Cross-check against the bare Act at{' '}
+                <Text style={{ fontWeight: '700' }}>indiacode.nic.in</Text> before filing.
               </Text>
             </View>
           )}
@@ -438,8 +518,9 @@ export default function IpcBnsLookup() {
           <View style={s.disclaimer}>
             <Ionicons name="information-circle-outline" size={14} color="#9CA3AF" />
             <Text style={s.disclaimerTxt}>
-              Starter dataset — 57 entries, all pending dual advocate sign-off.
+              {totalInDb} entries — all pending dual advocate sign-off.
               Always cross-check against the bare Act before filing.
+              IPC 303 and other struck-down provisions render with a Dead-Law guard.
             </Text>
           </View>
         </ScrollView>
@@ -493,8 +574,9 @@ const s = StyleSheet.create({
   },
   errorTxt: { flex: 1, fontSize: 13, color: '#B91C1C' },
 
-  noResults:    { alignItems: 'center', gap: 8, paddingVertical: 20 },
-  noResultsTxt: { fontSize: 13, color: '#6B7280', textAlign: 'center' },
+  noResults:     { alignItems: 'center', gap: 8, paddingVertical: 20, paddingHorizontal: 16 },
+  noResultsTitle:{ fontSize: 15, fontWeight: '700', color: '#374151', textAlign: 'center' },
+  noResultsSub:  { fontSize: 13, color: '#6B7280', textAlign: 'center', lineHeight: 20 },
 
   empty:      { alignItems: 'center', paddingTop: 12, gap: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: '#374151' },
@@ -627,4 +709,37 @@ const rc = StyleSheet.create({
   explainTxt:    { fontSize: 13, color: '#1F2937', lineHeight: 20 },
   expandHint:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
   expandHintTxt: { fontSize: 11, color: '#9CA3AF' },
+  srcLinkRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6',
+  },
+  srcLinkTxt: { fontSize: 11, color: '#2563EB', textDecorationLine: 'underline' },
+});
+
+// ── Dead-Law banner styles ─────────────────────────────────────────────────────
+const dl = StyleSheet.create({
+  card: {
+    backgroundColor: '#111827', borderRadius: 14, padding: 16, gap: 10,
+    borderWidth: 2, borderColor: '#EF4444',
+  },
+  headerRow:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconWrap: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: '#1F2937', alignItems: 'center', justifyContent: 'center',
+  },
+  title:       { fontSize: 14, fontWeight: '800', color: '#FCA5A5' },
+  section:     { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 2 },
+  offence:     { fontSize: 13, color: '#D1D5DB', lineHeight: 19 },
+  reasonBox: {
+    backgroundColor: '#1F2937', borderRadius: 10, padding: 12,
+    borderLeftWidth: 3, borderLeftColor: '#EF4444',
+  },
+  reasonText:  { fontSize: 12, color: '#E5E7EB', lineHeight: 18 },
+  citationRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  citationText:{ fontSize: 11, color: '#F87171', fontStyle: 'italic' },
+  warningBox: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: '#78350F20', borderRadius: 8, padding: 10,
+  },
+  warningText: { flex: 1, fontSize: 11, color: '#FBBF24', lineHeight: 17 },
 });

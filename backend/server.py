@@ -929,23 +929,64 @@ async def translate_for_retrieval(text: str, model_provider: str, model_name: st
     the answer; this call only helps the search understand what was asked. Falls
     back to the original text on any failure so a translation hiccup can never
     turn into a broken chat.
+
+    Bug-fix: added asyncio.wait_for(timeout=7 s) so a cold-start or slow LLM
+    response never blocks the retrieval pipeline indefinitely, which was causing
+    intermittent "no verified source" fallbacks for valid Hindi queries.
     """
+    import asyncio as _aio
+
+    def _is_mostly_english(s: str) -> bool:
+        """True when the string is predominantly ASCII text (i.e. English-script)."""
+        if not s:
+            return False
+        non_ascii = sum(1 for c in s if ord(c) >= 128)
+        return non_ascii / max(len(s), 1) < 0.25  # <25% non-ASCII → likely English
+
     try:
         translator = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=f"retrieval-translate-{uuid.uuid4()}",
             system_message=(
-                "Translate the user's Indian-language legal question into a short, "
-                "literal English sentence for a search engine. Preserve every legal "
-                "keyword, name, number and section reference exactly. Output ONLY the "
-                "English translation — no notes, no quotes, no extra words."
+                "You are a legal keyword extractor for an Indian law search engine. "
+                "Given a question in any Indian language, output ONLY 4-6 space-separated "
+                "English keywords that best represent the legal topic. Include: the act name "
+                "(abbreviated if known), section number if mentioned, and the key legal nouns. "
+                "NEVER output a full sentence. NEVER output punctuation. "
+                "Examples:\n"
+                "Input: 'बिना हेलमेट के जुर्माना' → Output: helmet fine penalty Motor Vehicles Act\n"
+                "Input: 'दहेज के लिए उत्पीड़न' → Output: dowry harassment Dowry Prohibition Act IPC 498A\n"
+                "Input: 'UPI धोखाधड़ी शिकायत' → Output: UPI fraud cyber crime IT Act cheating\n"
+                "Input: 'किरायेदार बेदखली' → Output: tenant eviction rent landlord Transfer Property Act\n"
+                "Output ONLY the keywords — no explanation, no notes."
             ),
         ).with_model(model_provider, model_name)
-        result = await translator.send_message(UserMessage(text=text))
+        result = await _aio.wait_for(
+            translator.send_message(UserMessage(text=text)),
+            timeout=7.0,   # never block retrieval > 7 s
+        )
         out = str(result or "").strip().strip('"').strip()
-        return out or text
-    except Exception:
+        if out and _is_mostly_english(out) and out != text:
+            logger.info("retrieval-translate | ok | q=%r | → %r", text[:80], out[:80])
+            print(f"[RTRANSLATE] OK q={text[:40]!r} → {out[:60]!r}", flush=True)
+            return out
+        else:
+            logger.warning(
+                "retrieval-translate | BAD_OUTPUT | q=%r | got=%r",
+                text[:80], out[:80],
+            )
+            print(f"[RTRANSLATE] BAD_OUTPUT got={out[:60]!r}", flush=True)
+            return text
+    except _aio.TimeoutError:
+        logger.warning(
+            "retrieval-translate | TIMEOUT (7 s) | q=%r | falling back to original",
+            text[:80],
+        )
+        print(f"[RTRANSLATE] TIMEOUT q={text[:60]!r}", flush=True)
+        return text
+    except Exception as exc:
         logger.warning("retrieval translation failed; falling back to original text", exc_info=True)
+        print(f"[RTRANSLATE] EXCEPTION {type(exc).__name__}: {exc!s:.100}", flush=True)
         return text
 
 # ---------- Client-side error logging ----------
@@ -1074,16 +1115,17 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     })
 
     # -------- Retrieval-language bridge (Hindi/Indic search fix) --------
-    # The verified corpus is indexed with English-only keywords. A question typed
-    # OR voice-transcribed in Hindi/Tamil/etc. would otherwise always miss every
-    # entry (corpus.py's normalizer strips non-ASCII text to nothing) and get
-    # refused with "no verified source" even when the exact law is covered. We
-    # translate ONLY for matching below — the citations shown and the law
-    # explained still come exclusively from the verified corpus, and the model
-    # still answers the user's own original wording, in their own language.
     retrieval_text = body.message
-    if needs_retrieval_translation(body.message):
+    _is_indic = needs_retrieval_translation(body.message)
+    if _is_indic:
         retrieval_text = await translate_for_retrieval(body.message, body.model_provider, body.model_name)
+        _same = retrieval_text == body.message
+        logger.info(
+            "retrieval-bridge | indic=True | translation_ok=%s | q=%r | t=%r",
+            not _same, body.message[:80], retrieval_text[:80],
+        )
+    else:
+        logger.info("retrieval-bridge | indic=False | q=%r", body.message[:80])
 
     # -------- Retrieval + citation integrity (P1) --------
     # (a) Non-legal / non-Indian jurisdiction → hard refusal, no LLM call
@@ -1217,6 +1259,13 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     # for an act not in the corpus.  Either of these counts as a verified source.
     if not early_refusal and not retrieved and not state_hits and not db_hits and not db_orphan:
         early_refusal = REFUSAL_NO_CORPUS
+
+    logger.info(
+        "retrieval-result | corpus=%d | state=%d | db=%d | orphan=%s | branch=%s",
+        len(retrieved), len(state_hits), len(db_hits),
+        bool(db_orphan),
+        "refusal" if early_refusal else "rag",
+    )
 
     # (c0) Cross-engine noise suppression (general rule, not per-Act — lives
     # here once, not duplicated per topic). The curated Python corpus
@@ -2841,11 +2890,12 @@ from pathlib import Path as _Path
 _XREF_PATH = _Path(__file__).parent / "ipc_bns_mapping.json"
 _XREF_DATA: dict = {}
 
-def _load_xref() -> dict:
+def _load_xref(force_reload: bool = False) -> dict:
     global _XREF_DATA
-    if not _XREF_DATA and _XREF_PATH.exists():
-        with open(_XREF_PATH, encoding="utf-8") as _f:
-            _XREF_DATA = _json_mod.load(_f)
+    if not _XREF_DATA or force_reload:
+        if _XREF_PATH.exists():
+            with open(_XREF_PATH, encoding="utf-8") as _f:
+                _XREF_DATA = _json_mod.load(_f)
     return _XREF_DATA
 
 
@@ -2889,8 +2939,16 @@ def _xref_search(q: str = "", ipc: str = "", bns: str = "") -> list[dict]:
             return q_lower in combined
         return False
 
-    def _normalise(entry: dict, source: str) -> dict:
-        """Flatten heterogeneous entries into a single shape."""
+    def _normalise(entry: dict, source: str, is_dead_law_section: bool = False) -> dict:
+        """Flatten heterogeneous entries into a single shape.
+
+        A4 — classification tag is mandatory:
+          • deleted_ipc_sections entries with dead_law=True → 'dead_law'
+          • deleted_ipc_sections entries without dead_law   → 'deleted'
+          • new_bns_offences entries                        → 'new'
+          • all others must carry their own change_type from the file;
+            entries missing a tag are skipped by the caller.
+        """
         old_sec = (
             entry.get("ipc_section")  or
             entry.get("crpc_section") or
@@ -2901,30 +2959,44 @@ def _xref_search(q: str = "", ipc: str = "", bns: str = "") -> list[dict]:
             entry.get("bnss_section") or
             entry.get("bsa_section")  or "—"
         )
+
+        # Determine change_type, respecting A4 mandatory-tag rule
+        if is_dead_law_section:
+            ct = "dead_law" if entry.get("dead_law") else "deleted"
+        else:
+            ct = entry.get("change_type", "")
+
         return {
-            "source":        source,
-            "old_section":   str(old_sec),
-            "new_section":   str(new_sec),
-            "offence":       entry.get("offence") or entry.get("procedure") or entry.get("provision") or "",
-            "change_type":   entry.get("change_type", ""),
-            "what_changed":  entry.get("what_changed") or entry.get("note") or entry.get("reason") or entry.get("punishment_note") or "",
-            "verified":      entry.get("verified", False),
+            "source":             source,
+            "old_section":        str(old_sec),
+            "new_section":        str(new_sec),
+            "offence":            entry.get("offence") or entry.get("procedure") or entry.get("provision") or "",
+            "change_type":        ct,
+            "what_changed":       entry.get("what_changed") or entry.get("note") or entry.get("reason") or entry.get("punishment_note") or "",
+            "verified":           entry.get("verified", False),
+            "source_link":        entry.get("source_link", ""),
+            "judicial_citation":  entry.get("judicial_citation", ""),
+            "dead_law":           bool(entry.get("dead_law", False)),
         }
 
     seen: set[str] = set()
+    # (key, label, is_dead_law_section)
     sources = [
-        ("ipc_complete_mapping",            "IPC → BNS"),
-        ("bns_to_ipc_mapping",              "IPC → BNS"),
-        ("reverse_lookup_ipc_to_bns",       "IPC → BNS"),
-        ("crpc_to_bnss_mapping",            "CrPC → BNSS"),
-        ("evidence_act_to_bsa_mapping",     "Evidence Act → BSA"),
-        ("new_bns_offences_no_ipc_equivalent", "New BNS"),
-        ("deleted_ipc_sections",            "Deleted IPC"),
+        ("ipc_complete_mapping",               "IPC → BNS",        False),
+        ("bns_to_ipc_mapping",                 "IPC → BNS",        False),
+        ("reverse_lookup_ipc_to_bns",          "IPC → BNS",        False),
+        ("crpc_to_bnss_mapping",               "CrPC → BNSS",      False),
+        ("evidence_act_to_bsa_mapping",        "Evidence Act → BSA", False),
+        ("new_bns_offences_no_ipc_equivalent", "New BNS",          False),
+        ("deleted_ipc_sections",               "Deleted IPC",      True),
     ]
-    for key, src_label in sources:
+    for key, src_label, is_dead_section in sources:
         for entry in data.get(key, []):
             if _matches(entry):
-                norm = _normalise(entry, src_label)
+                norm = _normalise(entry, src_label, is_dead_section)
+                # A4: skip entries that still have no classification tag
+                if not norm.get("change_type"):
+                    continue
                 uid  = f"{norm['old_section']}|{norm['new_section']}"
                 if uid not in seen:
                     seen.add(uid)
@@ -3031,6 +3103,12 @@ class FirEventIn(BaseModel):
     event: str                               # fir_draft_generated | fir_draft_downloaded | fir_user_confirmed_filed
     meta: Optional[dict] = None
 
+class FirFollowupIn(BaseModel):
+    answer: str
+    question_id: str          # 'what_happened' | 'accused' | 'injury_loss'
+    language: str = "en"
+    language_name: str = "English"
+
 _FIR_DISCLAIMER = (
     "⚠️  IMPORTANT DISCLAIMER — READ BEFORE PRESENTING AT THE POLICE STATION\n\n"
     "This document is a citizen-prepared DRAFT for reference purposes only.\n"
@@ -3078,7 +3156,7 @@ A. INFORMANT DETAILS
 ─────────────────────────────────────────
 Name:            {answers.get('informant_name', '[Not provided]')}
 Address:         {answers.get('informant_address', '[Not provided]')}
-Contact Number:  {answers.get('informant_contact', '[Not provided]')}
+Contact Number:  {answers.get('informant_phone', answers.get('informant_contact', '[Not provided]'))}
 Relation to Incident: {answers.get('informant_relation', 'Complainant')}
 
 ─────────────────────────────────────────
@@ -3251,6 +3329,62 @@ async def fir_event(body: FirEventIn):
     })
     return {"ok": True}
 
+
+@api.post("/fir/followup")
+async def fir_followup(body: FirFollowupIn):
+    """
+    LLM-driven follow-up question for FIR intake.
+    Given a citizen's narrative answer, uses the LLM to decide if one
+    empathetic clarifying question is needed before proceeding.
+    Returns { follow_up: "question text" } or { follow_up: null }.
+    """
+    if not body.answer or len(body.answer.strip()) < 10:
+        return {"follow_up": None}
+
+    QUESTION_CONTEXTS = {
+        'what_happened': 'describing what happened during an incident',
+        'accused':       'describing the accused or perpetrators',
+        'injury_loss':   'describing injuries or property damage',
+    }
+    context = QUESTION_CONTEXTS.get(body.question_id, 'answering a question')
+    lang_instruction = f"in {body.language_name}" if body.language_name.lower() != "english" else "in English"
+
+    prompt = f"""You are a compassionate police intake clerk helping a citizen file an FIR.
+The citizen was {context}.
+Their answer: "{body.answer[:450]}"
+
+Determine if ONE important clarifying question is absolutely needed before proceeding.
+Only ask if something critical is CLEARLY MISSING from their answer:
+- Physical injury sustained or medical treatment received
+- Identity or description of the accused (if not at all mentioned)
+- Existence of key evidence (CCTV footage, witnesses, phone messages/screenshots)
+
+STRICT RULES:
+- If the answer is sufficiently detailed to proceed, respond with ONLY: PROCEED
+- If a follow-up IS needed, write ONLY that one question {lang_instruction}, under 12 words, warm and empathetic
+- Do NOT ask about something already mentioned in their answer
+- Do NOT explain your reasoning or add any other text
+
+Your response (only the question or PROCEED):"""
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"fir-followup-{body.question_id}-{id(body)}",
+            system_message="You are a compassionate police intake clerk. Be brief, warm, and helpful."
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+
+        result = await chat.send_message(UserMessage(text=prompt))
+        raw = (result or "PROCEED").strip().strip('"').strip("'")
+
+        # Treat long responses or "PROCEED" prefix as no follow-up needed
+        if not raw or raw.upper().startswith("PROCEED") or len(raw) > 120:
+            return {"follow_up": None}
+
+        return {"follow_up": raw}
+    except Exception as e:
+        logger.error(f"[fir_followup] LLM call failed: {e}")
+        return {"follow_up": None}
 
 
 app.include_router(api)
