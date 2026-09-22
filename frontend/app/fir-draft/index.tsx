@@ -359,15 +359,20 @@ export default function FIRDraftIntake() {
     setIsRecording(false);
     setTranscribing(true);
     try {
-      const uri = await recorder.stop();
-      if (!uri) { setTranscribing(false); return; }
+      // expo-audio 1.x: stop() returns void; the URI is on recorder.uri after stopping
+      await recorder.stop();
+      const uri = recorder.uri;
+      if (!uri) {
+        // Recording produced no file — user may have tapped too quickly or mic was blocked
+        setTranscribing(false);
+        setInputMode('voice');
+        return;
+      }
 
-      // Language hint: use the ISO 639-1 code only (e.g. "hi" not "hi-IN") for
-      // Whisper — shorter codes give slightly better accuracy on Indian languages.
+      // Language hint: ISO 639-1 code (e.g. "hi") for Whisper accuracy on Indian languages
       const langHint = lang?.split('-')[0] ?? 'hi';
-      // Correct argument order: (apiBase, token, uri, languageHint)
+      // Correct arg order: (apiBase, token, uri, languageHint)
       const result = await whisperTranscribeFile(API_BASE, token ?? '', uri, langHint);
-      // `result` is WhisperTranscribeResult → { text, scriptMismatch, detectedScript }
       const text = (result as any)?.text ?? (typeof result === 'string' ? result : '');
       if (text?.trim()) {
         const cleaned = text.trim();
@@ -375,7 +380,7 @@ export default function FIRDraftIntake() {
         setReviewText(cleaned);
         setInputMode('review');
       } else {
-        // Empty transcript (silence / too short) — stay in voice mode so user can try again
+        // Empty transcript (silence / too short) — let user try again
         setInputMode('voice');
       }
     } catch (err: any) {
