@@ -3077,8 +3077,11 @@ async def cross_reference(
 # ============================================================================
 # ─── Voice FIR Drafting Assistant ────────────────────────────────────────────
 # ============================================================================
-from fir_classifier import classify_incident, detect_safety_flags
-from fir_police_stations import find_police_station
+from fir_engine import (
+    create_session, process_turn,
+    STAGE_COMPLETED, STAGE_SAFETY_GATE,
+)
+from fir_storage import init_storage, upload_evidence, download_evidence
 
 class FirDraftIn(BaseModel):
     draft_id: Optional[str] = None          # None → create new
@@ -3087,27 +3090,23 @@ class FirDraftIn(BaseModel):
     answers: Optional[dict] = None          # {q_id: answer_text}
     status: str = "in_progress"             # in_progress | completed
 
-class FirClassifyIn(BaseModel):
-    narrative: str
-    location: Optional[str] = None
-    language: str = "en"
-
-class FirGenerateIn(BaseModel):
-    draft_id: str
+class FirSessionIn(BaseModel):
     user_id: str
     language: str = "en"
+    session_location_start: Optional[dict] = None   # {"lat": ..., "lng": ..., "address": "..."}
 
-class FirEventIn(BaseModel):
-    user_id: Optional[str] = None
-    draft_id: Optional[str] = None
-    event: str                               # fir_draft_generated | fir_draft_downloaded | fir_user_confirmed_filed
-    meta: Optional[dict] = None
 
-class FirFollowupIn(BaseModel):
-    answer: str
-    question_id: str          # 'what_happened' | 'accused' | 'injury_loss'
-    language: str = "en"
-    language_name: str = "English"
+class FirTurnIn(BaseModel):
+    user_message: Optional[str] = None
+    gps: Optional[dict] = None              # {"lat": ..., "lng": ...}  for GPS probe
+    action: Optional[str] = None            # "skip" | "upload_done" | "confirm" | "not_safe"
+
+
+class FirGpsLogIn(BaseModel):
+    lat: float
+    lng: float
+    address: Optional[str] = None
+    log_type: str = "start"                 # "start" | "end"
 
 
 class ChatFollowupIn(BaseModel):
@@ -3115,109 +3114,6 @@ class ChatFollowupIn(BaseModel):
     answer: str           # AI answer (first 500 chars used)
     language: str = "en"
     language_name: str = "English"
-
-
-_FIR_DISCLAIMER = (
-    "⚠️  IMPORTANT DISCLAIMER — READ BEFORE PRESENTING AT THE POLICE STATION\n\n"
-    "This document is a citizen-prepared DRAFT for reference purposes only.\n"
-    "It is NOT a registered First Information Report (FIR).\n"
-    "An FIR can only be formally recorded by the Officer-in-Charge under Section 173(1) BNSS.\n"
-    "The suggested BNS sections are indicative only — the investigating officer will determine "
-    "the applicable sections after investigation.\n"
-    "This document does NOT constitute legal advice.\n\n"
-    "For free legal aid: NALSA helpline 15100 (toll-free, 24×7)\n"
-    "Women/DV helpline: 181 | Child helpline: 1098 | Police: 100"
-)
-
-def _build_fir_text(answers: dict, classification: dict, ps_info: dict, date_str: str) -> str:
-    """Build a Section 173 BNSS format FIR draft text."""
-    sections_text = ""
-    for c in classification.get("candidates", []):
-        sections_text += (
-            f"  • BNS Section {c['bns_section']} — {c['bns_heading']}\n"
-            f"    (formerly {c['legacy_ipc']}) [Confidence: {c['confidence']} — suggested only]\n"
-        )
-    if not sections_text:
-        sections_text = "  (Offence sections could not be determined — to be recorded by the officer)\n"
-
-    station_text = (
-        f"{ps_info.get('station','Not determined')}\n"
-        f"  {ps_info.get('district','Maharashtra')}\n"
-        f"  {ps_info.get('address','')}\n"
-        f"  Tel: {ps_info.get('phone','100')}"
-    ) if ps_info.get("station") else "  To be filled at the police station"
-
-    return f"""{_FIR_DISCLAIMER}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-       FIRST INFORMATION REPORT — CITIZEN DRAFT
-  (To be presented under Section 173 BNSS)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-FIR No.:          [To be assigned by police station]
-Police Station:   {station_text}
-Date of Report:   {date_str}
-Time of Report:   [Time of filing]
-
-─────────────────────────────────────────
-A. INFORMANT DETAILS
-─────────────────────────────────────────
-Name:            {answers.get('informant_name', '[Not provided]')}
-Address:         {answers.get('informant_address', '[Not provided]')}
-Contact Number:  {answers.get('informant_phone', answers.get('informant_contact', '[Not provided]'))}
-Relation to Incident: {answers.get('informant_relation', 'Complainant')}
-
-─────────────────────────────────────────
-B. INCIDENT DETAILS
-─────────────────────────────────────────
-Date & Time of Incident:  {answers.get('incident_datetime', '[Not provided]')}
-Place of Incident:        {answers.get('location', '[Not provided]')}
-
-Description of Incident:
-{answers.get('what_happened', '[Incident description not provided]')}
-
-─────────────────────────────────────────
-C. PERSONS INVOLVED
-─────────────────────────────────────────
-Accused (if known):
-{answers.get('accused', '[Not known / Not identified]')}
-
-Witnesses (if any):
-{answers.get('witnesses', '[None mentioned]')}
-
-─────────────────────────────────────────
-D. INJURY / LOSS
-─────────────────────────────────────────
-{answers.get('injury_loss', '[Not reported]')}
-
-─────────────────────────────────────────
-E. EVIDENCE AVAILABLE
-─────────────────────────────────────────
-{answers.get('evidence', '[None mentioned]')}
-
-─────────────────────────────────────────
-F. SUGGESTED OFFENCE(S) UNDER BNS
-─────────────────────────────────────────
-{sections_text}
-{classification.get('disclaimer','')}
-
-─────────────────────────────────────────
-G. ZERO FIR NOTE
-─────────────────────────────────────────
-{ps_info.get('zero_fir_note', '')}
-{ps_info.get('pilot_note', '')}
-
-─────────────────────────────────────────
-H. SIGNATURE
-─────────────────────────────────────────
-Signature of Informant: _______________________
-Name (Block Letters):   _______________________
-Date:                   {date_str}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Generated by DHARA AI Legal Aid  |  NALSA: 15100
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
 
 
 @api.post("/fir/draft")
@@ -3266,76 +3162,18 @@ async def fir_get_draft(draft_id: str, user: dict = Depends(current_user)):
 
 
 @api.post("/fir/classify")
-async def fir_classify(body: FirClassifyIn):
-    """Classify incident narrative → BNS sections + police station + safety flags."""
-    classification = classify_incident(body.narrative)
-    ps_info = find_police_station(body.location or "") if body.location else {
-        "matched": False, "station": None, "district": None,
-        "confidence": "none",
-        "zero_fir_note": (
-            "📌 Zero FIR: Under Section 173(1) BNSS you can file at ANY police station. "
-            "They MUST accept it."
-        ),
-        "pilot_note": "Location not provided — enter a Maharashtra location for station suggestion.",
-    }
-    return {"classification": classification, "police_station": ps_info}
+async def fir_classify_gone():
+    raise HTTPException(410, "Removed. Use POST /api/fir/session")
 
 
 @api.post("/fir/generate")
-async def fir_generate(body: FirGenerateIn):
-    """Generate the full FIR draft text from a completed draft."""
-    doc = await db.fir_drafts.find_one({"id": body.draft_id, "user_id": body.user_id})
-    if not doc:
-        raise HTTPException(404, "Draft not found")
-
-    answers = doc.get("answers", {})
-    location = answers.get("location", "")
-    # Build combined narrative for classification
-    narrative_parts = [answers.get("what_happened", ""), answers.get("incident_type", "")]
-    narrative = " ".join(p for p in narrative_parts if p)
-
-    classification = classify_incident(narrative)
-    ps_info = find_police_station(location)
-
-    # Build doc checklist from top candidate
-    checklist: list[str] = []
-    for c in classification["candidates"]:
-        checklist.extend(c["doc_checklist"])
-    # Dedupe while preserving order
-    seen: set[str] = set()
-    checklist_deduped = [x for x in checklist if not (x in seen or seen.add(x))]  # type: ignore
-
-    now_str = datetime.now(timezone.utc).strftime("%d %B %Y")
-    draft_text = _build_fir_text(answers, classification, ps_info, now_str)
-
-    await db.fir_drafts.update_one(
-        {"id": body.draft_id},
-        {"$set": {
-            "draft_text": draft_text, "classification": classification,
-            "police_station": ps_info, "safety_flags": classification["safety_flags"],
-            "document_checklist": checklist_deduped, "status": "completed",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }}
-    )
-    return {
-        "draft_id": body.draft_id,
-        "draft_text": draft_text,
-        "classification": classification,
-        "police_station": ps_info,
-        "document_checklist": checklist_deduped,
-        "safety_flags": classification["safety_flags"],
-    }
+async def fir_generate_gone():
+    raise HTTPException(410, "Removed. Use POST /api/fir/session/{id}/turn")
 
 
 @api.post("/fir/event")
-async def fir_event(body: FirEventIn):
-    """Log a FIR analytics event."""
-    await db.fir_events.insert_one({
-        "event": body.event, "user_id": body.user_id,
-        "draft_id": body.draft_id, "meta": body.meta or {},
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-    return {"ok": True}
+async def fir_event_gone():
+    raise HTTPException(410, "Removed.")
 
 
 @api.post("/chat/followup")
@@ -3392,60 +3230,113 @@ Reply ONLY with a valid JSON array of strings, nothing else:
 
 
 @api.post("/fir/followup")
-async def fir_followup(body: FirFollowupIn):
-    """
-    LLM-driven follow-up question for FIR intake.
-    Given a citizen's narrative answer, uses the LLM to decide if one
-    empathetic clarifying question is needed before proceeding.
-    Returns { follow_up: "question text" } or { follow_up: null }.
-    """
-    if not body.answer or len(body.answer.strip()) < 10:
-        return {"follow_up": None}
+async def fir_followup_gone():
+    raise HTTPException(410, "Removed. Use POST /api/fir/session/{id}/turn")
 
-    QUESTION_CONTEXTS = {
-        'what_happened': 'describing what happened during an incident',
-        'accused':       'describing the accused or perpetrators',
-        'injury_loss':   'describing injuries or property damage',
-    }
-    context = QUESTION_CONTEXTS.get(body.question_id, 'answering a question')
-    lang_instruction = f"in {body.language_name}" if body.language_name.lower() != "english" else "in English"
 
-    prompt = f"""You are a compassionate police intake clerk helping a citizen file an FIR.
-The citizen was {context}.
-Their answer: "{body.answer[:450]}"
+# ─── NEW: FIR Session Interview Engine ─────────────────────────────────────────
 
-Determine if ONE important clarifying question is absolutely needed before proceeding.
-Only ask if something critical is CLEARLY MISSING from their answer:
-- Physical injury sustained or medical treatment received
-- Identity or description of the accused (if not at all mentioned)
-- Existence of key evidence (CCTV footage, witnesses, phone messages/screenshots)
 
-STRICT RULES:
-- If the answer is sufficiently detailed to proceed, respond with ONLY: PROCEED
-- If a follow-up IS needed, write ONLY that one question {lang_instruction}, under 12 words, warm and empathetic
-- Do NOT ask about something already mentioned in their answer
-- Do NOT explain your reasoning or add any other text
+@api.post("/fir/session")
+async def fir_create_session(body: FirSessionIn):
+    """Create a fresh, blank FIR session (Safety Gate stage)."""
+    return await create_session(
+        db,
+        user_id=body.user_id,
+        language=body.language,
+        session_location_start=body.session_location_start,
+    )
 
-Your response (only the question or PROCEED):"""
 
-    try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"fir-followup-{body.question_id}-{id(body)}",
-            system_message="You are a compassionate police intake clerk. Be brief, warm, and helpful."
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+@api.post("/fir/session/{session_id}/turn")
+async def fir_session_turn(session_id: str, body: FirTurnIn):
+    """Process one conversation turn in the FIR interview engine."""
+    return await process_turn(
+        db=db,
+        corpus_db=corpus_db,
+        session_id=session_id,
+        user_message=body.user_message,
+        gps=body.gps,
+        action=body.action,
+        llm_key=EMERGENT_LLM_KEY,
+    )
 
-        result = await chat.send_message(UserMessage(text=prompt))
-        raw = (result or "PROCEED").strip().strip('"').strip("'")
 
-        # Treat long responses or "PROCEED" prefix as no follow-up needed
-        if not raw or raw.upper().startswith("PROCEED") or len(raw) > 120:
-            return {"follow_up": None}
+@api.post("/fir/session/{session_id}/gps")
+async def fir_log_gps(session_id: str, body: FirGpsLogIn):
+    """Silently log GPS at session start or end."""
+    gps_data = {"lat": body.lat, "lng": body.lng, "address": body.address or "",
+                "timestamp": datetime.now(timezone.utc).isoformat()}
+    field = "session_location_start" if body.log_type == "start" else "session_location_end"
+    await db.fir_sessions.update_one(
+        {"session_id": session_id},
+        {"$set": {field: gps_data, "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True}
 
-        return {"follow_up": raw}
-    except Exception as e:
-        logger.error(f"[fir_followup] LLM call failed: {e}")
-        return {"follow_up": None}
+
+@api.post("/fir/session/{session_id}/evidence")
+async def fir_upload_evidence(session_id: str, file: UploadFile = File(...)):
+    """Upload one evidence file (max 20 MB). Stored via Emergent Object Storage."""
+    MAX_SIZE = 20 * 1024 * 1024
+    data = await file.read()
+    if len(data) > MAX_SIZE:
+        raise HTTPException(413, "File too large — maximum 20 MB per file")
+
+    session = await db.fir_sessions.find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if len(session.get("evidence_files", [])) >= 10:
+        raise HTTPException(400, "Maximum 10 files per session")
+
+    content_type = file.content_type or "application/octet-stream"
+    filename = file.filename or "evidence"
+
+    meta = await upload_evidence(
+        user_id=session.get("user_id", "anon"),
+        session_id=session_id,
+        filename=filename,
+        data=data,
+        content_type=content_type,
+    )
+    await db.fir_sessions.update_one(
+        {"session_id": session_id},
+        {"$push": {"evidence_files": meta},
+         "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True, "file": meta}
+
+
+@api.get("/fir/session/{session_id}/evidence/{file_id}")
+async def fir_download_evidence(session_id: str, file_id: str):
+    """Download an evidence file by file_id."""
+    from fastapi.responses import Response
+    session = await db.fir_sessions.find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(404, "Session not found")
+    ev = next((e for e in session.get("evidence_files", []) if e.get("file_id") == file_id), None)
+    if not ev:
+        raise HTTPException(404, "File not found")
+    data, content_type = await download_evidence(ev["storage_path"])
+    return Response(content=data, media_type=content_type)
+
+
+@api.get("/fir/sessions/{user_id}")
+async def fir_list_sessions(user_id: str):
+    """List all FIR sessions for a user (for pause/resume)."""
+    docs = await db.fir_sessions.find(
+        {"user_id": user_id}, {"_id": 0, "narrative_turns": 0}
+    ).sort("updated_at", -1).to_list(20)
+    return docs
+
+
+@api.get("/fir/session/{session_id}")
+async def fir_get_session(session_id: str):
+    """Get a FIR session by session_id."""
+    doc = await db.fir_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Session not found")
+    return doc
 
 
 app.include_router(api)
@@ -3472,6 +3363,9 @@ async def _startup():
         await db.verification_log.create_index("advocate_id")
     except Exception as e:
         logger.warning(f"[startup] advocate index creation warning: {e}")
+
+    # Fire-and-forget: initialise Emergent Object Storage for evidence uploads
+    asyncio.create_task(init_storage())
 
     # Fire-and-forget background task, NOT awaited: the corpus migration
     # (see corpus_migration.py) starts automatically the instant this
