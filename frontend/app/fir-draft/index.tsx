@@ -25,6 +25,7 @@ import { createBrowserTtsPlayer } from '@/src/voice/browserPlayer';
 import { VoiceNotice } from '@/src/components/VoiceNotice';
 import { theme } from '@/src/theme';
 import FirSectionDrawer, { SectionItem, DroppedSection } from '@/src/components/FirSectionDrawer';
+import { MarqueeBanner } from '@/src/components/MarqueeBanner';
 
 // Native location is optional; importing it on web fails in the installed version.
 const Location: typeof import('expo-location') | null =
@@ -916,6 +917,7 @@ ${data.bot_message}`);
           </Pressable>
           <Text style={styles.preTitle}>FIR Draft Assistant</Text>
         </View>
+        <MarqueeBanner variant="light" />
         <ScrollView contentContainerStyle={styles.preBody}>
           {resumeError ? <Text testID="fir-resume-error" accessibilityRole="alert" style={{ color: theme.colors.error, lineHeight: 22 }}>{resumeError}</Text> : null}
           {/* v3.3: Resume banner */}
@@ -1053,6 +1055,8 @@ ${data.bot_message}`);
         </View>
       )}
       </View>
+      {/* Scrolling verified-sources ticker */}
+      <MarqueeBanner variant="dark" />
       {voiceNotice && (
         <VoiceNotice testID="fir-voice-notice" message={voiceNotice}
           onPlay={playbackBlocked ? () => speakerRef.current?.retryPlayback() : undefined}

@@ -37,6 +37,7 @@ import { theme } from '@/src/theme';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 import { addBookmark } from '@/src/bookmarks';
 import { t } from '@/src/i18n';
+import { MarqueeBanner } from '@/src/components/MarqueeBanner';
 
 /** Strip raw markdown markers from streaming text so asterisks/hashes never
  *  flash in the UI while the LLM is still mid-sentence. Called only on the
@@ -1598,6 +1599,9 @@ export default function ChatScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* ── Verified-sources scrolling ticker ────────────────────────────── */}
+      <MarqueeBanner variant="light" />
 
       {/* Web-only fallback for Alert.alert (a no-op on react-native-web) —
           surfaces mic/permission errors that would otherwise vanish silently. */}

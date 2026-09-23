@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
 import { ComplaintsList } from '@/src/home/ComplaintsList';
 import { DisclaimerBanner } from '@/src/components/DisclaimerBanner';
+import { MarqueeBanner } from '@/src/components/MarqueeBanner';
 import { ConsentPublicHelp } from '@/src/components/ConsentPublicHelp';
 import { consentCopy } from '@/src/consentCopy';
 
@@ -30,12 +31,13 @@ export default function Home() {
   return <SafeAreaView style={styles.safe} edges={['top']} testID="home-screen">
     <View testID="home-header" style={styles.header}>
       <View style={styles.logo}><Text style={styles.logoText}>ध</Text></View>
-      <View style={styles.brandWrap}><Text testID="home-brand" style={styles.brand}>Dhara</Text><Text testID="home-tagline" style={styles.tagline}>YOUR LEGAL RIGHTS</Text></View>
+      <View testID="home-brand-wrap" style={styles.brandWrap}><Text testID="home-brand" style={styles.brand} numberOfLines={1} adjustsFontSizeToFit>Dhara</Text><Text testID="home-tagline" style={styles.tagline}>YOUR LEGAL RIGHTS</Text></View>
       <Pressable testID="home-language" accessibilityRole="button" accessibilityLabel="Change language" style={styles.language} onPress={() => router.push({ pathname: '/language', params: { from: 'home' } })}>
         <Ionicons name="globe-outline" size={15} color={colors.onBrandPrimary} /><Text style={styles.languageText} numberOfLines={1}>{language.native}</Text><Ionicons name="chevron-down" size={12} color={colors.onBrandPrimary} />
       </Pressable>
       <Pressable testID="home-profile" accessibilityRole="button" accessibilityLabel="Your profile" style={styles.profile} onPress={() => router.push('/(tabs)/settings')}><Ionicons name="person-outline" size={20} color={colors.onBrandPrimary} /></Pressable>
     </View>
+    <MarqueeBanner variant="dark" />
     <ScrollView testID="home-scroll" style={styles.scroll} contentContainerStyle={styles.content}>
       <Animated.View testID="home-content" style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>
         <View testID="home-greeting-panel" style={styles.greeting}><Text testID="home-greeting" style={styles.greetingText}>{greeting}, {firstName}</Text></View>
@@ -63,7 +65,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 18 },
   logo: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center' },
   logoText: { fontSize: 22, color: colors.onGold, fontWeight: '800' },
-  brandWrap: { flex: 1, minWidth: 62 },
+  brandWrap: { flex: 1, minWidth: 0, flexShrink: 1 },
   brand: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 22, letterSpacing: 0.2 },
   tagline: { color: colors.onNavyMuted, fontSize: 8, lineHeight: 14, letterSpacing: 0.9 },
   language: { flexDirection: 'row', gap: 5, alignItems: 'center', backgroundColor: colors.navyOverlay, paddingHorizontal: 10, minHeight: 44, borderRadius: 24, maxWidth: 118 },

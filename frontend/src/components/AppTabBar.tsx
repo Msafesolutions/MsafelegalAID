@@ -9,7 +9,7 @@ const TABS = [
   { name: 'home', label: 'Home', icon: 'home-outline', activeIcon: 'home', testID: 'tab-home' },
   { name: 'rights', label: 'Rights', icon: 'shield-outline', activeIcon: 'shield', testID: 'tab-rights' },
   { name: 'index', label: 'Ask AI', icon: 'chatbubble-outline', activeIcon: 'chatbubble-outline', testID: 'tab-chat' },
-  { name: 'advocate', label: 'Locate', icon: 'location-outline', activeIcon: 'location', testID: 'tab-advocate' },
+  { name: 'advocate', label: 'Advocate', icon: 'briefcase-outline', activeIcon: 'briefcase', testID: 'tab-advocate' },
   { name: 'settings', label: 'Profile', icon: 'person-outline', activeIcon: 'person', testID: 'tab-settings' },
 ] as const;
 
