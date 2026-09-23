@@ -15,8 +15,8 @@ import {
   STATES_UTS, DISTRICTS, CNR_STATE_CODES, CNR_COURT_CODES,
 } from '@/src/courtData';
 
-const NAVY  = '#14365A';
-const GOLD  = '#D3B675';
+const NAVY  = theme.colors.primary;
+const GOLD  = theme.colors.gold;
 const CREAM = '#F8F6F0';
 const HINT  = '#999999';
 

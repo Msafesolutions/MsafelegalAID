@@ -7,10 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE } from '@/src/auth';
+import { theme } from '@/src/theme';
 import { INTAKE_TEMPLATES, getTemplate, IntakeTemplate } from '@/src/intakeTemplates';
 
-const NAVY = '#14365A';
-const GOLD = '#D3B675';
+const NAVY = theme.colors.primary;
+const GOLD = theme.colors.gold;
 
 // Simple native STT helper — no auth needed (on-device)
 async function startNativeSTT(

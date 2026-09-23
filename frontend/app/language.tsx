@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth, Language } from '@/src/auth';
 import { theme } from '@/src/theme';
@@ -37,11 +37,15 @@ const LANGUAGES: Language[] = [
 export default function LanguageSelect() {
   const { language, setLanguage } = useAuth();
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
   const [selected, setSelected] = useState<Language>(language);
 
   const onContinue = async () => {
     await setLanguage(selected);
-    router.replace('/login');
+    if (from === 'home') {
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)/home');
+    } else router.replace('/login');
   };
 
   return (

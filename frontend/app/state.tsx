@@ -72,7 +72,7 @@ export default function StateSelect() {
   }, [states, query]);
 
   const done = () => {
-    if (onboarding) router.replace('/(tabs)');
+    if (onboarding) router.replace('/(tabs)/home');
     else router.back();
   };
 

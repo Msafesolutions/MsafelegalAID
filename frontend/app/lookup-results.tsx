@@ -13,9 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth, API_BASE } from '@/src/auth';
+import { theme } from '@/src/theme';
 
-const NAVY  = '#14365A';
-const GOLD  = '#D3B675';
+const NAVY  = theme.colors.primary;
+const GOLD  = theme.colors.gold;
 const CREAM = '#F8F6F0';
 const HINT  = '#8A8A8A';
 

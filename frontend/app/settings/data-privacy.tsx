@@ -38,8 +38,8 @@ const SUPPORT_EMAIL          = '{{SUPPORT_EMAIL}}';
 const GRIEVANCE_OFFICER_NAME = '{{GRIEVANCE_OFFICER_NAME}}';
 
 // ── Accent colours (spec) ─────────────────────────────────────────────────────
-const PRIMARY     = '#1E3A8A';   // section headers
-const ACCENT      = '#F59E0B';   // accordion chevron (open)
+const PRIMARY     = theme.colors.primary;
+const ACCENT      = theme.colors.brandSecondary;
 const DESTRUCTIVE = '#DC2626';   // delete action
 const BADGE_BG    = '#F0FDF4';   // compliance badge background
 const BADGE_TEXT  = '#166534';   // compliance badge text

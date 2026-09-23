@@ -1,11 +1,11 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { View, Platform, StyleSheet, useWindowDimensions, Pressable, Text } from 'react-native';
+import { View, Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PlatformPressable } from '@react-navigation/elements';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { theme } from '@/src/theme';
-import { DisclaimerBanner } from '@/src/components/DisclaimerBanner';
+import { AppTabBar } from '@/src/components/AppTabBar';
 import { useAuth } from '@/src/auth';
 import { addNotificationTapListener } from '@/src/push';
 import { t } from '@/src/i18n';
@@ -23,9 +23,6 @@ export default function TabsLayout() {
   const { token, loading, language } = useAuth();
   const router = useRouter();
   const { fontScale } = useWindowDimensions();
-  // Measure disclaimer height to correctly position the Ask AI FAB above it
-  const [disclaimerH, setDisclaimerH] = useState(40);
-  const tabBarH = 60 + Math.ceil(16 * Math.max(1, fontScale));
 
   useEffect(() => {
     if (loading) return;
@@ -53,6 +50,8 @@ export default function TabsLayout() {
     <SafeAreaView style={styles.root} edges={['bottom']} testID="tabs-layout">
       <View style={styles.content}>
         <Tabs
+          initialRouteName="home"
+          tabBar={props => <AppTabBar {...props} />}
           safeAreaInsets={{ bottom: 0 }}
           screenOptions={{
             headerShown: false,
@@ -68,6 +67,7 @@ export default function TabsLayout() {
             tabBarButton: props => <PlatformPressable {...props} style={[props.style, styles.tabButton]} />,
           }}
         >
+          <Tabs.Screen name="home" options={{ title: 'Home' }} />
           <Tabs.Screen
             name="index"
             options={{
@@ -137,30 +137,6 @@ export default function TabsLayout() {
           />
         </Tabs>
       </View>
-      {/* In normal layout below the tabs, never over their icons or labels. */}
-      <View onLayout={(e) => setDisclaimerH(e.nativeEvent.layout.height)}>
-        <DisclaimerBanner />
-      </View>
-      {/* ── Saffron "Ask AI" FAB — centered above tab bar ──────────────────────
-          Navigates to the main legal Q&A chat screen with one tap.
-          pointerEvents="box-none" lets touches pass through the transparent
-          container so the tab bar remains fully tappable around the FAB. */}
-      <View
-        pointerEvents="box-none"
-        style={[styles.fabContainer, { bottom: disclaimerH + tabBarH + 4 }]}
-      >
-        <Pressable
-          testID="ask-ai-fab"
-          style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-          onPress={() => router.push('/(tabs)/' as any)}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Ask AI"
-        >
-          <Ionicons name="mic" size={22} color="#fff" />
-          <Text style={styles.fabLabel}>Ask AI</Text>
-        </Pressable>
-      </View>
     </SafeAreaView>
   );
 }
@@ -191,7 +167,7 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: '#F59E0B',
+    backgroundColor: theme.colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
@@ -199,7 +175,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.surface,
     ...Platform.select({
       ios: {
-        shadowColor: '#B45309',
+        shadowColor: theme.colors.shadow,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.45,
         shadowRadius: 8,
@@ -208,7 +184,7 @@ const styles = StyleSheet.create({
     }),
   },
   fabPressed: {
-    backgroundColor: '#D97706',
+    backgroundColor: theme.colors.accentDark,
   },
   fabLabel: {
     fontSize: 9,

@@ -8,10 +8,11 @@ import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth, API_BASE } from '@/src/auth';
+import { theme } from '@/src/theme';
 import { INTAKE_TEMPLATES, IntakeTemplate } from '@/src/intakeTemplates';
 
-const NAVY = '#14365A';
-const GOLD = '#D3B675';
+const NAVY = theme.colors.primary;
+const GOLD = theme.colors.gold;
 
 type Intake = {
   id: string;

@@ -15,16 +15,17 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE, useAuth } from '@/src/auth';
+import { theme } from '@/src/theme';
 import FirSectionDrawer, { SectionItem, DroppedSection } from '@/src/components/FirSectionDrawer';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
-const NAVY   = '#14365A';
-const GOLD   = '#D3B675';
-const CREAM  = '#F5F0E6';
-const SURFACE = '#FDFBF7';
-const MUTED  = '#4A5A6E';
-const BORDER = '#D1D5DB';
-const RED    = '#B91C1C';
+const NAVY   = theme.colors.primary;
+const GOLD   = theme.colors.gold;
+const CREAM  = theme.colors.surfaceSecondary;
+const SURFACE = theme.colors.surface;
+const MUTED  = theme.colors.onSurfaceSecondary;
+const BORDER = theme.colors.border;
+const RED    = theme.colors.error;
 
 const HELPLINES = [
   { label: 'Police',         number: '100',   icon: 'shield-outline' },
@@ -196,7 +197,7 @@ export default function FIRResult() {
 
   if (draftLoading) {
     return (
-      <SafeAreaView style={styles.root}>
+      <SafeAreaView testID="fir-result-loading" style={styles.root}>
         <View style={styles.center}>
           <ActivityIndicator size="large" color={NAVY} />
           <Text style={styles.loadingText}>Loading your draft…</Text>
@@ -207,11 +208,11 @@ export default function FIRResult() {
 
   if (draftError || !draftText) {
     return (
-      <SafeAreaView style={styles.root}>
+      <SafeAreaView testID="fir-result-error" style={styles.root}>
         <View style={styles.center}>
           <Ionicons name="alert-circle-outline" size={48} color={RED} />
           <Text style={[styles.loadingText, { color: RED, marginTop: 12 }]}>{draftError || 'Draft could not be loaded.'}</Text>
-          <Pressable onPress={() => router.back()} style={{ marginTop: 20, padding: 12, backgroundColor: NAVY, borderRadius: 8 }}>
+          <Pressable testID="fir-result-error-back" onPress={() => router.back()} style={{ marginTop: 20, padding: 12, backgroundColor: NAVY, borderRadius: 8 }}>
             <Text style={{ color: '#fff', fontWeight: '600' }}>← Go Back</Text>
           </Pressable>
         </View>
@@ -220,10 +221,10 @@ export default function FIRResult() {
   }
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView testID="fir-result-screen" style={styles.root}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+        <Pressable testID="fir-result-back" accessibilityLabel="Go back" onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="arrow-back" size={22} color={SURFACE} />
         </Pressable>
         <View style={styles.headerCenter}>
@@ -233,7 +234,7 @@ export default function FIRResult() {
         {/* Issue 9: Section menu button */}
         {suggestedSections.length > 0 && (
           <Pressable
-            onPress={() => setShowSectionDrawer(true)}
+            testID="fir-result-sections-menu" onPress={() => setShowSectionDrawer(true)}
             style={styles.sectionMenuBtn}
             hitSlop={12}
           >
@@ -263,7 +264,7 @@ export default function FIRResult() {
 
         {/* Issue 9: Sections summary badge (if sections available) */}
         {suggestedSections.length > 0 && (
-          <Pressable style={styles.sectionsSummaryCard} onPress={() => setShowSectionDrawer(true)}>
+          <Pressable testID="fir-result-sections-summary" style={styles.sectionsSummaryCard} onPress={() => setShowSectionDrawer(true)}>
             <Ionicons name="library-outline" size={16} color={NAVY} />
             <Text style={styles.sectionsSummaryText}>
               {suggestedSections.length} BNS section{suggestedSections.length !== 1 ? 's' : ''} suggested
@@ -279,27 +280,27 @@ export default function FIRResult() {
             <Ionicons name="document-text-outline" size={18} color={NAVY} />
             <Text style={styles.draftTitle}>Complaint Letter</Text>
           </View>
-          <Text style={styles.draftText} selectable>{draftText}</Text>
+          <Text testID="fir-result-draft-text" style={styles.draftText} selectable>{draftText}</Text>
         </View>
 
         {/* Action buttons */}
         <View style={styles.actions}>
-          <Pressable style={styles.actionBtn} onPress={handleCopy}>
+          <Pressable testID="fir-result-copy" style={styles.actionBtn} onPress={handleCopy}>
             <Ionicons name={copyDone ? 'checkmark-circle' : 'copy-outline'} size={20} color={NAVY} />
             <Text style={styles.actionBtnText}>{copyDone ? 'Copied!' : 'Copy Text'}</Text>
           </Pressable>
-          <Pressable style={styles.actionBtn} onPress={handleShare} disabled={sharing}>
+          <Pressable testID="fir-result-share" style={styles.actionBtn} onPress={handleShare} disabled={sharing}>
             {sharing
               ? <ActivityIndicator size="small" color={NAVY} />
               : <Ionicons name="share-outline" size={20} color={NAVY} />}
             <Text style={styles.actionBtnText}>Share</Text>
           </Pressable>
-          <Pressable style={styles.actionBtn} onPress={handleExport}>
+          <Pressable testID="fir-result-export-text" style={styles.actionBtn} onPress={handleExport}>
             <Ionicons name="download-outline" size={20} color={NAVY} />
             <Text style={styles.actionBtnText}>Export .txt</Text>
           </Pressable>
           {/* v3.3: PDF download */}
-          <Pressable style={[styles.actionBtn, styles.actionBtnPdf]} onPress={handleDownloadPdf} disabled={downloadingPdf}>
+          <Pressable testID="fir-result-export-pdf" style={[styles.actionBtn, styles.actionBtnPdf]} onPress={handleDownloadPdf} disabled={downloadingPdf}>
             {downloadingPdf
               ? <ActivityIndicator size="small" color="#fff" />
               : <Ionicons name="document-attach-outline" size={20} color="#fff" />}
@@ -340,6 +341,7 @@ export default function FIRResult() {
 
         {/* Start new complaint */}
         <Pressable
+          testID="fir-result-new-complaint"
           style={styles.newComplaintBtn}
           onPress={() => router.replace('/fir-draft')}
         >
@@ -373,7 +375,7 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1 },
   headerTitle: { fontSize: 16, fontWeight: '700', color: '#fff' },
   headerSub: { fontSize: 12, color: GOLD },
-  backBtn: { padding: 4 },
+  backBtn: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   sectionMenuBtn: { padding: 6 },
 
   // Scroll

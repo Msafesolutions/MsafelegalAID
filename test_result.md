@@ -151,6 +151,20 @@ backend:
           comment: "⚠️ NOT TESTED: Endpoint requires actual audio file upload. Cannot test without audio sample. Endpoint is available and configured correctly based on code review."
 
 frontend:
+  - task: "Screenshot-matched Home and app-wide navy, white and gold palette"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/home.tsx; frontend/src/home; frontend/src/components/AppTabBar.tsx; frontend/src/theme.ts; frontend/app/complaints.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Built screenshot-shaped Home with navy header/greeting, quick-help cards, real active/completed complaint previews, See all screen, Pro entry; five tabs Home/Rights/Ask AI/Locate/Profile and saved/lookup/history shortcuts in Profile. App-wide brand overrides migrated to shared navy/gold tokens. Manual screenshot confirms Home and chat render. Testing caught backend draft retrieval reading draft_text instead of engine's draft; corrected fallback, curl verifies real owner draft 4271 chars and preserved anon401/other403. Need final UI navigation regression and small-screen check. No paid AI/voice/payment calls needed."
+        - working: true
+          agent: "main"
+          comment: "Final manual verification after iteration21: paused resume auto-restores actual chat from Home AND See all (fir-text-input visible); Back correct. Completed draft renders 4271chars. Pro/Settings terms render without unexpected-text-node errors. Home 390x844 screenshot matches navy/white/gold direction. 320x568 has no horizontal overflow and all five tabs >=44pt within viewport. Final console errors []. Screenshots/console automation_output/20260923_213430. Report only modified by testing agent; no source changes. New source has no TS diagnostics, 11 unrelated pre-existing remain. No paid service calls or emergency calls."
   - task: "Consent Continue blockage and readable Terms & Conditions"
     implemented: true
     working: true

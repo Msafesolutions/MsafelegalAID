@@ -22,7 +22,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email.trim(), password);
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home');
     } catch (e: any) {
       setError(e?.message || 'Login failed');
     } finally {
@@ -36,7 +36,7 @@ export default function Login() {
     setGoogleLoading(true);
     try {
       await loginWithGoogle();
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home');
     } catch (e: any) {
       setError(e?.message || 'Google sign-in failed');
     } finally {

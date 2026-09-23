@@ -4,6 +4,8 @@
  * Each template defines structured questions the client fills in.
  */
 
+import { theme } from './theme';
+
 export type QuestionType = 'text' | 'textarea';
 
 export interface IntakeQuestion {
@@ -77,7 +79,7 @@ export const INTAKE_TEMPLATES: IntakeTemplate[] = [
     title: 'Civil Dispute',
     description: 'Contracts, money recovery, injunctions',
     icon: 'document-text-outline',
-    color: '#2563EB',
+    color: theme.colors.primary,
     questions: [
       {
         id: 'dispute_nature',

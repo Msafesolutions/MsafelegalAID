@@ -8,13 +8,14 @@ import {
   View, Text, Pressable, ScrollView, StyleSheet, Animated, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { theme } from '@/src/theme';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const DRAWER_WIDTH = Math.min(320, SCREEN_WIDTH * 0.82);
 
-const NAVY   = '#14365A';
-const GOLD   = '#D3B675';
-const CREAM  = '#F5F0E6';
+const NAVY   = theme.colors.primary;
+const GOLD   = theme.colors.gold;
+const CREAM  = theme.colors.surfaceSecondary;
 const SURFACE = '#FDFBF7';
 const MUTED  = '#4A5A6E';
 const BORDER = '#D1D5DB';

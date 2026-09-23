@@ -15,8 +15,8 @@ const SPECIALIZATIONS = [
   'Labour', 'Constitutional', 'Corporate', 'RTI', 'Other',
 ];
 
-const NAVY  = '#14365A';
-const GOLD  = '#D3B675';
+const NAVY  = theme.colors.primary;
+const GOLD  = theme.colors.gold;
 
 export default function AdvocateRegister() {
   const { token, user } = useAuth();

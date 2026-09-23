@@ -359,7 +359,7 @@ export default function Upgrade() {
           </View>
         ) : (
           <>
-            {errorMsg && (
+            {!!errorMsg && (
               <View testID="upgrade-error" style={styles.errorBox}>
                 <Ionicons name="alert-circle" size={18} color={theme.colors.error} />
                 <Text style={styles.errorText}>{errorMsg}</Text>

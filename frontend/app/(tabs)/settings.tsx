@@ -313,6 +313,21 @@ export default function Settings() {
 
         <Text style={styles.section}>Tools</Text>
 
+        <Pressable testID="profile-saved-answers" style={styles.row} onPress={() => router.push('/(tabs)/saved')}>
+          <Ionicons name="bookmark-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Saved answers</Text><Text style={styles.rowSub}>Read your bookmarked legal information</Text></View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.onSurfaceSecondary} />
+        </Pressable>
+        <Pressable testID="profile-legal-lookup" style={styles.row} onPress={() => router.push('/(tabs)/lookup')}>
+          <Ionicons name="search-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Legal lookup</Text><Text style={styles.rowSub}>Search sections and verified sources</Text></View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.onSurfaceSecondary} />
+        </Pressable>
+        <Pressable testID="profile-chat-history" style={styles.row} onPress={() => router.push('/(tabs)/history')}>
+          <Ionicons name="time-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Chat history</Text><Text style={styles.rowSub}>Revisit your conversations</Text></View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.onSurfaceSecondary} />
+        </Pressable>
         <Pressable testID="open-drafts" style={styles.row} onPress={() => router.push('/drafts')}>
           <Ionicons name="document-text-outline" size={22} color={theme.colors.brand} />
           <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
@@ -504,7 +519,7 @@ export default function Settings() {
               secureTextEntry
               editable={!deleteLoading}
             />
-            {deleteError && (
+            {!!deleteError && (
               <Text style={styles.error} testID="delete-account-error">{deleteError}</Text>
             )}
             <Pressable
@@ -597,6 +612,7 @@ const styles = StyleSheet.create({
   voiceModeSub: { fontSize: 12, color: theme.colors.onSurfaceSecondary, marginTop: 2 },
   voiceModeSubActive: { color: 'rgba(255,255,255,0.75)' },
   rowTitle: { color: theme.colors.onSurface, fontWeight: '600' },
+  rowSub: { color: theme.colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19, marginTop: 2 },
   rowValue: { color: theme.colors.onSurfaceSecondary, fontSize: 13, marginTop: 2 },
   sosRow: {
     flexDirection: 'row',

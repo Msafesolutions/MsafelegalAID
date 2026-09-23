@@ -1740,7 +1740,7 @@ export default function ChatScreen() {
                     <Text style={styles.proUpgradeTitle}>Upgrade to Pro</Text>
                     <Text style={styles.proUpgradeSub}>Lawyer-style deep answers, drafts & action plans</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color="#D97706" />
+                  <Ionicons name="chevron-forward" size={16} color={theme.colors.gold} />
                 </Pressable>
               )}
             </View>
@@ -3057,7 +3057,7 @@ const styles = StyleSheet.create({
   crimeTypeBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1E3A8A',
+    color: theme.colors.primary,
   },
   // ── Pro upgrade card (empty state, bottom) ─────────────────────────────────
   proUpgradeCard: {
@@ -3066,9 +3066,9 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.lg,
     padding: theme.spacing.lg,
     borderRadius: theme.radius.lg,
-    backgroundColor: '#FFFBEC',
+    backgroundColor: theme.colors.primary,
     borderWidth: 1.5,
-    borderColor: '#F59E0B',
+    borderColor: theme.colors.primary,
     gap: theme.spacing.md,
     width: '100%',
   },
@@ -3076,7 +3076,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#F59E0B',
+    backgroundColor: theme.colors.brandSecondary,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -3084,11 +3084,11 @@ const styles = StyleSheet.create({
   proUpgradeTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#92400E',
+    color: theme.colors.onBrandPrimary,
   },
   proUpgradeSub: {
     fontSize: 12,
-    color: '#92400E',
+    color: theme.colors.onNavyMuted,
     marginTop: 2,
     lineHeight: 16,
     opacity: 0.75,

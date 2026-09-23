@@ -13,7 +13,7 @@ export default function Index() {
     if (loading) return;
     (async () => {
       if (token) {
-        router.replace('/(tabs)');
+        router.replace('/(tabs)/home');
         return;
       }
       // First launch → user picks a language before login

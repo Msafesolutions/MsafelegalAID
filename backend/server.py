@@ -3387,11 +3387,11 @@ async def fir_get_session_draft(
     • Anonymous session (user_id starts with 'anon-'): knowledge of the UUID
       session_id is treated as sufficient proof of ownership (the UUID is never
       in the URL, only obtained from the interview flow itself).
-    • No draft_text field yet → 404 (interview not complete).
+    • No generated draft yet → 404 (interview not complete).
     """
     doc = await db.fir_sessions.find_one(
         {"session_id": session_id},
-        {"_id": 0, "draft_text": 1, "user_id": 1},
+        {"_id": 0, "draft_text": 1, "draft": 1, "user_id": 1},
     )
     if not doc:
         raise HTTPException(404, "Session not found")
@@ -3406,7 +3406,9 @@ async def fir_get_session_draft(
         if owner_id != user["id"]:
             raise HTTPException(403, "Access denied")
 
-    draft = doc.get("draft_text") or ""
+    # The FIR engine persists completed letters in `draft`; retain compatibility
+    # with earlier documents that used `draft_text`. Ownership checks stay above.
+    draft = doc.get("draft_text") or doc.get("draft") or ""
     if not draft:
         raise HTTPException(404, "Draft not ready yet")
 

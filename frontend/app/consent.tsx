@@ -71,7 +71,7 @@ export default function ConsentScreen() {
       }).then(response => { if (response.ok && token) void refreshUser(); }).catch(() => {});
       // A known forward destination also works for direct links and updates.
       // Going back could return to another copy of the consent screen.
-      router.replace(token ? '/(tabs)' : '/login');
+      router.replace(token ? '/(tabs)/home' : '/login');
     } catch {
       setSaveError(true);
     } finally {

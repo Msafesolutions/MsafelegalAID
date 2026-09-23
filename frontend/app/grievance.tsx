@@ -99,7 +99,7 @@ export default function GrievanceScreen() {
 
   const statusColor = (s: string) => {
     if (s === 'resolved')     return '#15803D';
-    if (s === 'acknowledged') return '#1D4ED8';
+    if (s === 'acknowledged') return theme.colors.primary;
     return '#92400E'; // received
   };
 

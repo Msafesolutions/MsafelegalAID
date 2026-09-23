@@ -32,14 +32,14 @@ const Location: typeof import('expo-location') | null =
   Platform.OS !== 'web' ? (() => { try { return require('expo-location'); } catch { return null; } })() : null;
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
-const NAVY   = '#14365A';
-const GOLD   = '#D3B675';
-const CREAM  = '#F5F0E6';
-const SURFACE = '#FDFBF7';
-const MUTED  = '#4A5A6E';
-const RED    = '#B91C1C';
-const GREEN  = '#2D6A4F';
-const BORDER = '#D1D5DB';
+const NAVY   = theme.colors.primary;
+const GOLD   = theme.colors.gold;
+const CREAM  = theme.colors.surfaceSecondary;
+const SURFACE = theme.colors.surface;
+const MUTED  = theme.colors.onSurfaceSecondary;
+const RED    = theme.colors.error;
+const GREEN  = theme.colors.success;
+const BORDER = theme.colors.border;
 
 // ── Language options ──────────────────────────────────────────────────────────
 const FIR_LANGUAGES = [
@@ -129,6 +129,8 @@ export default function FirDraftScreen() {
   const [emergencyNumbers, setEmergencyNumbers] = useState<Array<{label: string; number: string}>>([]);
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
   const [checkingResume, setCheckingResume] = useState(true);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  const autoResumedId = useRef<string | null>(null);
 
   // Issue 9: Section drawer state
   const [showSectionDrawer, setShowSectionDrawer] = useState(false);
@@ -313,8 +315,9 @@ export default function FirDraftScreen() {
   };
 
   // ── v3.3: Resume a saved session ─────────────────────────────────────────
-  const resumeSession = async (sid: string) => {
+  const resumeSession = useCallback(async (sid: string) => {
     setIsLoading(true);
+    setResumeError(null);
     setSessionStarted(true);
     setMessages([]);
     try {
@@ -377,13 +380,20 @@ export default function FirDraftScreen() {
         setInputType(sess.stage === 'free_narrative' ? 'voice_or_text' : 'text');
       }
     } catch {
-      Alert.alert('Error', 'Could not resume session. Please start a new one.');
+      setResumeError('Could not restore your complaint. Check your connection and tap Continue your complaint to retry.');
       setSessionStarted(false);
-      await AsyncStorage.removeItem(FIR_SESSION_KEY);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [addMessage, applyTurn]);
+
+  // Home/complaint cards already express the user's intention to continue.
+  // Wait for local language hydration, then resume once rather than asking twice.
+  useEffect(() => {
+    if (!params.resumeId || checkingResume || autoResumedId.current === params.resumeId) return;
+    autoResumedId.current = params.resumeId;
+    void resumeSession(params.resumeId);
+  }, [params.resumeId, checkingResume, resumeSession]);
 
   // ── Send a turn ────────────────────────────────────────────────────────────
   const sendTurn = useCallback(async (
@@ -899,17 +909,18 @@ ${data.bot_message}`);
       );
     }
     return (
-      <SafeAreaView style={styles.root}>
+      <SafeAreaView testID="fir-start-screen" style={styles.root}>
         <View style={styles.preHeader}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+          <Pressable testID="fir-start-back" onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
             <Ionicons name="arrow-back" size={22} color={NAVY} />
           </Pressable>
           <Text style={styles.preTitle}>FIR Draft Assistant</Text>
         </View>
         <ScrollView contentContainerStyle={styles.preBody}>
+          {resumeError ? <Text testID="fir-resume-error" accessibilityRole="alert" style={{ color: theme.colors.error, lineHeight: 22 }}>{resumeError}</Text> : null}
           {/* v3.3: Resume banner */}
           {savedSessionId && (
-            <Pressable style={styles.resumeCard} onPress={() => resumeSession(savedSessionId)}>
+            <Pressable testID="fir-resume-saved" style={styles.resumeCard} onPress={() => resumeSession(savedSessionId)}>
               <Ionicons name="refresh-circle-outline" size={24} color={GOLD} />
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={styles.resumeTitle}>Continue your complaint</Text>
@@ -1293,7 +1304,7 @@ function QuickReplyChips({
           </Pressable>
         );
       })}
-      {skipLabel && (
+      {!!skipLabel && (
         <Pressable style={[styles.chip, styles.chipSkip]} onPress={onSkip}>
           <Text style={[styles.chipText, styles.chipTextSkip]}>{skipLabel}</Text>
         </Pressable>
@@ -1426,7 +1437,7 @@ function TextInputArea({
           <Ionicons name="send" size={18} color="#fff" />
         </Pressable>
       </View>
-      {onSkip && skipLabel && (
+      {onSkip && !!skipLabel && (
         <Pressable style={styles.skipRow} onPress={onSkip}>
           <Text style={styles.skipText}>{skipLabel}</Text>
         </Pressable>
@@ -1619,7 +1630,7 @@ const eStyles = StyleSheet.create({
   callLabel: { color: '#fff', fontSize: 13, fontWeight: '600' },
   callNum: { color: '#fecaca', fontSize: 20, fontWeight: '700', letterSpacing: 1 },
   continueBtn: {
-    backgroundColor: '#14365A', borderRadius: 10,
+    backgroundColor: theme.colors.primary, borderRadius: 10,
     paddingVertical: 14, alignItems: 'center', marginTop: 8,
   },
   continueBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },

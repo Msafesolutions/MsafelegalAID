@@ -17,9 +17,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE } from '@/src/auth';
+import { theme } from '@/src/theme';
 
-const NAVY   = '#14365A';
-const GOLD   = '#D3B675';
+const NAVY   = theme.colors.primary;
+const GOLD   = theme.colors.gold;
 const CUTOFF = '2024-07-01';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ function CodeAppliesHelper() {
     if (d < CUTOFF) {
       setResult({
         label: 'IPC / CrPC / Indian Evidence Act apply',
-        color: '#1D4ED8',
+        color: theme.colors.primary,
         detail: `Offence date ${d} is BEFORE ${CUTOFF}.\nSubstantive charge: use IPC sections.\nProcedure: use BNSS (bail, remand, FIR).`,
       });
     } else {
@@ -231,7 +232,7 @@ function ResultCard({ item }: { item: XRef }) {
                          : item.source.includes('Evidence') ? '#F5F3FF' : '#F0FDF4',
         }]}>
           <Text style={[rc.srcTxt, {
-            color: item.source.includes('CrPC')     ? '#1D4ED8'
+            color: item.source.includes('CrPC')     ? theme.colors.primary
                  : item.source.includes('Evidence') ? '#6D28D9' : '#166534',
           }]}>{item.source}</Text>
         </View>
@@ -286,7 +287,7 @@ function ResultCard({ item }: { item: XRef }) {
           onPress={() => Linking.openURL(item.source_link!)}
           hitSlop={6}
         >
-          <Ionicons name="open-outline" size={12} color="#2563EB" />
+          <Ionicons name="open-outline" size={12} color={theme.colors.primary} />
           <Text style={rc.srcLinkTxt}>View on India Code</Text>
         </Pressable>
       )}
@@ -646,7 +647,7 @@ const v = StyleSheet.create({
   banner: {
     flexDirection: 'row', gap: 6, alignItems: 'flex-start',
     backgroundColor: '#FFFBEB', borderRadius: 8, padding: 8,
-    borderLeftWidth: 3, borderLeftColor: '#F59E0B', marginBottom: 8,
+    borderLeftWidth: 3, borderLeftColor: theme.colors.gold, marginBottom: 8,
   },
   bannerTxt: { flex: 1, fontSize: 11, color: '#92400E', lineHeight: 16 },
 });
@@ -713,7 +714,7 @@ const rc = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4,
     marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6',
   },
-  srcLinkTxt: { fontSize: 11, color: '#2563EB', textDecorationLine: 'underline' },
+  srcLinkTxt: { fontSize: 11, color: theme.colors.primary, textDecorationLine: 'underline' },
 });
 
 // ── Dead-Law banner styles ─────────────────────────────────────────────────────
