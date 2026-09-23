@@ -83,6 +83,9 @@ interface TurnResponse {
   action?: string;
   emergency_numbers?: Array<{ label: string; number: string }>;
   show_cybercrime_alert?: boolean;
+  // v3.4: Probe progress for "Q X/Y" UI counter
+  probe_progress_done?: number;
+  probe_progress_total?: number;
 }
 interface UploadedFile {
   file_id: string;
@@ -130,7 +133,9 @@ export default function FirDraftScreen() {
   const [sectionMsgId, setSectionMsgId] = useState<string | null>(null);
   const messageYsRef = useRef<{[id: string]: number}>({});
 
-  // TTS: auto-speak bot messages (for users who can't read)
+  // Probe progress state (for "Q 3/12" indicator)
+  const [probeCurrentNum, setProbeCurrentNum] = useState(0);
+  const [probeTotal, setProbeTotal] = useState(0);
   const [autoSpeak, setAutoSpeak]   = useState(true);
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const [ttsLoadingMsgId, setTtsLoadingMsgId] = useState<string | null>(null);
@@ -215,6 +220,11 @@ export default function FirDraftScreen() {
     setQuickReplies(res.quick_replies || []);
     setSkipLabel(res.skip_label);
     if (res.draft) setDraft(res.draft);
+    // v3.4: Update probe progress counter "Q X/Y"
+    if (res.probe_progress_done !== undefined && res.probe_progress_total !== undefined) {
+      setProbeCurrentNum(res.probe_progress_done + 1);  // 1-indexed: "Q 1/10"
+      setProbeTotal(res.probe_progress_total);
+    }
     // v3.3: Emergency screen
     if (res.show_emergency || res.action === 'EMERGENCY') {
       setEmergencyNumbers(res.emergency_numbers || [
@@ -321,12 +331,14 @@ export default function FirDraftScreen() {
         setDroppedSections(sess.dropped_sections);
       }
 
-      // Restore last bot message from narrative_turns
+      // v3.4: Restore FULL conversation thread (all narrative_turns, using .message key)
       const turns: any[] = sess.narrative_turns || [];
-      const lastBot = turns.filter((t: any) => t.role === 'bot').pop();
-      const lastUser = turns.filter((t: any) => t.role === 'user').pop();
-      if (lastUser) addMessage('user', lastUser.content || lastUser.text || '');
-      // Resume with current probe
+      turns.forEach((t: any) => {
+        const text = t.message || t.content || t.text || '';
+        if (text) addMessage(t.role as 'bot' | 'user', text);
+      });
+
+      // Resume with current probe (adds "Welcome back!" message via backend)
       const currentProbe = sess.current_probe;
       if (currentProbe) {
         // Fetch the probe definition via a "continue" turn
@@ -338,14 +350,14 @@ export default function FirDraftScreen() {
         if (tRes.ok) {
           const tData: TurnResponse = await tRes.json();
           applyTurn(tData);
-        } else if (lastBot) {
-          addMessage('bot', `Welcome back! Continuing from where you left off.\n\n${lastBot.content || lastBot.text || ''}`);
+        } else {
+          addMessage('bot', 'Welcome back! Please continue from where you left off.');
+          setInputType('voice_or_text');
         }
-      } else if (lastBot) {
-        addMessage('bot', `Welcome back! Continuing from where you left off.\n\n${lastBot.content || lastBot.text || ''}`);
       } else {
-        addMessage('bot', 'Welcome back! Please tell me what happened in your own words.');
-        setInputType('voice_or_text');
+        // Session may already be at section_suggest or later — just restore UI
+        addMessage('bot', 'Welcome back! Your session has been restored.');
+        setInputType('text');
       }
     } catch {
       Alert.alert('Error', 'Could not resume session. Please start a new one.');
@@ -830,6 +842,12 @@ ${data.bot_message}`);
           <Text style={styles.headerTitle}>FIR Draft Assistant</Text>
           <Text style={styles.headerLang}>{selectedLang.native}</Text>
         </View>
+        {/* v3.4: Probe progress counter "Q X/Y" */}
+        {probeTotal > 0 && currentStage === 'probe' && (
+          <View style={styles.progressChip}>
+            <Text style={styles.progressText}>Q {probeCurrentNum}/{probeTotal}</Text>
+          </View>
+        )}
         {/* v3.3: Back probe button */}
         {currentStage === 'probe' && (
           <Pressable onPress={handleBack} style={styles.pauseBtn} hitSlop={12}>
@@ -937,6 +955,10 @@ ${data.bot_message}`);
                 transcribing={transcribing}
                 onStartRecord={startRecording}
                 onStopRecord={stopRecording}
+                onAttach={handlePickEvidence}
+                attachedFiles={evidenceFiles}
+                onRemoveAttach={handleRemoveEvidence}
+                onCaptionChange={handleCaptionChange}
               />
             )}
 
@@ -961,6 +983,9 @@ ${data.bot_message}`);
                 transcribing={false}
                 onStartRecord={() => {}}
                 onStopRecord={() => {}}
+                onAttach={handlePickEvidence}
+                attachedFiles={evidenceFiles}
+                onRemoveAttach={handleRemoveEvidence}
               />
             )}
 
@@ -1112,15 +1137,76 @@ function QuickReplyChips({
 function TextInputArea({
   value, onChange, onSend, onSkip, skipLabel, showVoice,
   isRecording, transcribing, onStartRecord, onStopRecord,
+  onAttach, attachedFiles, onRemoveAttach, onCaptionChange,
 }: {
   value: string; onChange: (v: string) => void; onSend: (v: string) => void;
   onSkip?: () => void; skipLabel?: string;
   showVoice: boolean; isRecording: boolean; transcribing: boolean;
   onStartRecord: () => void; onStopRecord: () => void;
+  onAttach?: () => void;
+  attachedFiles?: UploadedFile[];
+  onRemoveAttach?: (fileId: string) => void;
+  onCaptionChange?: (fileId: string, caption: string) => void;
 }) {
   return (
     <View>
+      {/* ── Attachment thumbnail strip (visible when files attached during text probes) */}
+      {attachedFiles && attachedFiles.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.attachStrip}
+          contentContainerStyle={{ gap: 6, paddingHorizontal: 12, paddingVertical: 6 }}
+        >
+          {attachedFiles.map(f => {
+            const isImg = f.file_type === 'image' || (f.content_type || '').startsWith('image/');
+            const isVid = f.file_type === 'video' || (f.content_type || '').startsWith('video/');
+            return (
+              <View key={f.file_id} style={styles.attachChip}>
+                {isImg && f.local_uri ? (
+                  <Image source={{ uri: f.local_uri }} style={styles.attachThumb} resizeMode="cover" />
+                ) : (
+                  <View style={styles.attachThumb}>
+                    <Ionicons
+                      name={isVid ? 'videocam' : 'document-text'}
+                      size={18} color={NAVY}
+                    />
+                  </View>
+                )}
+                <Text style={styles.attachChipName} numberOfLines={1}>{f.filename}</Text>
+                {onRemoveAttach && (
+                  <Pressable onPress={() => onRemoveAttach(f.file_id)} hitSlop={8}>
+                    <Ionicons name="close-circle" size={16} color={RED} />
+                  </Pressable>
+                )}
+              </View>
+            );
+          })}
+          {/* Add more button */}
+          {onAttach && (
+            <Pressable style={styles.attachAddBtn} onPress={onAttach}>
+              <Ionicons name="add" size={18} color={NAVY} />
+            </Pressable>
+          )}
+        </ScrollView>
+      )}
+
       <View style={styles.textRow}>
+        {/* Paperclip attach button */}
+        {onAttach && (
+          <Pressable
+            style={styles.attachBtn}
+            onPress={onAttach}
+            hitSlop={8}
+          >
+            <Ionicons name="attach" size={22} color={MUTED} />
+            {attachedFiles && attachedFiles.length > 0 && (
+              <View style={styles.attachBadge}>
+                <Text style={styles.attachBadgeText}>{attachedFiles.length}</Text>
+              </View>
+            )}
+          </Pressable>
+        )}
         <TextInput
           testID="fir-text-input"
           style={styles.textBox}
@@ -1406,6 +1492,13 @@ const styles = StyleSheet.create({
   headerLang: { fontSize: 12, color: GOLD },
   backBtn: { padding: 4 },
   pauseBtn: { padding: 4 },
+  // v3.4: Probe progress chip in header
+  progressChip: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4,
+    borderWidth: 1, borderColor: 'rgba(211,182,117,0.5)',
+  },
+  progressText: { fontSize: 12, color: GOLD, fontWeight: '700', letterSpacing: 0.5 },
 
   // Messages
   messageList: { flex: 1, backgroundColor: '#F7F5F0' },
@@ -1480,6 +1573,41 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: BORDER,
   },
   ttsBubbleBtnText: { fontSize: 11, color: MUTED, fontWeight: '500' },
+
+  // Paperclip attach button in text input bar
+  attachBtn: {
+    width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
+    marginRight: 2, position: 'relative',
+  },
+  attachBadge: {
+    position: 'absolute', top: 2, right: 2,
+    backgroundColor: RED, borderRadius: 7, minWidth: 14, height: 14,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2,
+  },
+  attachBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  // Attachment thumbnail strip above text input
+  attachStrip: {
+    maxHeight: 80, borderTopWidth: 1, borderTopColor: BORDER,
+    backgroundColor: CREAM,
+  },
+  attachChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: SURFACE, borderRadius: 8,
+    borderWidth: 1, borderColor: BORDER,
+    paddingHorizontal: 6, paddingVertical: 4,
+    maxWidth: 180,
+  },
+  attachThumb: {
+    width: 40, height: 40, borderRadius: 6, backgroundColor: '#EEF2FF',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  attachChipName: { fontSize: 11, color: NAVY, flex: 1 },
+  attachAddBtn: {
+    width: 44, height: 44, borderRadius: 8, borderWidth: 1.5,
+    borderColor: BORDER, borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center',
+  },
+
   // Evidence widget
   evidenceList: { gap: 6, marginBottom: 4 },
   evidenceItemWrap: {

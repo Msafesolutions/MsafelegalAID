@@ -1193,6 +1193,9 @@ async def _dispatch(
                     f"Welcome back! Continuing from where you left off.\n\n"
                     f"{pdef.get('message', 'Please continue.')}"
                 )
+            # v3.4: Probe progress for "Q X/Y" UI counter
+            done_count = len(session.get("probe_history", []))
+            total_probes = done_count + 1 + len(pending_probes)
             return {
                 "session_id": sid, "stage": STAGE_PROBE, "probe_key": cp,
                 "bot_message": bot_msg,
@@ -1200,6 +1203,8 @@ async def _dispatch(
                 "quick_replies": pdef.get("quick_replies", []),
                 "skip_label": pdef.get("skip_label"),
                 "completed": False,
+                "probe_progress_done": done_count,
+                "probe_progress_total": total_probes,
             }
 
         if cp == "probe_place_gps":
@@ -1560,19 +1565,24 @@ async def _advance_probe(
             {"$set": {"pending_probes": remaining, "current_probe": next_probe, "updated_at": now}},
         )
         pdef = PROBE_Q[next_probe]
-        # Dynamic message for probe_date_confirm
-        session_fresh = await db.fir_sessions.find_one({"session_id": sid}, {"relative_date_display": 1})
+        # Dynamic message for probe_date_confirm; also fetch probe_history for progress counter
+        session_fresh = await db.fir_sessions.find_one({"session_id": sid}, {"relative_date_display": 1, "probe_history": 1})
         rdd = session_fresh.get("relative_date_display") if session_fresh else None
         if next_probe == "probe_date_confirm" and rdd:
             bot_msg = f"I calculated the incident happened on **{rdd}**.\nIs that correct?"
         else:
             bot_msg = pdef["message"]
+        # v3.4: Compute probe progress for "Q X/Y" frontend counter
+        done_count = len((session_fresh or {}).get("probe_history", []))
+        total_probes = done_count + 1 + len(remaining)
         return {
             "session_id": sid, "stage": STAGE_PROBE, "probe_key": next_probe,
             "bot_message": bot_msg,
             "input_type": pdef["input_type"],
             "quick_replies": pdef.get("quick_replies", []),
             "skip_label": pdef.get("skip_label"), "completed": False,
+            "probe_progress_done": done_count,
+            "probe_progress_total": total_probes,
         }
     return await _enter_section_suggest(db, corpus_db, sid, slots, incident_types, now)
 
