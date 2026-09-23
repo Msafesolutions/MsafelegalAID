@@ -6,10 +6,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, Pressable, ScrollView, StyleSheet,
-  ActivityIndicator, Platform, Alert, KeyboardAvoidingView, Linking,
+  ActivityIndicator, Platform, Alert, KeyboardAvoidingView, Linking, Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // Platform-guarded: expo-location crashes on web due to version mismatch.
@@ -42,6 +42,17 @@ const FIR_LANGUAGES = [
   { code: 'ta', label: 'Tamil',    native: 'தமிழ்',    sttLang: 'ta-IN' },
 ];
 const FIR_LANG_KEY = 'fir_draft_lang_v3';
+const FIR_SESSION_KEY = 'fir_active_session_v3';
+
+// Allowed file types for evidence upload
+const ALLOWED_MIME = [
+  'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/webp',
+  'video/mp4', 'video/quicktime', 'video/x-msvideo',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
+const ALLOWED_EXT = ['jpg','jpeg','png','heic','heif','webp','mp4','mov','avi','pdf','doc','docx'];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Message {
@@ -63,11 +74,18 @@ interface TurnResponse {
   draft?: string;
   completed?: boolean;
   safety_flags?: string[];
+  // v3.3: Emergency & alert fields
+  show_emergency?: boolean;
+  action?: string;
+  emergency_numbers?: Array<{ label: string; number: string }>;
+  show_cybercrime_alert?: boolean;
 }
 interface UploadedFile {
   file_id: string;
   filename: string;
   file_type: string;
+  local_uri?: string;   // v3.3: client-side preview URI
+  content_type?: string;
 }
 
 function msgId() {
@@ -76,6 +94,7 @@ function msgId() {
 
 export default function FirDraftScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ resumeId?: string }>();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
@@ -91,6 +110,12 @@ export default function FirDraftScreen() {
   const [evidenceFiles, setEvidenceFiles] = useState<UploadedFile[]>([]);
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const [gpsAvailable, setGpsAvailable] = useState(Platform.OS !== 'web');
+  // v3.3: New state
+  const [currentStage, setCurrentStage] = useState<string>('safety_gate');
+  const [showEmergencyScreen, setShowEmergencyScreen] = useState(false);
+  const [emergencyNumbers, setEmergencyNumbers] = useState<Array<{label: string; number: string}>>([]);
+  const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
+  const [checkingResume, setCheckingResume] = useState(true);
 
   // ── Language ───────────────────────────────────────────────────────────────
   const [language, setLanguage] = useState('en');
@@ -103,12 +128,38 @@ export default function FirDraftScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
 
-  // ── Load saved language ────────────────────────────────────────────────────
+  // ── Load saved language + check for saved session ────────────────────────
   useEffect(() => {
-    AsyncStorage.getItem(FIR_LANG_KEY).then((saved) => {
-      if (saved) setLanguage(saved);
-    });
-  }, []);
+    const init = async () => {
+      const savedLang = await AsyncStorage.getItem(FIR_LANG_KEY);
+      if (savedLang) setLanguage(savedLang);
+      // v3.3: If a resumeId was passed from home screen, auto-resume
+      if (params.resumeId) {
+        setSavedSessionId(params.resumeId);
+        setCheckingResume(false);
+        return;
+      }
+      // v3.3: Check for a paused/active session to resume
+      const saved = await AsyncStorage.getItem(FIR_SESSION_KEY);
+      if (saved) {
+        try {
+          const res = await fetch(`${API_BASE}/api/fir/session/${saved}`);
+          if (res.ok) {
+            const sess = await res.json();
+            if (sess.status !== 'completed' && sess.status !== 'cancelled') {
+              setSavedSessionId(saved);
+            } else {
+              await AsyncStorage.removeItem(FIR_SESSION_KEY);
+            }
+          } else {
+            await AsyncStorage.removeItem(FIR_SESSION_KEY);
+          }
+        } catch { /* session gone */ }
+      }
+      setCheckingResume(false);
+    };
+    init();
+  }, [params.resumeId]);
 
   const saveLanguage = async (code: string) => {
     setLanguage(code);
@@ -133,10 +184,20 @@ export default function FirDraftScreen() {
     if (res.bot_message) {
       addMessage('bot', res.bot_message);
     }
+    setCurrentStage(res.stage || '');
     setInputType(res.input_type || 'text');
     setQuickReplies(res.quick_replies || []);
     setSkipLabel(res.skip_label);
     if (res.draft) setDraft(res.draft);
+    // v3.3: Emergency screen
+    if (res.show_emergency || res.action === 'EMERGENCY') {
+      setEmergencyNumbers(res.emergency_numbers || [
+        { label: 'Emergency', number: '112' },
+        { label: 'Women Helpline', number: '181' },
+        { label: 'Ambulance', number: '108' },
+      ]);
+      setShowEmergencyScreen(true);
+    }
   }, [addMessage]);
 
   // ── Create session ─────────────────────────────────────────────────────────
@@ -145,6 +206,7 @@ export default function FirDraftScreen() {
     setIsLoading(true);
     setSessionStarted(true);
     setMessages([]);
+    setSavedSessionId(null);
     try {
       // Try to silently get GPS for session_location_start (native only)
       let sessionLocationStart = null;
@@ -170,10 +232,63 @@ export default function FirDraftScreen() {
       if (!res.ok) throw new Error('Session creation failed');
       const data: TurnResponse = await res.json();
       setSessionId(data.session_id);
+      // v3.3: Persist session for silent resume
+      await AsyncStorage.setItem(FIR_SESSION_KEY, data.session_id);
       applyTurn(data);
     } catch {
       Alert.alert('Error', 'Could not start session. Please check your connection.');
       setSessionStarted(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── v3.3: Resume a saved session ─────────────────────────────────────────
+  const resumeSession = async (sid: string) => {
+    setIsLoading(true);
+    setSessionStarted(true);
+    setMessages([]);
+    try {
+      const res = await fetch(`${API_BASE}/api/fir/session/${sid}`);
+      if (!res.ok) throw new Error('Session not found');
+      const sess = await res.json();
+      setSessionId(sid);
+      setLanguage(sess.language || 'en');
+      await AsyncStorage.setItem(FIR_SESSION_KEY, sid);
+      // Restore last bot message from narrative_turns
+      const turns: any[] = sess.narrative_turns || [];
+      const lastBot = turns.filter((t: any) => t.role === 'bot').pop();
+      const lastUser = turns.filter((t: any) => t.role === 'user').pop();
+      if (lastUser) addMessage('user', lastUser.content || lastUser.text || '');
+      // Resume with current probe
+      const currentProbe = sess.current_probe;
+      if (currentProbe) {
+        // Fetch the probe definition via a "continue" turn
+        const tRes = await fetch(`${API_BASE}/api/fir/session/${sid}/turn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'resume' }),
+        });
+        if (tRes.ok) {
+          const tData: TurnResponse = await tRes.json();
+          applyTurn(tData);
+        } else if (lastBot) {
+          addMessage('bot', `Welcome back! Continuing from where you left off.
+
+${lastBot.content || lastBot.text || ''}`);
+        }
+      } else if (lastBot) {
+        addMessage('bot', `Welcome back! Continuing from where you left off.
+
+${lastBot.content || lastBot.text || ''}`);
+      } else {
+        addMessage('bot', 'Welcome back! Please tell me what happened in your own words.');
+        setInputType('voice_or_text');
+      }
+    } catch {
+      Alert.alert('Error', 'Could not resume session. Please start a new one.');
+      setSessionStarted(false);
+      await AsyncStorage.removeItem(FIR_SESSION_KEY);
     } finally {
       setIsLoading(false);
     }
@@ -252,7 +367,7 @@ export default function FirDraftScreen() {
     }
   };
 
-  // ── Evidence upload ────────────────────────────────────────────────────────
+  // ── Evidence upload — with type validation + 413 handling ───────────────
   const handlePickEvidence = async () => {
     if (!sessionId) return;
     try {
@@ -267,6 +382,15 @@ export default function FirDraftScreen() {
       setUploadingEvidence(true);
       const uploaded: UploadedFile[] = [];
       for (const asset of assets.slice(0, 10 - evidenceFiles.length)) {
+        // v3.3: File type validation
+        const ext = (asset.name?.split('.').pop() || '').toLowerCase();
+        const mime = asset.mimeType || '';
+        const allowed = ALLOWED_EXT.includes(ext) || ALLOWED_MIME.includes(mime);
+        if (!allowed) {
+          Alert.alert('Unsupported File', `"${asset.name}" is not supported.
+Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
+          continue;
+        }
         try {
           const formData = new FormData();
           if (Platform.OS === 'web') {
@@ -281,9 +405,20 @@ export default function FirDraftScreen() {
             method: 'POST',
             body: formData,
           });
+          // v3.3: 413 error
+          if (res.status === 413) {
+            Alert.alert('File Too Large', `"${asset.name}" exceeds the size limit (20 MB). Please compress the file and try again.`);
+            continue;
+          }
           if (res.ok) {
             const data = await res.json();
-            if (data.file) uploaded.push(data.file);
+            if (data.file) {
+              uploaded.push({
+                ...data.file,
+                local_uri: asset.uri,           // store for thumbnail
+                content_type: asset.mimeType,
+              });
+            }
           }
         } catch (e) {
           console.warn('Evidence upload failed for', asset.name, e);
@@ -298,6 +433,17 @@ export default function FirDraftScreen() {
       console.warn('Evidence upload error:', err);
     } finally {
       setUploadingEvidence(false);
+    }
+  };
+
+  // ── v3.3: Remove evidence file ─────────────────────────────────────────────
+  const handleRemoveEvidence = async (fileId: string) => {
+    if (!sessionId) return;
+    try {
+      await fetch(`${API_BASE}/api/fir/session/${sessionId}/evidence/${fileId}`, { method: 'DELETE' });
+      setEvidenceFiles(prev => prev.filter(f => f.file_id !== fileId));
+    } catch {
+      Alert.alert('Error', 'Could not remove file. Please try again.');
     }
   };
 
@@ -334,13 +480,36 @@ export default function FirDraftScreen() {
     }
   };
 
-  // ── Pause session ──────────────────────────────────────────────────────────
-  const handlePause = () => {
-    Alert.alert(
-      'Save & Continue Later',
-      'Your session is automatically saved. You can resume it later.',
-      [{ text: 'OK', onPress: () => router.back() }],
-    );
+  // ── v3.3: Pause session — calls API ─────────────────────────────────────
+  const handlePause = async () => {
+    try {
+      if (sessionId) {
+        await fetch(`${API_BASE}/api/fir/session/${sessionId}/pause`, { method: 'POST' });
+        // Keep session_id in AsyncStorage so user can resume
+      }
+    } catch { /* best effort */ }
+    router.back();
+  };
+
+  // ── v3.3: Back navigation ─────────────────────────────────────────────────
+  const handleBack = async () => {
+    if (!sessionId || isLoading) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/fir/session/${sessionId}/back`, { method: 'POST' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.ok) {
+        addMessage('bot', `↩ Going back...
+
+${data.bot_message}`);
+        setCurrentStage(data.stage || 'probe');
+        setInputType(data.input_type || 'text');
+        setQuickReplies(data.quick_replies || []);
+        setSkipLabel(data.skip_label);
+      }
+    } catch { /* ignore */ }
+    finally { setIsLoading(false); }
   };
 
   // ── Navigate to result ────────────────────────────────────────────────────
@@ -365,6 +534,13 @@ export default function FirDraftScreen() {
   // PRE-SESSION: Language picker + Start button
   // ─────────────────────────────────────────────────────────────────────────
   if (!sessionStarted) {
+    if (checkingResume) {
+      return (
+        <SafeAreaView style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color={NAVY} />
+        </SafeAreaView>
+      );
+    }
     return (
       <SafeAreaView style={styles.root}>
         <View style={styles.preHeader}>
@@ -374,6 +550,18 @@ export default function FirDraftScreen() {
           <Text style={styles.preTitle}>FIR Draft Assistant</Text>
         </View>
         <ScrollView contentContainerStyle={styles.preBody}>
+          {/* v3.3: Resume banner */}
+          {savedSessionId && (
+            <Pressable style={styles.resumeCard} onPress={() => resumeSession(savedSessionId)}>
+              <Ionicons name="refresh-circle-outline" size={24} color={GOLD} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.resumeTitle}>Continue your complaint</Text>
+                <Text style={styles.resumeSubtitle}>You have an unfinished session. Tap to resume.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={MUTED} />
+            </Pressable>
+          )}
+
           <View style={styles.welcomeCard}>
             <Text style={styles.welcomeIcon}>⚖️</Text>
             <Text style={styles.welcomeTitle}>Prepare your FIR draft</Text>
@@ -418,7 +606,7 @@ export default function FirDraftScreen() {
 
           {/* Start button */}
           <Pressable style={styles.startBtn} onPress={startSession}>
-            <Text style={styles.startBtnText}>Start My Complaint</Text>
+            <Text style={styles.startBtnText}>{savedSessionId ? 'Start New Complaint' : 'Start My Complaint'}</Text>
             <Ionicons name="arrow-forward" size={20} color="#fff" />
           </Pressable>
         </ScrollView>
@@ -431,6 +619,24 @@ export default function FirDraftScreen() {
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.root}>
+      {/* v3.3: Emergency overlay */}
+      {showEmergencyScreen && (
+        <EmergencyOverlay
+          numbers={emergencyNumbers}
+          onContinue={() => {
+            setShowEmergencyScreen(false);
+            // If still in safety_gate, advance to narrative
+            if (currentStage === 'safety_gate') {
+              sendTurn(undefined, undefined, 'continue_safe');
+            }
+          }}
+          onExit={() => {
+            setShowEmergencyScreen(false);
+            handlePause();
+          }}
+        />
+      )}
+
       {/* Header */}
       <View style={styles.chatHeader}>
         <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
@@ -440,6 +646,12 @@ export default function FirDraftScreen() {
           <Text style={styles.headerTitle}>FIR Draft Assistant</Text>
           <Text style={styles.headerLang}>{selectedLang.native}</Text>
         </View>
+        {/* v3.3: Back probe button */}
+        {currentStage === 'probe' && (
+          <Pressable onPress={handleBack} style={styles.pauseBtn} hitSlop={12}>
+            <Ionicons name="arrow-undo-outline" size={20} color={GOLD} />
+          </Pressable>
+        )}
         <Pressable onPress={handlePause} style={styles.pauseBtn} hitSlop={12}>
           <Ionicons name="bookmark-outline" size={20} color={GOLD} />
         </Pressable>
@@ -461,6 +673,12 @@ export default function FirDraftScreen() {
             <MessageBubble key={msg.id} role={msg.role} text={msg.text} />
           ))}
           {isLoading && <TypingIndicator />}
+          {/* v3.3: Save & Continue Later link */}
+          {sessionId && !isLoading && inputType !== 'done' && (
+            <Pressable style={styles.saveLaterRow} onPress={handlePause}>
+              <Text style={styles.saveLaterText}>Save & continue later</Text>
+            </Pressable>
+          )}
         </ScrollView>
 
         {/* Input Area */}
@@ -470,7 +688,21 @@ export default function FirDraftScreen() {
               <QuickReplyChips
                 replies={quickReplies}
                 skipLabel={skipLabel}
-                onSelect={(reply) => sendTurn(reply)}
+                currentStage={currentStage}
+                onSelect={(reply) => {
+                  const lc = reply.toLowerCase();
+                  // v3.3: Safety gate button detection
+                  if (currentStage === 'safety_gate' && (lc.includes('no') || lc.includes('need help'))) {
+                    sendTurn(undefined, undefined, 'not_safe');
+                  } else if (lc.includes("safe now") && lc.includes("continue")) {
+                    setShowEmergencyScreen(false);
+                    sendTurn(undefined, undefined, 'continue_safe');
+                  } else if (lc.includes('exit for now')) {
+                    handlePause();
+                  } else {
+                    sendTurn(reply);
+                  }
+                }}
                 onSkip={() => sendTurn(skipLabel || 'Skip')}
               />
             )}
@@ -522,6 +754,7 @@ export default function FirDraftScreen() {
                 onDone={() => sendTurn(undefined, undefined, 'upload_done')}
                 onSkip={() => sendTurn(undefined, undefined, 'skip')}
                 skipLabel={skipLabel}
+                onRemove={handleRemoveEvidence}
               />
             )}
 
@@ -587,15 +820,22 @@ function TypingIndicator() {
 }
 
 function QuickReplyChips({
-  replies, skipLabel, onSelect, onSkip,
-}: { replies: string[]; skipLabel?: string; onSelect: (r: string) => void; onSkip: () => void }) {
+  replies, skipLabel, onSelect, onSkip, currentStage,
+}: { replies: string[]; skipLabel?: string; onSelect: (r: string) => void; onSkip: () => void; currentStage?: string }) {
   return (
     <View style={styles.chipsWrap}>
-      {replies.map(r => (
-        <Pressable key={r} style={styles.chip} onPress={() => onSelect(r)}>
-          <Text style={styles.chipText}>{r}</Text>
-        </Pressable>
-      ))}
+      {replies.map(r => {
+        const isNoBtn = currentStage === 'safety_gate' && (r.toLowerCase().includes('no') || r.toLowerCase().includes('need help'));
+        return (
+          <Pressable
+            key={r}
+            style={[styles.chip, isNoBtn && styles.chipDanger]}
+            onPress={() => onSelect(r)}
+          >
+            <Text style={[styles.chipText, isNoBtn && styles.chipTextDanger]}>{r}</Text>
+          </Pressable>
+        );
+      })}
       {skipLabel && (
         <Pressable style={[styles.chip, styles.chipSkip]} onPress={onSkip}>
           <Text style={[styles.chipText, styles.chipTextSkip]}>{skipLabel}</Text>
@@ -676,24 +916,49 @@ function GPSWidget({
 }
 
 function EvidenceWidget({
-  files, uploading, onPick, onDone, onSkip, skipLabel,
+  files, uploading, onPick, onDone, onSkip, skipLabel, onRemove,
 }: {
   files: UploadedFile[]; uploading: boolean;
-  onPick: () => void; onDone: () => void; onSkip: () => void; skipLabel?: string;
+  onPick: () => void; onDone: () => void; onSkip: () => void;
+  skipLabel?: string; onRemove?: (fileId: string) => void;
 }) {
   return (
     <View style={styles.widgetWrap}>
       {files.length > 0 && (
         <View style={styles.evidenceList}>
-          {files.map(f => (
-            <View key={f.file_id} style={styles.evidenceItem}>
-              <Ionicons
-                name={f.file_type === 'image' ? 'image-outline' : f.file_type === 'video' ? 'videocam-outline' : 'document-outline'}
-                size={16} color={NAVY}
-              />
-              <Text style={styles.evidenceItemText} numberOfLines={1}>{f.filename}</Text>
-            </View>
-          ))}
+          {files.map(f => {
+            const isImage = f.file_type === 'image' || (f.content_type || '').startsWith('image/');
+            const isVideo = f.file_type === 'video' || (f.content_type || '').startsWith('video/');
+            return (
+              <View key={f.file_id} style={styles.evidenceItem}>
+                {/* v3.3: Thumbnail */}
+                {isImage && f.local_uri ? (
+                  <Image
+                    source={{ uri: f.local_uri }}
+                    style={styles.evidenceThumb}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Ionicons
+                    name={isImage ? 'image-outline' : isVideo ? 'videocam-outline' : 'document-outline'}
+                    size={20} color={NAVY}
+                    style={{ marginRight: 4 }}
+                  />
+                )}
+                <Text style={styles.evidenceItemText} numberOfLines={1}>{f.filename}</Text>
+                {/* v3.3: × remove button */}
+                {onRemove && (
+                  <Pressable
+                    onPress={() => onRemove(f.file_id)}
+                    style={styles.evidenceRemoveBtn}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="close-circle" size={18} color={RED} />
+                  </Pressable>
+                )}
+              </View>
+            );
+          })}
         </View>
       )}
       <View style={styles.evidenceBtns}>
@@ -736,6 +1001,76 @@ function ConfirmButtons({
     </View>
   );
 }
+
+// ── Emergency Overlay (v3.3) ─────────────────────────────────────────────────
+function EmergencyOverlay({
+  numbers, onContinue, onExit,
+}: { numbers: Array<{label: string; number: string}>; onContinue: () => void; onExit: () => void }) {
+  const handleCall = (num: string) => {
+    Linking.openURL(`tel:${num}`).catch(() =>
+      Alert.alert('Cannot call', `Please manually dial ${num}`)
+    );
+  };
+  return (
+    <View style={eStyles.overlay}>
+      <View style={eStyles.card}>
+        <Text style={eStyles.title}>⚠️ Emergency Numbers</Text>
+        <Text style={eStyles.subtitle}>
+          If you are in immediate danger, please call for help first.
+        </Text>
+        {numbers.map(n => (
+          <Pressable key={n.number} style={eStyles.callBtn} onPress={() => handleCall(n.number)}>
+            <Ionicons name="call" size={22} color="#fff" />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={eStyles.callLabel}>{n.label}</Text>
+              <Text style={eStyles.callNum}>{n.number}</Text>
+            </View>
+          </Pressable>
+        ))}
+        <Pressable style={eStyles.continueBtn} onPress={onContinue}>
+          <Text style={eStyles.continueBtnText}>{"I'm safe now \u2014 continue filing"}</Text>
+        </Pressable>
+        <Pressable style={eStyles.exitBtn} onPress={onExit}>
+          <Text style={eStyles.exitBtnText}>Exit for now (session saved)</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const eStyles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+    paddingHorizontal: 20,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  title: { fontSize: 20, fontWeight: '700', color: '#B91C1C', marginBottom: 8, textAlign: 'center' },
+  subtitle: { fontSize: 14, color: '#374151', marginBottom: 16, textAlign: 'center', lineHeight: 20 },
+  callBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#B91C1C', borderRadius: 10,
+    padding: 14, marginBottom: 10,
+  },
+  callLabel: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  callNum: { color: '#fecaca', fontSize: 20, fontWeight: '700', letterSpacing: 1 },
+  continueBtn: {
+    backgroundColor: '#14365A', borderRadius: 10,
+    paddingVertical: 14, alignItems: 'center', marginTop: 8,
+  },
+  continueBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  exitBtn: { paddingVertical: 12, alignItems: 'center', marginTop: 6 },
+  exitBtnText: { color: '#6B7280', fontSize: 14 },
+});
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
@@ -894,4 +1229,18 @@ const styles = StyleSheet.create({
     backgroundColor: NAVY, borderRadius: 14, paddingVertical: 16, marginBottom: 4,
   },
   viewDraftBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // v3.3: New styles
+  resumeCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: NAVY, borderRadius: 12, padding: 14, marginBottom: 12,
+  },
+  resumeTitle: { color: GOLD, fontSize: 14, fontWeight: '700' },
+  resumeSubtitle: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  saveLaterRow: { alignItems: 'center', paddingVertical: 8, marginTop: 4 },
+  saveLaterText: { color: MUTED, fontSize: 13, textDecorationLine: 'underline' },
+  evidenceThumb: { width: 36, height: 36, borderRadius: 6, marginRight: 4 },
+  evidenceRemoveBtn: { padding: 2 },
+  chipDanger: { backgroundColor: '#FEF2F2', borderColor: '#B91C1C' },
+  chipTextDanger: { color: '#B91C1C' },
 });

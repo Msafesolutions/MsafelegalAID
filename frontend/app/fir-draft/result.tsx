@@ -7,13 +7,14 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet,
-  ActivityIndicator, Share, Platform, Alert, Clipboard,
+  ActivityIndicator, Share, Platform, Alert, Clipboard, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import { API_BASE } from '@/src/auth';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 const NAVY   = '#14365A';
@@ -39,6 +40,8 @@ export default function FIRResult() {
   const [loading] = useState(false);
   const [copyDone, setCopyDone] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const sessionId = params.sessionId || '';
 
   // Draft text: either passed as param, or loaded from session API
   const draftText = params.draft || '';
@@ -96,6 +99,42 @@ export default function FIRResult() {
       Alert.alert('Export failed', 'Could not export the draft. Use Share instead.');
     }
   }, [draftText]);
+
+  // ── v3.3: Download PDF ────────────────────────────────────────────────────
+  const handleDownloadPdf = useCallback(async () => {
+    if (!sessionId) {
+      Alert.alert('Session not found', 'Cannot generate PDF without session ID.');
+      return;
+    }
+    setDownloadingPdf(true);
+    try {
+      const pdfUrl = `${API_BASE}/api/fir/session/${sessionId}/draft.pdf`;
+      if (Platform.OS === 'web') {
+        // On web: open in new tab
+        Linking.openURL(pdfUrl);
+        return;
+      }
+      // On native: download and share
+      const dir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+      if (!dir) throw new Error('No directory');
+      const fileUri = dir + `FIR_Draft_${sessionId.slice(0, 8)}.pdf`;
+      const dl = await FileSystem.downloadAsync(pdfUrl, fileUri);
+      if (dl.status === 200) {
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(dl.uri, { mimeType: 'application/pdf', dialogTitle: 'Save FIR Draft PDF' });
+        } else {
+          Alert.alert('Saved', 'PDF saved to device.');
+        }
+      } else {
+        throw new Error(`HTTP ${dl.status}`);
+      }
+    } catch (e: any) {
+      Alert.alert('PDF Error', e?.message || 'Could not generate PDF. Try Export .txt instead.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }, [sessionId]);
 
   if (loading) {
     return (
@@ -175,6 +214,13 @@ export default function FIRResult() {
           <Pressable style={styles.actionBtn} onPress={handleExport}>
             <Ionicons name="download-outline" size={20} color={NAVY} />
             <Text style={styles.actionBtnText}>Export .txt</Text>
+          </Pressable>
+          {/* v3.3: PDF download */}
+          <Pressable style={[styles.actionBtn, styles.actionBtnPdf]} onPress={handleDownloadPdf} disabled={downloadingPdf}>
+            {downloadingPdf
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="document-attach-outline" size={20} color="#fff" />}
+            <Text style={[styles.actionBtnText, { color: '#fff' }]}>Export PDF</Text>
           </Pressable>
         </View>
 
@@ -268,12 +314,13 @@ const styles = StyleSheet.create({
   draftText: { fontSize: 13, color: '#2D2D2D', lineHeight: 22, fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
 
   // Actions
-  actions: { flexDirection: 'row', gap: 8 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   actionBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, backgroundColor: CREAM, borderRadius: 10, paddingVertical: 12,
-    borderWidth: 1.5, borderColor: BORDER,
+    borderWidth: 1.5, borderColor: BORDER, minWidth: 80,
   },
+  actionBtnPdf: { backgroundColor: NAVY, borderColor: NAVY, flexBasis: '100%', flex: 0 },
   actionBtnText: { fontSize: 13, color: NAVY, fontWeight: '600' },
 
   // Steps

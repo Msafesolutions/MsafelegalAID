@@ -3339,6 +3339,164 @@ async def fir_get_session(session_id: str):
     return doc
 
 
+# ── v3.3: Pause session ───────────────────────────────────────────────────────
+@api.post("/fir/session/{session_id}/pause")
+async def fir_pause_session(session_id: str):
+    """Mark session as paused (Save & Continue Later)."""
+    result = await db.fir_sessions.update_one(
+        {"session_id": session_id},
+        {"$set": {"status": "paused", "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Session not found")
+    return {"ok": True, "status": "paused"}
+
+
+# ── v3.3: Back navigation ─────────────────────────────────────────────────────
+@api.post("/fir/session/{session_id}/back")
+async def fir_back_session(session_id: str):
+    """Go back one probe step, restoring the previous question and clearing its answer."""
+    from fir_engine import PROBE_Q
+    session = await db.fir_sessions.find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    probe_history = list(session.get("probe_history", []))
+    if not probe_history:
+        return {"ok": False, "message": "Already at the beginning"}
+
+    # Pop last answered probe
+    last_entry = probe_history.pop()
+    probe = last_entry.get("probe")
+    slot_key = last_entry.get("slot")
+
+    # Restore slot to previous value
+    slots = dict(session.get("slots", {}))
+    if slot_key:
+        slots[slot_key] = last_entry.get("value")  # restore (may be None)
+
+    # Put current probe back into pending queue, make last_probe the current
+    current = session.get("current_probe")
+    pending = list(session.get("pending_probes", []))
+    if current:
+        pending.insert(0, current)
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.fir_sessions.update_one(
+        {"session_id": session_id},
+        {"$set": {
+            "probe_history": probe_history,
+            "current_probe": probe,
+            "pending_probes": pending,
+            "slots": slots,
+            "stage": "probe",
+            "updated_at": now,
+        }}
+    )
+    pdef = PROBE_Q.get(probe, {}) if probe else {}
+    return {
+        "ok": True,
+        "probe_key": probe,
+        "bot_message": pdef.get("message", "Previous question:"),
+        "input_type": pdef.get("input_type", "text"),
+        "quick_replies": pdef.get("quick_replies", []),
+        "skip_label": pdef.get("skip_label"),
+        "stage": "probe",
+    }
+
+
+# ── v3.3: Delete evidence file ────────────────────────────────────────────────
+@api.delete("/fir/session/{session_id}/evidence/{file_id}")
+async def fir_delete_evidence(session_id: str, file_id: str):
+    """Remove an evidence file from a session."""
+    from fir_storage import delete_evidence as _del_ev
+    session = await db.fir_sessions.find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(404, "Session not found")
+    ev_list = session.get("evidence_files", [])
+    ev = next((e for e in ev_list if e.get("file_id") == file_id), None)
+    if not ev:
+        raise HTTPException(404, "File not found")
+    # Best-effort delete from object storage
+    try:
+        await _del_ev(ev.get("storage_path", ""))
+    except Exception as exc:
+        logger.warning(f"[fir_delete_evidence] storage delete failed: {exc}")
+    # Remove from DB
+    await db.fir_sessions.update_one(
+        {"session_id": session_id},
+        {"$pull": {"evidence_files": {"file_id": file_id}},
+         "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True, "deleted_file_id": file_id}
+
+
+# ── v3.3: PDF export ──────────────────────────────────────────────────────────
+@api.get("/fir/session/{session_id}/draft.pdf")
+async def fir_get_pdf(session_id: str):
+    """Generate and return a PDF of the FIR draft."""
+    import io
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.units import cm
+    from fastapi.responses import Response as _Resp
+
+    session = await db.fir_sessions.find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(404, "Session not found")
+    draft = (session.get("draft") or "").strip()
+    if not draft:
+        raise HTTPException(400, "No draft generated yet. Please complete the interview first.")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        rightMargin=2 * cm, leftMargin=2 * cm,
+        topMargin=2 * cm, bottomMargin=2 * cm,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "DharaTitle", parent=styles["Heading1"],
+        fontSize=15, spaceAfter=8, leading=20,
+    )
+    body_style = ParagraphStyle(
+        "DharaBody", parent=styles["Normal"],
+        fontSize=10.5, leading=16, spaceAfter=6,
+    )
+    warn_style = ParagraphStyle(
+        "DharaWarn", parent=styles["Normal"],
+        fontSize=9, leading=14, textColor=(0.6, 0, 0), spaceAfter=4,
+    )
+
+    story = [
+        Paragraph("DHARA — FIR Citizen Draft", title_style),
+        Paragraph(
+            "<i>⚠ This is a citizen draft — NOT a registered FIR. "
+            "Present this document at the nearest police station.</i>",
+            warn_style,
+        ),
+        Spacer(1, 0.4 * cm),
+    ]
+    for line in draft.split("\n"):
+        safe = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if safe.strip():
+            story.append(Paragraph(safe, body_style))
+        else:
+            story.append(Spacer(1, 0.25 * cm))
+
+    doc.build(story)
+    buf.seek(0)
+    return _Resp(
+        content=buf.read(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="FIR_Draft_{session_id[:8]}.pdf"',
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
 app.include_router(api)
 
 app.add_middleware(

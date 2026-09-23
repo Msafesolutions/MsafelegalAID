@@ -206,6 +206,8 @@ export default function ChatScreen() {
   const [transcribing, setTranscribing] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [proMode, setProMode] = useState(false);
+  // v3.3: FIR sessions for "Continue your reports" banner
+  const [activeFirSessions, setActiveFirSessions] = useState<any[]>([]);
   const [paywall, setPaywall] = useState<null | {
     samples_used: number;
     samples_limit: number;
@@ -317,6 +319,20 @@ export default function ChatScreen() {
   // Forward-declared ref to `speak` so auto-speak logic inside `send` can call it
   // without a circular dependency (speak is defined AFTER send in this file).
   const speakRef = useRef<((msgId: string, text: string) => void) | null>(null);
+
+  // v3.3: Fetch active FIR sessions for "Continue your reports" section
+  useEffect(() => {
+    if (!user?.id) return;
+    fetch(`${API_BASE}/api/fir/sessions/${user.id}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((sessions: any[]) => {
+        const active = sessions.filter(
+          s => s.status !== 'completed' && s.status !== 'cancelled' && s.stage !== 'completed'
+        ).slice(0, 3);
+        setActiveFirSessions(active);
+      })
+      .catch(() => {});
+  }, [user?.id]);
 
   // Global unmount cleanup — critical for preventing app crashes when the user
   // navigates away while the mic is still recording. Without this, the STT
@@ -1679,6 +1695,32 @@ export default function ChatScreen() {
         <Ionicons name="chevron-forward" size={16} color={theme.colors.brand} />
       </Pressable>
 
+      {/* v3.3: Continue your reports */}
+      {activeFirSessions.length > 0 && (
+        <View style={styles.firResumeSection}>
+          <Text style={styles.firResumeSectionTitle}>Continue your reports</Text>
+          {activeFirSessions.map((sess: any) => {
+            const dateStr = sess.updated_at ? new Date(sess.updated_at).toLocaleDateString('en-IN') : '';
+            const types = (sess.incident_types || ['complaint']).join(', ');
+            const stage = sess.stage ? sess.stage.replace(/_/g, ' ') : 'in progress';
+            return (
+              <Pressable
+                key={sess.session_id}
+                style={styles.firResumeCard}
+                onPress={() => router.push({ pathname: '/fir-draft', params: { resumeId: sess.session_id } } as any)}
+              >
+                <Ionicons name="document-text-outline" size={20} color={theme.colors.brand} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.firResumeCardTitle} numberOfLines={1}>{types}</Text>
+                  <Text style={styles.firResumeCardSub}>{stage} · {dateStr}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={theme.colors.muted} />
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
       {/*
         keyboardVerticalOffset MUST be 0 here — it is not "the height of the chrome
         below us". The library computes the lift as
@@ -2437,6 +2479,22 @@ const styles = StyleSheet.create({
   },
   firQuickActionTitle: { fontSize: 13.5, fontWeight: '800', color: theme.colors.onSurface },
   firQuickActionSub: { fontSize: 11.5, color: theme.colors.onSurfaceSecondary, marginTop: 1 },
+  // v3.3: Continue your reports
+  firResumeSection: {
+    marginTop: 8, marginHorizontal: 12, marginBottom: 4,
+  },
+  firResumeSectionTitle: {
+    fontSize: 12, fontWeight: '700', color: theme.colors.onSurfaceSecondary,
+    textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginLeft: 2,
+  },
+  firResumeCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderRadius: 10, padding: 12, marginBottom: 6,
+    borderWidth: 1, borderColor: theme.colors.border,
+  },
+  firResumeCardTitle: { fontSize: 13, fontWeight: '700', color: theme.colors.onSurface },
+  firResumeCardSub: { fontSize: 11, color: theme.colors.onSurfaceSecondary, marginTop: 2 },
   firIntentCard: {
     flexDirection: 'row',
     alignItems: 'center',

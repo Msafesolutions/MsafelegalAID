@@ -124,6 +124,27 @@ async def download_evidence(storage_path: str) -> tuple[bytes, str]:
     return await loop.run_in_executor(_executor, _get_object_sync, storage_path)
 
 
+def _delete_object_sync(path: str) -> None:
+    key = _storage_key or _init_storage_sync()
+    try:
+        resp = requests.delete(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key},
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        logger.warning(f"[fir_storage] Delete failed for {path}: {e}")
+
+
+async def delete_evidence(storage_path: str) -> None:
+    """Delete an evidence file from Emergent Object Storage (best-effort)."""
+    if not storage_path:
+        return
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(_executor, _delete_object_sync, storage_path)
+
+
 def _classify_type(content_type: str) -> str:
     if content_type.startswith("image/"):
         return "image"

@@ -61,10 +61,34 @@ _SAFETY_KW: dict[str, list[str]] = {
     "POCSO":  ["child abuse", "minor abused", "pocso", "child rape", "childline"],
 }
 
+# Keywords indicating the user is in IMMEDIATE danger right now
+_EMERGENCY_NARRATIVE_KW = [
+    "help me now", "being attacked", "he is here", "he's here", "she is here",
+    "they are here", "in danger now", "save me", "will kill me", "killing me",
+    "beating me now", "is beating me", "please call police", "can't escape",
+    "trapped here", "attacking me", "hurting me right now", "running away",
+    "someone following me", "following me right now",
+]
+
 
 def _detect_safety_flags(text: str) -> list[str]:
     t = text.lower()
     return [f for f, kws in _SAFETY_KW.items() if any(k in t for k in kws)]
+
+
+def _detect_immediate_danger(text: str) -> bool:
+    """Return True if narrative suggests user is in danger RIGHT NOW."""
+    t = text.lower()
+    return any(kw in t for kw in _EMERGENCY_NARRATIVE_KW)
+
+
+# Keywords for relative date detection
+_RELATIVE_DATE_KW = {
+    "today": ["today", "aaj", "this morning", "this evening", "this afternoon",
+              "just now", "a few hours ago", "tonight"],
+    "yesterday": ["yesterday", "kal", "last night", "last evening"],
+    "last_week": ["last week", "pichle hafte", "a week ago"],
+}
 
 
 # ─── Helper validators ────────────────────────────────────────────────────────
@@ -387,6 +411,44 @@ PROBE_Q: dict[str, dict] = {
         "message": "That doesn't look like a valid mobile number — the police will need to reach you.\nPlease enter a 10-digit Indian mobile number:",
         "slot": "informant_phone", "input_type": INPUT_TEXT, "skip_label": "Skip — I'll share it at the station",
     },
+    # ── New incident-specific probes ──────────────────────────────────────────
+    "probe_force_used": {
+        "message": "Was any force, threat, or weapon used?\n(e.g., pushed, threatened, shown a weapon, snatched by force)",
+        "slot": "force_used", "input_type": INPUT_QUICK_REPLY,
+        "quick_replies": ["Yes, force was used", "No, no force"],
+    },
+    "probe_stolen_phone_imei": {
+        "message": "Was a phone stolen? If yes, do you know the IMEI number?\n(Dial *#06# or check Settings → About. Helps police trace and block the device)",
+        "slot": "stolen_phone_imei", "input_type": INPUT_TEXT,
+        "skip_label": "No phone stolen / Don't know IMEI",
+    },
+    "probe_sim_blocked": {
+        "message": "If a SIM card was stolen with the phone, have you blocked it yet?\n(Call your telecom operator's helpline to block: Airtel 121 / Jio 198 / BSNL 1500)",
+        "slot": "sim_blocked", "input_type": INPUT_QUICK_REPLY,
+        "quick_replies": ["Yes, SIM blocked", "Not yet — I'll do it now", "No SIM was stolen"],
+    },
+    "probe_incident_place_detail": {
+        "message": "Any additional location details?\n(e.g., bus number/route, train compartment, exact seat, vehicle registration)",
+        "slot": "incident_place_detail", "input_type": INPUT_TEXT,
+        "skip_label": "No additional details",
+    },
+    "probe_transaction_ids": {
+        "message": "Please share the transaction ID(s) or UTR/reference number(s) from your bank or UPI app.\n(Check your SMS, email, or app history — helps police trace the fraud)",
+        "slot": "transaction_ids", "input_type": INPUT_TEXT,
+        "skip_label": "Don't have them right now",
+    },
+    "probe_scammer_contact": {
+        "message": "Do you have any contact details of the scammer?\n(Phone number, email, UPI ID, website URL, bank account number — share whatever you have)",
+        "slot": "scammer_contact", "input_type": INPUT_TEXT,
+        "skip_label": "Don't have any contact details",
+    },
+    "probe_date_confirm": {
+        # message is set dynamically when this probe is served
+        "message": "Could you confirm the date of the incident?",
+        "slot": "incident_date", "input_type": INPUT_QUICK_REPLY,
+        "quick_replies": ["Yes, that's correct", "No, let me correct the date"],
+        "skip_label": "Keep as is",
+    },
 }
 
 # ─── Incident type → BNS section mapping (Citation Guard source-of-truth) ─────
@@ -413,12 +475,15 @@ _PROPERTY_REQUIRED: set[str] = {"303", "309", "310"}
 def _build_probe_queue(
     slots: dict, incident_types: list[str],
     date_conflict_msg: Optional[str] = None,
+    relative_date_display: Optional[str] = None,
 ) -> list[str]:
     """Build ordered probe queue from missing slots + incident types."""
     q: list[str] = []
-    # Date confirmation if there's a conflict
+    # Date: conflict, relative confirmation, or ask fresh
     if date_conflict_msg and not slots.get("incident_date"):
         q.append("probe_date")
+    elif relative_date_display and slots.get("incident_date") and not slots.get("date_confirmed"):
+        q.append("probe_date_confirm")
     elif not slots.get("incident_date"):
         q.append("probe_date")
     if not slots.get("incident_time"):
@@ -426,15 +491,27 @@ def _build_probe_queue(
     if not slots.get("incident_place_text"):
         q.append("probe_place_text")
     q.append("probe_place_gps")  # always offered
-    # Incident-specific
+    # ── Incident-specific ────────────────────────────────────────────────────
     if "theft" in incident_types and not slots.get("theft_items"):
         q.append("probe_theft_items")
+    if "theft" in incident_types and slots.get("force_used") is None:
+        q.append("probe_force_used")
+    if "theft" in incident_types and slots.get("stolen_phone_imei") is None:
+        q.append("probe_stolen_phone_imei")
+    if "theft" in incident_types and slots.get("sim_blocked") is None:
+        q.append("probe_sim_blocked")
+    if "theft" in incident_types and slots.get("incident_place_detail") is None:
+        q.append("probe_incident_place_detail")
     if any(t in incident_types for t in ("assault", "robbery")):
         if slots.get("injury") is None:
             q.append("probe_injury")
         q.append("probe_assault_mlc")
     if "cyber_fraud" in incident_types and not slots.get("cyber_amount"):
         q.append("probe_cyber_amount")
+    if "cyber_fraud" in incident_types and not slots.get("transaction_ids"):
+        q.append("probe_transaction_ids")
+    if "cyber_fraud" in incident_types and not slots.get("scammer_contact"):
+        q.append("probe_scammer_contact")
     if "harassment" in incident_types and slots.get("harassment_mode") is None:
         q.append("probe_harassment_online")
     if "sexual_harassment" in incident_types and slots.get("harassment_mode") is None:
@@ -492,7 +569,7 @@ For incident_types use ONLY these exact strings (choose all that apply):
 For injury/property_loss: "yes" / "no" / null (null = not clearly mentioned)
 DATES: Today's date is {today_str}. When no year is specified in the narrative, assume the current year {date.today().year}.
 If the narrative says 'today', set incident_date to today's date: {date.today().isoformat()}.
-If the narrative says 'yesterday', set incident_date to {(date.today().replace(day=date.today().day-1)).isoformat()} (yesterday).
+If the narrative says 'yesterday', set incident_date to {(date.today() - timedelta(days=1)).isoformat()} (yesterday).
 """  # noqa: E501
 
 
@@ -616,16 +693,20 @@ async def generate_draft(
 
     prompt = f"""Generate a formal FIR complaint letter with the following details:
 
-Complainant name: {slots.get('informant_name', '[Not provided]')}
-Complainant address: {slots.get('informant_address', '[Not provided]')}
-Contact number: {slots.get('informant_phone', '[Not provided]')}
-Date of incident: {slots.get('incident_date', '[Not specified]')}
-Time of incident: {slots.get('incident_time', '[Not specified]')}
+Complainant name: {slots.get('informant_name') or 'Not provided'}
+Complainant address: {slots.get('informant_address') or 'Not provided'}
+Contact number: {slots.get('informant_phone') or 'Not provided'}
+Date of incident: {slots.get('incident_date') or 'Not specified'}
+Time of incident: {slots.get('incident_time') or 'Not specified'}
 Place of incident: {place_display}
-Incident description: {slots.get('description', '[Not provided]')}
-Accused: {slots.get('accused', 'Not identified')}
-Injury: {slots.get('injury', 'Not reported')}
-Property loss / stolen items: {slots.get('property_loss', 'Not reported')}{' | ' + str(slots.get('theft_items','')) if slots.get('theft_items') else ''}
+Incident description: {slots.get('description') or 'Not provided'}
+Accused: {slots.get('accused') or 'Not identified'}
+Injury: {slots.get('injury') or 'Not reported'}
+Property loss / stolen items: {slots.get('property_loss') or 'Not reported'}{' | ' + str(slots.get('theft_items','')) if slots.get('theft_items') else ''}
+Force used: {slots.get('force_used') or 'Not reported'}
+IMEI (if phone stolen): {slots.get('stolen_phone_imei') or ''}
+Transaction IDs: {slots.get('transaction_ids') or ''}
+Scammer contact: {slots.get('scammer_contact') or ''}
 Additional details: {slots.get('cyber_amount', '')} {slots.get('assault_mlc', '')} {slots.get('harassment_mode', '')}
 Witnesses: {witnesses_val}
 
@@ -639,6 +720,7 @@ Date of report: {date_str}
 
 Write the letter in English, addressed to "The Station House Officer".
 Write in first person throughout.
+IMPORTANT: NEVER use [bracket placeholders] in the letter. If a detail is missing or not provided, write "Not provided" or omit the sentence entirely. Do not leave any square bracket text in the output.
 {lang_line}
 
 End the letter (after both languages if bilingual) with EXACTLY this disclaimer block:
@@ -665,25 +747,34 @@ FREE LEGAL AID: NALSA 15100 | Women Helpline 181 | Cybercrime 1930 | Police 100"
 
 
 def _fallback_draft(slots: dict, sec_text: str, ev_text: str, date_str: str, loc: str) -> str:
+    name = slots.get('informant_name') or 'Complainant'
+    address = slots.get('informant_address') or 'Address not provided'
+    phone = slots.get('informant_phone') or 'Not provided'
+    inc_date = slots.get('incident_date') or 'Date not provided'
+    inc_time = slots.get('incident_time') or 'Time not provided'
+    desc = slots.get('description') or 'Details to be provided at the time of statement'
+    accused = slots.get('accused') or 'Not identified'
+    injury = slots.get('injury') or 'Not reported'
+    witnesses = slots.get('witnesses') or 'None mentioned'
     return f"""To,
 The Station House Officer,
-[Police Station — to be filled]
+(Police Station to be filled)
 
-Subject: Complaint regarding {slots.get('description', 'incident')[:80]}
+Subject: Complaint regarding {desc[:80]}
 
 Sir/Madam,
 
-I, {slots.get('informant_name', '[Name]')}, residing at {slots.get('informant_address', '[Address]')},
-contact: {slots.get('informant_phone', '[Phone]')}, wish to register the following complaint:
+I, {name}, residing at {address},
+contact: {phone}, wish to register the following complaint:
 
-On {slots.get('incident_date', '[Date]')} at {slots.get('incident_time', '[Time]')},
+On {inc_date} at {inc_time},
 at {loc}, the following occurred:
 
-{slots.get('description', '[Description not provided]')}
+{desc}
 
-Accused: {slots.get('accused', 'Not identified')}
-Injury: {slots.get('injury', 'Not reported')}
-Witnesses: {slots.get('witnesses', 'None mentioned')}
+Accused: {accused}
+Injury: {injury}
+Witnesses: {witnesses}
 
 Evidence attached:
 {ev_text}
@@ -694,7 +785,7 @@ Applicable BNS sections (suggested):
 I request you to register this FIR and take appropriate legal action.
 
 Yours faithfully,
-{slots.get('informant_name', '[Complainant]')}
+{name}
 Date: {date_str}
 
 ---
@@ -744,6 +835,9 @@ async def create_session(
         "description": None, "accused": None, "witnesses": None, "witnesses_detail": None,
         "injury": None, "property_loss": None, "words_or_threats": None,
         "theft_items": None, "cyber_amount": None, "assault_mlc": None, "harassment_mode": None,
+        "force_used": None, "stolen_phone_imei": None, "sim_blocked": None,
+        "incident_place_detail": None, "transaction_ids": None, "scammer_contact": None,
+        "date_confirmed": None,
         "informant_name": None, "informant_address": None, "informant_phone": None,
     }
     doc = {
@@ -765,7 +859,9 @@ async def create_session(
         "safety_flags": [],
         "parked_questions": [],        # v3.1: off-topic user responses parked here
         "date_conflict_msg": None,     # v3.1: set when contradiction detected
+        "relative_date_display": None, # v3.3: absolute date computed from relative ("yesterday" → "14 June 2026")
         "phone_retry_done": False,     # v3.1: one phone retry flag
+        "probe_history": [],           # v3.3: [{probe, slot, value}] for back navigation
         "draft": None,
         "created_at": now,
         "updated_at": now,
@@ -849,19 +945,45 @@ async def _dispatch(
     # ── Safety Gate ───────────────────────────────────────────────────────────
     if stage == STAGE_SAFETY_GATE:
         sf = _detect_safety_flags(user_message or "")
+        # Use boolean flag: action=="not_safe" is the authoritative signal
+        # (frontend sends this when "No, I need help" button is tapped)
         not_safe = (
             action == "not_safe"
-            or (user_message or "").lower().strip() in ["no", "not safe", "in danger", "help me", "no i need help"]
-        )
-        lines = ["Thank you for trusting DHARA with your complaint."]
-        if not_safe:
-            lines += [
-                "\n\u26a0\ufe0f If you are in immediate danger:",
-                "\U0001f4de Police: 100",
-                "\U0001f4de Women Helpline: 181",
-                "\U0001f4de NALSA Legal Aid: 15100 (free)",
-                "\nYou can still use DHARA to prepare your complaint — let's continue.",
+            or (user_message or "").lower().strip() in [
+                "no", "not safe", "in danger", "help me",
+                "no i need help", "no, i need help",
             ]
+        )
+        if not_safe:
+            # Pause session so it appears in "Continue your reports"
+            await db.fir_sessions.update_one(
+                {"session_id": sid},
+                {"$set": {"status": "paused", "safety_flags": sf, "updated_at": now}},
+            )
+            return {
+                "session_id": sid, "stage": STAGE_SAFETY_GATE,
+                "bot_message": (
+                    "\u26a0\ufe0f Please stay safe first.\n\n"
+                    "\U0001f4de Emergency: 112\n"
+                    "\U0001f4de Women Helpline: 181\n"
+                    "\U0001f4de Ambulance: 108\n"
+                    "\U0001f4de NALSA Legal Aid: 15100 (free)\n\n"
+                    "Call for help now if you are in immediate danger.\n\n"
+                    "When you are safe, tap the button below to continue filing your complaint."
+                ),
+                "input_type": INPUT_QUICK_REPLY,
+                "quick_replies": ["I'm safe now \u2014 continue filing", "Exit for now"],
+                "show_emergency": True,
+                "emergency_numbers": [
+                    {"label": "Police / Emergency", "number": "112"},
+                    {"label": "Women Helpline", "number": "181"},
+                    {"label": "Ambulance", "number": "108"},
+                    {"label": "NALSA Legal Aid", "number": "15100"},
+                ],
+                "safety_flags": sf, "completed": False,
+            }
+
+        lines = ["Thank you for trusting DHARA with your complaint."]
         if "POCSO" in sf:
             lines.append("\n\U0001f198 This may involve a child — Childline: 1098 (24×7 FREE)")
         elif sf:
@@ -881,12 +1003,54 @@ async def _dispatch(
     # ── Free Narrative ────────────────────────────────────────────────────────
     elif stage == STAGE_FREE_NARRATIVE:
         narrative = (user_message or "").strip()
+
+        # ── v3.3: Handle safety gate "I'm safe now" continuation ───────────
+        if action == "continue_safe":
+            await db.fir_sessions.update_one(
+                {"session_id": sid},
+                {"$set": {"stage": STAGE_FREE_NARRATIVE, "status": "active", "updated_at": now}},
+            )
+            return {
+                "session_id": sid, "stage": STAGE_FREE_NARRATIVE,
+                "bot_message": "I'm glad you're safe. Please tell me in your own words: what happened?\nTake your time — speak or type freely.",
+                "input_type": INPUT_VOICE_TEXT, "quick_replies": [], "completed": False,
+            }
+
         if len(narrative) < 20:
             return {
                 "session_id": sid, "stage": STAGE_FREE_NARRATIVE,
                 "bot_message": "Could you share a bit more detail about what happened?",
                 "input_type": INPUT_VOICE_TEXT, "quick_replies": [], "completed": False,
             }
+
+        # ── v3.3: Immediate danger detection (EMERGENCY) ────────────────────
+        if _detect_immediate_danger(narrative):
+            await db.fir_sessions.update_one(
+                {"session_id": sid},
+                {"$set": {"status": "paused", "updated_at": now}},
+            )
+            return {
+                "session_id": sid, "stage": STAGE_FREE_NARRATIVE,
+                "bot_message": (
+                    "\u26a0\ufe0f You seem to be describing an ongoing emergency.\n\n"
+                    "Please call for help FIRST:\n"
+                    "\U0001f4de Emergency: 112\n"
+                    "\U0001f4de Women Helpline: 181\n"
+                    "\U0001f4de Ambulance: 108\n\n"
+                    "Your session is saved. Come back to complete your complaint when you are safe."
+                ),
+                "input_type": INPUT_QUICK_REPLY,
+                "quick_replies": ["I'm safe \u2014 continue filing"],
+                "show_emergency": True,
+                "action": "EMERGENCY",
+                "emergency_numbers": [
+                    {"label": "Emergency", "number": "112"},
+                    {"label": "Women Helpline", "number": "181"},
+                    {"label": "Ambulance", "number": "108"},
+                ],
+                "completed": False,
+            }
+
         extracted = await extract_slots_llm(narrative, llm_key)
 
         # ── FIX 8: Keyword fallback for incident_types ──────────────────────
@@ -906,13 +1070,26 @@ async def _dispatch(
         # ── FIX 1: Date contradiction detection ─────────────────────────────
         date_conflict_msg = _has_date_conflict(narrative, extracted.get("incident_date"))
         if date_conflict_msg:
-            # Clear the potentially wrong extracted date so probe_date is triggered
             slots["incident_date"] = None
 
+        # ── v3.3: Relative date tracking — build confirm message ─────────────
+        relative_date_display: Optional[str] = None
+        t_low = narrative.lower()
+        if extracted.get("incident_date") and not date_conflict_msg:
+            if any(kw in t_low for kw in _RELATIVE_DATE_KW.get("today", [])):
+                relative_date_display = f"today, {extracted['incident_date']}"
+            elif any(kw in t_low for kw in _RELATIVE_DATE_KW.get("yesterday", [])):
+                relative_date_display = f"yesterday, {extracted['incident_date']}"
+
         sf_all = list(set(list(session.get("safety_flags", [])) + _detect_safety_flags(narrative)))
-        probe_queue = _build_probe_queue(slots, new_types, date_conflict_msg)
+        probe_queue = _build_probe_queue(
+            slots, new_types, date_conflict_msg, relative_date_display
+        )
         first_probe = probe_queue[0] if probe_queue else None
         remaining = probe_queue[1:] if probe_queue else []
+
+        # ── v3.3: Cybercrime alert for first probe ───────────────────────────
+        show_cyber_alert = "cyber_fraud" in new_types
 
         await db.fir_sessions.update_one(
             {"session_id": sid},
@@ -922,25 +1099,50 @@ async def _dispatch(
                 "pending_probes": remaining, "current_probe": first_probe,
                 "safety_flags": sf_all,
                 "date_conflict_msg": date_conflict_msg,
+                "relative_date_display": relative_date_display,
                 "updated_at": now,
             }},
         )
         if first_probe:
             types_str = " and ".join(t.replace("_", " ") for t in new_types[:2])
             pdef = PROBE_Q[first_probe]
-            # For probe_date when conflict detected, use the conflict message
-            bot_msg_suffix = date_conflict_msg if (first_probe == "probe_date" and date_conflict_msg) else pdef["message"]
+
+            # Dynamic message for probe_date_confirm
+            if first_probe == "probe_date_confirm" and relative_date_display:
+                bot_msg_suffix = (
+                    f"I calculated the incident happened on **{relative_date_display}**.\n"
+                    "Is that correct?"
+                )
+            elif first_probe == "probe_date" and date_conflict_msg:
+                bot_msg_suffix = date_conflict_msg
+            else:
+                bot_msg_suffix = pdef["message"]
+
+            # Cybercrime helpline header
+            cyber_header = ""
+            if show_cyber_alert:
+                cyber_header = (
+                    "\U0001f6a8 IMPORTANT — CYBERCRIME GOLDEN HOUR ALERT:\n"
+                    "Call 1930 (National Cybercrime Helpline) IMMEDIATELY if you lost money.\n"
+                    "The sooner you report, the better your chances of recovering funds.\n"
+                    "You can also file at cybercrime.gov.in\n\n"
+                )
+
+            intro = (
+                f"{cyber_header}"
+                f"Thank you for sharing that. I can see this involves {types_str}.\n\n"
+                f"I have a few clarifying questions to complete your complaint.\n\n"
+                f"{bot_msg_suffix}"
+            )
             return {
                 "session_id": sid, "stage": STAGE_PROBE, "probe_key": first_probe,
-                "bot_message": (
-                    f"Thank you for sharing that. I can see this involves {types_str}.\n\n"
-                    f"I have a few clarifying questions to complete your complaint.\n\n"
-                    f"{bot_msg_suffix}"
-                ),
+                "bot_message": intro,
                 "input_type": pdef["input_type"],
                 "quick_replies": pdef.get("quick_replies", []),
                 "skip_label": pdef.get("skip_label"),
-                "safety_flags": sf_all, "completed": False,
+                "safety_flags": sf_all,
+                "show_cybercrime_alert": show_cyber_alert,
+                "completed": False,
             }
         return await _enter_section_suggest(db, corpus_db, sid, slots, new_types, now)
 
@@ -969,7 +1171,14 @@ async def _dispatch(
                     "quick_replies": ["Yes, that's correct", "No, use text description"],
                     "confirmed_address": addr, "completed": False,
                 }
-            return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now)
+            else:
+                # ── v3.3: GPS declined/skipped — record source ───────────────
+                slots["incident_gps"] = {"source": "skipped"}
+                await db.fir_sessions.update_one(
+                    {"session_id": sid},
+                    {"$set": {"slots": slots, "updated_at": now}},
+                )
+            return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now, completed_probe=cp)
 
         elif cp == "probe_evidence":
             if action in ("skip", "upload_done"):
@@ -1114,13 +1323,90 @@ async def _dispatch(
                     await db.fir_sessions.update_one(
                         {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
                     )
+                # ── v3.3: New probe handlers ─────────────────────────────────
+                elif cp == "probe_force_used":
+                    m_lower = user_message.lower()
+                    force = "yes" in m_lower or "force" in m_lower or "weapon" in m_lower
+                    slots["force_used"] = "yes" if force else "no"
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
+                    # Robbery upgrade: if force confirmed AND theft, add robbery
+                    if force and "theft" in incident_types and "robbery" not in incident_types:
+                        new_types = list(incident_types) + ["robbery"]
+                        # Re-run section retrieval
+                        new_sections, _ = await suggest_sections(corpus_db, new_types, slots)
+                        # Insert injury + mlc probes if not already in queue
+                        extra = []
+                        if "probe_injury" not in pending_probes and not slots.get("injury"):
+                            extra.append("probe_injury")
+                        if "probe_assault_mlc" not in pending_probes:
+                            extra.append("probe_assault_mlc")
+                        new_pending = extra + pending_probes
+                        await db.fir_sessions.update_one(
+                            {"session_id": sid},
+                            {"$set": {
+                                "incident_types": new_types,
+                                "suggested_sections": new_sections,
+                                "pending_probes": new_pending,
+                                "updated_at": now,
+                            }}
+                        )
+                        pending_probes = new_pending
+                        incident_types = new_types
+
+                elif cp == "probe_stolen_phone_imei":
+                    slots["stolen_phone_imei"] = user_message
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
+                elif cp == "probe_sim_blocked":
+                    slots["sim_blocked"] = user_message
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
+                elif cp == "probe_incident_place_detail":
+                    slots["incident_place_detail"] = user_message
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
+                elif cp == "probe_transaction_ids":
+                    slots["transaction_ids"] = user_message
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
+                elif cp == "probe_scammer_contact":
+                    slots["scammer_contact"] = user_message
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
                 else:
                     slots[slot_key] = user_message
                     await db.fir_sessions.update_one(
                         {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
                     )
 
-        return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now)
+        # ── v3.3: Handle probe_date_confirm (quick-reply probe, not text) ───
+        if cp == "probe_date_confirm":
+            m_lower = (user_message or "").lower()
+            if "no" in m_lower or "correct" in m_lower and "yes" not in m_lower:
+                # User wants to correct — clear date and prepend probe_date
+                slots["incident_date"] = None
+                slots["date_confirmed"] = None
+                new_pending = ["probe_date"] + pending_probes
+                await db.fir_sessions.update_one(
+                    {"session_id": sid},
+                    {"$set": {"slots": slots, "pending_probes": new_pending, "updated_at": now}}
+                )
+                return await _advance_probe(db, corpus_db, sid, slots, new_pending, incident_types, now, completed_probe=cp)
+            else:
+                # User confirmed — mark as confirmed
+                slots["date_confirmed"] = True
+                await db.fir_sessions.update_one(
+                    {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                )
+
+        return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now, completed_probe=cp)
 
     # ── GPS Confirm ───────────────────────────────────────────────────────────
     elif stage == STAGE_GPS_CONFIRM:
@@ -1205,8 +1491,19 @@ async def _dispatch(
 async def _advance_probe(
     db, corpus_db, sid: str, slots: dict,
     pending_probes: list[str], incident_types: list[str], now: str,
+    completed_probe: Optional[str] = None,
 ) -> dict:
     """Advance to next probe in queue, or enter section_suggest if none left."""
+    # ── v3.3: Track answered probe for back navigation ──────────────────────
+    if completed_probe and completed_probe in PROBE_Q:
+        pdef_done = PROBE_Q[completed_probe]
+        slot_key = pdef_done.get("slot")
+        # Store None as "restore value" — going back should clear the slot
+        # so the user can re-answer with a fresh prompt
+        await db.fir_sessions.update_one(
+            {"session_id": sid},
+            {"$push": {"probe_history": {"probe": completed_probe, "slot": slot_key, "value": None}}},
+        )
     if pending_probes:
         next_probe = pending_probes[0]
         remaining = pending_probes[1:]
@@ -1215,9 +1512,16 @@ async def _advance_probe(
             {"$set": {"pending_probes": remaining, "current_probe": next_probe, "updated_at": now}},
         )
         pdef = PROBE_Q[next_probe]
+        # Dynamic message for probe_date_confirm
+        session_fresh = await db.fir_sessions.find_one({"session_id": sid}, {"relative_date_display": 1})
+        rdd = session_fresh.get("relative_date_display") if session_fresh else None
+        if next_probe == "probe_date_confirm" and rdd:
+            bot_msg = f"I calculated the incident happened on **{rdd}**.\nIs that correct?"
+        else:
+            bot_msg = pdef["message"]
         return {
             "session_id": sid, "stage": STAGE_PROBE, "probe_key": next_probe,
-            "bot_message": pdef["message"],
+            "bot_message": bot_msg,
             "input_type": pdef["input_type"],
             "quick_replies": pdef.get("quick_replies", []),
             "skip_label": pdef.get("skip_label"), "completed": False,
