@@ -21,8 +21,10 @@ import * as DocumentPicker from 'expo-document-picker';
 import { API_BASE, useAuth } from '@/src/auth';
 import {
   useAudioRecorder, RecordingPresets, setAudioModeAsync, AudioModule,
+  createAudioPlayer,
 } from 'expo-audio';
 import { whisperTranscribeFile } from '@/src/voice/stt';
+import { ChunkedSpeaker } from '@/src/voice/tts';
 import FirSectionDrawer, { SectionItem, DroppedSection } from '@/src/components/FirSectionDrawer';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -99,6 +101,7 @@ export default function FirDraftScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ resumeId?: string }>();
   const { user } = useAuth();
+  const { token } = useAuth();
   const insets = useSafeAreaInsets();
 
   // ── Session state ──────────────────────────────────────────────────────────
@@ -126,6 +129,16 @@ export default function FirDraftScreen() {
   const [droppedSections, setDroppedSections] = useState<DroppedSection[]>([]);
   const [sectionMsgId, setSectionMsgId] = useState<string | null>(null);
   const messageYsRef = useRef<{[id: string]: number}>({});
+
+  // TTS: auto-speak bot messages (for users who can't read)
+  const [autoSpeak, setAutoSpeak]   = useState(true);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const [ttsLoadingMsgId, setTtsLoadingMsgId] = useState<string | null>(null);
+  const speakerRef   = useRef<InstanceType<typeof ChunkedSpeaker> | null>(null);
+  const speakingIdRef = useRef<string | null>(null);
+  // Forward-declared refs to avoid stale closures in applyTurn callback
+  const autoSpeakRef = useRef(true);
+  const speakRef = useRef<((msgId: string, text: string) => void) | null>(null);
 
   // ── Language ───────────────────────────────────────────────────────────────
   const [language, setLanguage] = useState('en');
@@ -218,6 +231,15 @@ export default function FirDraftScreen() {
     }
     if (res.dropped_sections && res.dropped_sections.length > 0) {
       setDroppedSections(res.dropped_sections);
+    }
+    // TTS: auto-speak bot message
+    if (botMsgId && res.bot_message) {
+      // Use ref to avoid stale closure
+      setTimeout(() => {
+        if (autoSpeakRef.current && botMsgId) {
+          speakRef.current?.(botMsgId, res.bot_message!);
+        }
+      }, 200);
     }
   }, [addMessage]);
 
@@ -530,7 +552,9 @@ Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
       const uri = recorder.uri;
       if (!uri) throw new Error('No recording URI');
       const langCode = FIR_LANGUAGES.find(l => l.code === language)?.sttLang || 'en-IN';
-      const text = await whisperTranscribeFile(uri, langCode);
+      // Fixed: correct arg order — apiBase, token, uri, languageHint
+      const result = await whisperTranscribeFile(API_BASE, token || '', uri, langCode);
+      const text = result?.text || '';
       if (text) setTextInput(prev => (prev ? prev + ' ' + text : text));
     } catch {
       Alert.alert('Transcription failed', 'Please type your response instead.');
@@ -586,8 +610,109 @@ ${data.bot_message}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft]);
 
+  // ── TTS: stop any ongoing speech ──────────────────────────────────────────
+  const stopTTS = useCallback(() => {
+    try { speakerRef.current?.stop(); } catch {}
+    speakerRef.current = null;
+    setSpeakingMsgId(null);
+    setTtsLoadingMsgId(null);
+    speakingIdRef.current = null;
+  }, []);
+
+  // Keep forward-declared refs current
+  useEffect(() => { autoSpeakRef.current = autoSpeak; }, [autoSpeak]);
+
+  const speak = useCallback(async (msgId: string, text: string) => {
+    // Toggle: tap again to stop
+    if (speakingMsgId === msgId || ttsLoadingMsgId === msgId) { stopTTS(); return; }
+    stopTTS();
+    if (!text?.trim() || !token) return;
+
+    speakingIdRef.current = msgId;
+    setTtsLoadingMsgId(msgId);
+
+    try {
+      if (Platform.OS !== 'web') {
+        await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });
+      }
+    } catch {}
+
+    const speaker = new ChunkedSpeaker({
+      apiBase: API_BASE,
+      token,
+      language: language || 'en',
+      group: msgId,
+      rate: 1.0,
+      writeAudio: async (buf: ArrayBuffer, index: number) => {
+        if (Platform.OS === 'web') {
+          const blob = new Blob([buf], { type: 'audio/mpeg' });
+          const url = (globalThis as any).URL.createObjectURL(blob);
+          return { uri: url, cleanup: () => { try { (globalThis as any).URL.revokeObjectURL(url); } catch {} } };
+        }
+        // Native: write to cache file
+        const { Paths, File } = require('expo-file-system/legacy');
+        const arr = new Uint8Array(buf);
+        let bin = '';
+        const CHUNK = 0x8000;
+        for (let i = 0; i < arr.length; i += CHUNK) {
+          bin += String.fromCharCode.apply(null, Array.from(arr.subarray(i, i + CHUNK)) as any);
+        }
+        const g: any = globalThis;
+        const b64 = g.btoa ? g.btoa(bin) : Buffer.from(bin, 'binary').toString('base64');
+        const file = new File(Paths.cache, `dhara-fir-tts-${msgId}-${index}.mp3`);
+        try { file.delete(); } catch {}
+        file.create();
+        file.write(b64, { encoding: 'base64' });
+        return { uri: file.uri, cleanup: () => { try { file.delete(); } catch {} } };
+      },
+      createPlayer: (uri: string) => {
+        const player = createAudioPlayer({ uri });
+        let started = false; let finished = false; let onDone: (() => void) | null = null;
+        let finishedBeforeSubscribe = false;
+        const fireFinish = () => {
+          if (finished) return; finished = true;
+          if (onDone) onDone(); else finishedBeforeSubscribe = true;
+        };
+        const tryStart = () => {
+          if (started) return; started = true;
+          try { player.play(); } catch { setTimeout(() => { try { player.play(); } catch {} }, 150); }
+        };
+        try {
+          (player as any).addListener?.('playbackStatusUpdate', (st: any) => {
+            if (!started && st?.isLoaded) tryStart();
+            if (st?.didJustFinish || (st?.duration > 0 && st?.currentTime >= st?.duration - 0.05)) fireFinish();
+          });
+        } catch {}
+        if ((player as any).isLoaded) tryStart();
+        setTimeout(() => { if (!started) tryStart(); }, 2500);
+        const guard = setTimeout(fireFinish, 90_000);
+        return {
+          play: () => tryStart(),
+          remove: () => { clearTimeout(guard); try { player.pause(); } catch {} try { player.remove(); } catch {} },
+          setPlaybackRate: (r: number) => { try { player.setPlaybackRate(r); } catch {} },
+          onFinish: (cb: () => void) => {
+            onDone = cb;
+            if (finishedBeforeSubscribe) setTimeout(cb, 0);
+          },
+        };
+      },
+      onSpeakingChange: (speaking: boolean) => {
+        if (!speaking && speakingIdRef.current === msgId) {
+          setSpeakingMsgId(null);
+          speakingIdRef.current = null;
+        }
+      },
+    });
+    speakerRef.current = speaker;
+    setSpeakingMsgId(msgId);
+    setTtsLoadingMsgId(null);
+    speaker.end(text);
+  }, [speakingMsgId, ttsLoadingMsgId, stopTTS, token, language]);
+
   // ── Selected language ──────────────────────────────────────────────────────
   const selectedLang = FIR_LANGUAGES.find(l => l.code === language) || FIR_LANGUAGES[0];
+  // Keep speakRef in sync for use inside applyTurn callback
+  useEffect(() => { speakRef.current = speak; }, [speak]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // PRE-SESSION: Language picker + Start button
@@ -721,6 +846,18 @@ ${data.bot_message}`);
             <Ionicons name="list-outline" size={22} color={GOLD} />
           </Pressable>
         )}
+        {/* TTS auto-speak toggle */}
+        <Pressable
+          onPress={() => { setAutoSpeak(p => !p); if (autoSpeak) stopTTS(); }}
+          style={styles.pauseBtn}
+          hitSlop={12}
+        >
+          <Ionicons
+            name={autoSpeak ? 'volume-high-outline' : 'volume-mute-outline'}
+            size={20}
+            color={autoSpeak ? GOLD : MUTED}
+          />
+        </Pressable>
         <Pressable onPress={handlePause} style={styles.pauseBtn} hitSlop={12}>
           <Ionicons name="bookmark-outline" size={20} color={GOLD} />
         </Pressable>
@@ -743,7 +880,14 @@ ${data.bot_message}`);
               key={msg.id}
               onLayout={(e) => { messageYsRef.current[msg.id] = e.nativeEvent.layout.y; }}
             >
-              <MessageBubble role={msg.role} text={msg.text} />
+              <MessageBubble
+                role={msg.role}
+                text={msg.text}
+                msgId={msg.id}
+                onSpeak={speak}
+                isSpeaking={speakingMsgId === msg.id}
+                isTtsLoading={ttsLoadingMsgId === msg.id}
+              />
             </View>
           ))}
           {isLoading && <TypingIndicator />}
@@ -877,7 +1021,15 @@ ${data.bot_message}`);
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function MessageBubble({ role, text }: { role: 'bot' | 'user'; text: string }) {
+function MessageBubble({
+  role, text, msgId, onSpeak, isSpeaking, isTtsLoading,
+}: {
+  role: 'bot' | 'user'; text: string;
+  msgId?: string;
+  onSpeak?: (id: string, text: string) => void;
+  isSpeaking?: boolean;
+  isTtsLoading?: boolean;
+}) {
   const isBot = role === 'bot';
   return (
     <View style={[styles.bubbleWrap, isBot ? styles.bubbleWrapBot : styles.bubbleWrapUser]}>
@@ -886,10 +1038,33 @@ function MessageBubble({ role, text }: { role: 'bot' | 'user'; text: string }) {
           <Text style={styles.botAvatarText}>⚖</Text>
         </View>
       )}
-      <View style={[styles.bubble, isBot ? styles.bubbleBot : styles.bubbleUser]}>
-        <Text style={[styles.bubbleText, isBot ? styles.bubbleTextBot : styles.bubbleTextUser]}>
-          {text}
-        </Text>
+      <View style={{ flex: 1, maxWidth: '85%' }}>
+        <View style={[styles.bubble, isBot ? styles.bubbleBot : styles.bubbleUser]}>
+          <Text style={[styles.bubbleText, isBot ? styles.bubbleTextBot : styles.bubbleTextUser]}>
+            {text}
+          </Text>
+        </View>
+        {/* TTS speaker button on bot messages */}
+        {isBot && msgId && onSpeak && (
+          <Pressable
+            onPress={() => onSpeak(msgId, text)}
+            style={styles.ttsBubbleBtn}
+            hitSlop={8}
+          >
+            {isTtsLoading ? (
+              <ActivityIndicator size="small" color={GOLD} />
+            ) : (
+              <Ionicons
+                name={isSpeaking ? 'stop-circle-outline' : 'volume-medium-outline'}
+                size={16}
+                color={isSpeaking ? GOLD : MUTED}
+              />
+            )}
+            <Text style={[styles.ttsBubbleBtnText, isSpeaking && { color: GOLD }]}>
+              {isSpeaking ? 'Stop' : 'Listen'}
+            </Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -1296,6 +1471,15 @@ const styles = StyleSheet.create({
   },
   gpsBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 
+  // TTS button below bot bubble
+  ttsBubbleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'flex-start', marginTop: 3, marginLeft: 4,
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 10, backgroundColor: CREAM,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  ttsBubbleBtnText: { fontSize: 11, color: MUTED, fontWeight: '500' },
   // Evidence widget
   evidenceList: { gap: 6, marginBottom: 4 },
   evidenceItemWrap: {
