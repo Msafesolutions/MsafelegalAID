@@ -164,6 +164,10 @@ export default function FirDraftScreen() {
   const recordingRequestedRef = useRef(false);
   const recordingActiveRef = useRef(false);
   const recordingStartingRef = useRef(false);
+  // Web-only: browser MediaRecorder (expo-audio recording doesn't work on web)
+  const webRecorderRef = useRef<any>(null);
+  const webChunksRef = useRef<Blob[]>([]);
+  const webStreamRef = useRef<any>(null);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -560,10 +564,41 @@ Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
     recordingStartingRef.current = true;
     stopTTS();
     setVoiceNotice(null);
+
+    // ── Web: use browser MediaRecorder (expo-audio recording is not supported on web) ──
+    if (Platform.OS === 'web') {
+      try {
+        if (!(navigator as any)?.mediaDevices?.getUserMedia) {
+          setVoiceNotice('Microphone recording is not supported in this browser. Please type your answer below.');
+          return;
+        }
+        const stream = await (navigator as any).mediaDevices.getUserMedia({ audio: true });
+        webStreamRef.current = stream;
+        const WMR = (window as any).MediaRecorder;
+        const mimeType = (WMR && WMR.isTypeSupported('audio/webm;codecs=opus'))
+          ? 'audio/webm;codecs=opus'
+          : 'audio/webm';
+        const mr = new WMR(stream, { mimeType });
+        webChunksRef.current = [];
+        mr.ondataavailable = (e: any) => { if (e.data?.size > 0) webChunksRef.current.push(e.data); };
+        mr.start();
+        webRecorderRef.current = mr;
+        recordingActiveRef.current = true;
+        setIsRecording(true);
+      } catch {
+        setIsRecording(false);
+        setVoiceNotice('Microphone access is blocked. Click the 🔒 icon in your browser address bar to allow mic access, or type your answer below.');
+      } finally {
+        recordingStartingRef.current = false;
+      }
+      return;
+    }
+
+    // ── Native: use expo-audio ──────────────────────────────────────────────
     try {
       const { status } = await AudioModule.requestRecordingPermissionsAsync();
       if (status !== 'granted') {
-        setVoiceNotice('Microphone access is blocked. Allow microphone access in your browser or device settings, or type your answer below.');
+        setVoiceNotice('Microphone access is blocked. Allow microphone access in your device settings, or type your answer below.');
         return;
       }
       if (!recordingRequestedRef.current) return;
@@ -574,7 +609,6 @@ Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
       // Stop and discard immediately rather than recording after they let go.
       if (!recordingRequestedRef.current) {
         await recorder.stop();
-        if (Platform.OS === 'web' && recorder.uri) URL.revokeObjectURL(recorder.uri);
         return;
       }
       recordingActiveRef.current = true;
@@ -593,20 +627,62 @@ Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
     recordingActiveRef.current = false;
     setIsRecording(false);
     setTranscribing(true);
+
+    // ── Web: stop browser MediaRecorder and upload ──────────────────────────
+    if (Platform.OS === 'web') {
+      const mr = webRecorderRef.current;
+      if (!mr) { setTranscribing(false); return; }
+      try {
+        const audioBlob: Blob = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Recording stop timeout')), 8000);
+          mr.onstop = () => {
+            clearTimeout(timeout);
+            const blob = new Blob(webChunksRef.current, { type: 'audio/webm' });
+            resolve(blob);
+          };
+          try { mr.stop(); } catch (e) { clearTimeout(timeout); reject(e); }
+        });
+        // Stop all mic tracks
+        try { webStreamRef.current?.getTracks()?.forEach((t: any) => t.stop()); } catch {}
+        webRecorderRef.current = null;
+        webStreamRef.current = null;
+        webChunksRef.current = [];
+
+        if (!audioBlob || audioBlob.size === 0) {
+          setVoiceNotice('No audio captured. Please hold the mic button while speaking.');
+          return;
+        }
+        const blobUrl = URL.createObjectURL(audioBlob);
+        try {
+          const langCode = FIR_LANGUAGES.find(l => l.code === language)?.sttLang || 'en-IN';
+          if (!API_BASE || !token) throw new Error('Voice input is unavailable');
+          const result = await whisperTranscribeFile(API_BASE, token, blobUrl, langCode);
+          const text = result?.text || '';
+          if (text) setTextInput(prev => (prev ? prev + ' ' + text : text));
+        } finally {
+          URL.revokeObjectURL(blobUrl);
+        }
+      } catch {
+        setVoiceNotice('Could not transcribe this recording. Please try again or type your response instead.');
+      } finally {
+        setTranscribing(false);
+      }
+      return;
+    }
+
+    // ── Native: stop expo-audio recorder and upload ─────────────────────────
     try {
       await recorder.stop();
       const uri = recorder.uri;
       if (!uri) throw new Error('No recording URI');
       const langCode = FIR_LANGUAGES.find(l => l.code === language)?.sttLang || 'en-IN';
       if (!API_BASE || !token) throw new Error('Voice input is unavailable');
-      // Fixed: correct arg order — apiBase, token, uri, languageHint
       const result = await whisperTranscribeFile(API_BASE, token, uri, langCode);
       const text = result?.text || '';
       if (text) setTextInput(prev => (prev ? prev + ' ' + text : text));
     } catch {
       setVoiceNotice('Could not transcribe this recording. Please try again or type your response instead.');
     } finally {
-      if (Platform.OS === 'web' && recorder.uri) URL.revokeObjectURL(recorder.uri);
       setTranscribing(false);
     }
   };
@@ -676,7 +752,16 @@ ${data.bot_message}`);
     if (recordingActiveRef.current) {
       recordingActiveRef.current = false;
       setIsRecording(false);
-      void recorder.stop().catch(() => {});
+      if (Platform.OS === 'web') {
+        // Cleanup web MediaRecorder
+        try { webRecorderRef.current?.stop(); } catch {}
+        try { webStreamRef.current?.getTracks()?.forEach((t: any) => t.stop()); } catch {}
+        webRecorderRef.current = null;
+        webStreamRef.current = null;
+        webChunksRef.current = [];
+      } else {
+        void recorder.stop().catch(() => {});
+      }
     }
   }, [recorder, stopTTS]));
 
@@ -1304,18 +1389,34 @@ function TextInputArea({
           maxLength={2000}
         />
         {showVoice && (
-          <Pressable
-            testID="fir-mic-button"
-            accessibilityLabel="Hold to record your answer"
-            style={[styles.micBtn, isRecording && styles.micBtnActive]}
-            disabled={transcribing}
-            onPressIn={onStartRecord}
-            onPressOut={onStopRecord}
-          >
-            {transcribing
-              ? <ActivityIndicator size="small" color={SURFACE} />
-              : <Ionicons name={isRecording ? 'mic' : 'mic-outline'} size={22} color={SURFACE} />}
-          </Pressable>
+          Platform.OS === 'web' ? (
+            // Web: click to start / click again to stop (more natural for desktop)
+            <Pressable
+              testID="fir-mic-button"
+              accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}
+              style={[styles.micBtn, isRecording && styles.micBtnActive]}
+              disabled={transcribing}
+              onPress={isRecording ? onStopRecord : onStartRecord}
+            >
+              {transcribing
+                ? <ActivityIndicator size="small" color={SURFACE} />
+                : <Ionicons name={isRecording ? 'stop-circle' : 'mic-outline'} size={22} color={SURFACE} />}
+            </Pressable>
+          ) : (
+            // Native: hold to record / release to stop
+            <Pressable
+              testID="fir-mic-button"
+              accessibilityLabel="Hold to record your answer"
+              style={[styles.micBtn, isRecording && styles.micBtnActive]}
+              disabled={transcribing}
+              onPressIn={onStartRecord}
+              onPressOut={onStopRecord}
+            >
+              {transcribing
+                ? <ActivityIndicator size="small" color={SURFACE} />
+                : <Ionicons name={isRecording ? 'mic' : 'mic-outline'} size={22} color={SURFACE} />}
+            </Pressable>
+          )
         )}
         <Pressable
           testID="fir-send-btn"
