@@ -1,16 +1,17 @@
-// AUTO-GENERATED from dhara_consent_strings.json — do not edit by hand.
+// Privacy notice content imported from dhara_consent_strings.json.
+// Keep the type aligned with the content keys: undefined labels block onboarding.
 export const CONSENT_NOTICE_VERSION = "2026-10-01";
 
 export type ConsentLang = {
   lang_code?: string;
   title: string; intro: string; collect_heading: string;
-  collect_items: string[]; never_heading: string; never_items: string[];
+  collect_items: string[]; not_do_heading: string; not_do_items: string[];
   storage: string; rights_heading: string; rights_body: string;
-  grievance: string; age_heading: string; age_18_plus: string;
-  age_under_18: string; age_under_message: string;
+  grievance: string; age_label: string;
+  age_under_label: string; age_under_message: string;
   terms_checkbox: string; data_checkbox: string;
-  optional_heading: string; analytics_label: string; updates_label: string;
-  continue_btn: string; emergency_btn: string; rights_btn: string;
+  optional_heading: string; optional_analytics: string; optional_updates: string;
+  continue_button: string; read_full: string; disclaimer: string;
 };
 
 export const CONSENT_META = {"notice_version": "2026-10-01", "owner_india": "Calviltech Digital Solutions Pvt Ltd", "status": "DRAFT - English reviewed for content; Hindi and Marathi need native-speaker check; all versions need privacy counsel review before launch", "placeholders": ["{{GRIEVANCE_OFFICER_NAME}}", "{{GRIEVANCE_EMAIL}}", "{{DATA_LOCATION}}"]} as const;

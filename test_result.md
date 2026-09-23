@@ -151,6 +151,20 @@ backend:
           comment: "⚠️ NOT TESTED: Endpoint requires actual audio file upload. Cannot test without audio sample. Endpoint is available and configured correctly based on code review."
 
 frontend:
+  - task: "Consent Continue blockage and readable Terms & Conditions"
+    implemented: true
+    working: true
+    file: "frontend/app/consent.tsx; frontend/app/_layout.tsx; frontend/src/consentStrings.ts; frontend/src/consentStorage.ts; frontend/src/consentCopy.ts; frontend/src/consentStyles.ts; frontend/src/components/ConsentTermsModal.tsx; frontend/src/components/ConsentPublicHelp.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "user"
+          comment: "Video: consent screen doesn't proceed; terms and condition should be visible. Approved focus on Continue and readable terms, with optional consent optional."
+        - working: true
+          agent: "main"
+          comment: "Manual verification only. Reproduced blank age and Continue labels; fixed source-key mismatch, undefined consent storage-key import and stale-version/back-navigation loop. Added full terms modal, persistent Continue, explicit requirements/errors, accessible checked states, account-scoped local receipts, public under-18 help. At 390x844 real anonymous and authenticated consent API returned 200, optional purposes false, login/app/Settings reached. 320x568 no consent overflow or clipped Continue. Under-18 and missing required consent remain blocked. Terms-fetch and local-save failure simulations show recoverable errors; retries pass and selections retained. Screenshots/console: automation_output/20260923_210249 and 20260923_210350. Changed-file lint clean, consent-related type diagnostics zero. Physical-device confirmation pending. No testing agent used; no production API mocked. Existing offline consent logging remains best-effort."
   - task: "Bottom navigation clipping and browser voice permission recovery"
     implemented: true
     working: true

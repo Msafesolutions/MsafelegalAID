@@ -1,332 +1,184 @@
-/**
- * P0-Fix4 — DPDP / PIPEDA Consent Gate
- * Shown on first launch (after language selection, before OTP/login) and
- * whenever CONSENT_NOTICE_VERSION is newer than the user's stored version.
- *
- * Rules (from spec):
- *  • Age choice required (none pre-selected). Under-18 → blocked from account creation.
- *  • terms_checkbox + data_checkbox UNCHECKED by default; Continue disabled until both ticked + age chosen.
- *  • Optional analytics + updates toggles, both OFF by default.
- *  • Logs to /api/consent/log (append-only, anon_id for pre-login callers).
- *  • After consent, navigates to /login (or back, when re-shown for version bump).
- */
-import React, { useState, useCallback } from 'react';
-import {
-  View, Text, ScrollView, Pressable, Switch, StyleSheet,
-  ActivityIndicator,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+/** Explicit age, terms and core-data consent. Optional purposes default to off. */
+import React, { useRef, useState } from 'react';
+import { View, Text, ScrollView, Pressable, Switch, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import { consentStrings, CONSENT_NOTICE_VERSION, ConsentLang } from '@/src/consentStrings';
+import { consentStrings, CONSENT_NOTICE_VERSION } from '@/src/consentStrings';
+import { consentCopy } from '@/src/consentCopy';
+import { CONSENT_ANON_KEY, saveConsentLocally } from '@/src/consentStorage';
+import { ConsentTermsModal } from '@/src/components/ConsentTermsModal';
+import { ConsentPublicHelp } from '@/src/components/ConsentPublicHelp';
 import { API_BASE, useAuth } from '@/src/auth';
+import { theme } from '@/src/theme';
+import { consentStyles as styles } from '@/src/consentStyles';
 
-const NAVY   = '#1E3A8A';
-const SAFFRON = '#F59E0B';
-const GREEN  = '#059669';
-const RED    = '#DC2626';
-const MUTED  = '#6B7280';
-const BORDER = '#E2E8F0';
-const BG     = '#F8FAFC';
-
-// Key used to store accepted version locally (before / without login)
-export const CONSENT_VERSION_KEY = 'gk_consent_version';
-export const CONSENT_ANON_KEY    = 'gk_consent_anon_id';
-export const CONSENT_PREFS_KEY   = 'gk_consent_prefs';
-
-type AgeChoice = '18+' | 'under18' | null;
+const colors = theme.colors;
+const PLACEHOLDERS: Record<string, string> = {
+  '{{DATA_LOCATION}}': 'India (cloud-hosted, encrypted at rest)',
+  '{{GRIEVANCE_OFFICER_NAME}}': 'Calvil Technologies',
+  '{{GRIEVANCE_EMAIL}}': 'grievance@calviltech.com',
+};
+const fillPlaceholders = (text: string) => Object.entries(PLACEHOLDERS)
+  .reduce((s, [key, value]) => s.split(key).join(value), text);
 
 export default function ConsentScreen() {
   const router = useRouter();
-  const { token, user, language } = useAuth();
-  const params = useLocalSearchParams<{ mode?: string }>();
-  const isUpdate = params.mode === 'update';   // re-shown for version bump
-  const insets = useSafeAreaInsets();
-
-  const PLACEHOLDERS: Record<string, string> = {
-    '{{DATA_LOCATION}}':           'India (cloud-hosted, encrypted at rest)',
-    '{{GRIEVANCE_OFFICER_NAME}}':  'The Grievance Officer, Calvil Technologies',
-    '{{GRIEVANCE_EMAIL}}':         'grievance@calviltech.com',
-  };
-
-  // Replace any template placeholders in a language block's string values
-  function applyPlaceholders(obj: any): any {
-    if (typeof obj === 'string') {
-      return Object.entries(PLACEHOLDERS).reduce((s, [k, v]) => s.replace(k, v), obj);
-    }
-    if (Array.isArray(obj)) return obj.map(applyPlaceholders);
-    if (obj && typeof obj === 'object') {
-      return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, applyPlaceholders(v)]));
-    }
-    return obj;
-  }
-
-  const langCode = language?.code || 'en';
-  const rawStrings = consentStrings[langCode] || consentStrings['en'];
-  const strings: ConsentLang = applyPlaceholders(rawStrings);
-
-  const [age, setAge]           = useState<AgeChoice>(null);
+  const { token, user, language, refreshUser } = useAuth();
+  const langCode = consentStrings[language.code] ? language.code : 'en';
+  const strings = consentStrings[langCode];
+  const copy = consentCopy[langCode];
+  const [age, setAge] = useState<'18+' | 'under18' | null>(null);
   const [termsTicked, setTerms] = useState(false);
-  const [dataTicked,  setData]  = useState(false);
-  const [analytics,  setAnalyt] = useState(false);
-  const [updates,    setUpdates] = useState(false);
-  const [saving, setSaving]     = useState(false);
-
+  const [dataTicked, setData] = useState(false);
+  const [analytics, setAnalytics] = useState(false);
+  const [updates, setUpdates] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [help, setHelp] = useState<'emergency' | 'rights' | null>(null);
+  const submitting = useRef(false);
   const canContinue = age === '18+' && termsTicked && dataTicked;
+  const guidance = age === 'under18' ? copy.under18
+    : !age ? copy.ageRequired : !termsTicked ? copy.termsRequired
+      : !dataTicked ? copy.dataRequired : copy.ready;
 
-  const handleContinue = useCallback(async () => {
-    if (!canContinue) return;
+  async function handleContinue() {
+    if (!canContinue || submitting.current) return;
+    submitting.current = true;
     setSaving(true);
+    setSaveError(false);
     try {
-      const purposes = { core: true, analytics, updates };
-      const appVersion = Constants.expoConfig?.version || '1.0.0';
-
-      // Persist locally first (works even without internet)
-      await AsyncStorage.setItem(CONSENT_VERSION_KEY, CONSENT_NOTICE_VERSION);
-      await AsyncStorage.setItem(CONSENT_PREFS_KEY, JSON.stringify(purposes));
-
-      // Build or reuse an anonymous ID for pre-login users
       let anonId = await AsyncStorage.getItem(CONSENT_ANON_KEY);
       if (!anonId) {
         anonId = `anon-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         await AsyncStorage.setItem(CONSENT_ANON_KEY, anonId);
       }
-
-      // POST to backend (best-effort — don't block the UX if offline)
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      fetch(`${API_BASE}/api/consent/log`, {
+      const purposes = { core: true, analytics, updates };
+      await saveConsentLocally(purposes, user?.id);
+      // Preserve the existing offline-first policy: local success unblocks the
+      // screen; server logging is best-effort and cannot hang the Continue action.
+      void fetch(`${API_BASE}/api/consent/log`, {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
-          notice_version:   CONSENT_NOTICE_VERSION,
-          purposes,
-          language:         langCode,
-          age_confirmed_18: true,
-          anon_id:          user ? null : anonId,
-          app_version:      appVersion,
+          notice_version: CONSENT_NOTICE_VERSION, purposes, language: langCode,
+          age_confirmed_18: true, anon_id: user ? null : anonId,
+          app_version: Constants.expoConfig?.version || '1.0.0',
         }),
-      }).catch(() => {/* offline — will sync on next request */});
-
-      // Navigate forward
-      if (isUpdate) {
-        router.back();
-      } else {
-        router.replace('/login');
-      }
+      }).then(response => { if (response.ok && token) void refreshUser(); }).catch(() => {});
+      // A known forward destination also works for direct links and updates.
+      // Going back could return to another copy of the consent screen.
+      router.replace(token ? '/(tabs)' : '/login');
+    } catch {
+      setSaveError(true);
     } finally {
+      submitting.current = false;
       setSaving(false);
     }
-  }, [canContinue, analytics, updates, langCode, token, user, isUpdate, router]);
+  }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Title */}
+    <SafeAreaView style={styles.safe} testID="consent-screen">
+      <ScrollView testID="consent-scroll" style={styles.scroll} contentContainerStyle={styles.content}>
         <View style={styles.titleRow}>
-          <View style={styles.logoBox}>
-            <Text style={styles.logoChar}>ध</Text>
-          </View>
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.title}>{strings.title}</Text>
-          </View>
+          <View style={styles.logoBox}><Text style={styles.logoChar}>ध</Text></View>
+          <Text testID="consent-title" style={styles.title}>{strings.title}</Text>
         </View>
-
-        {/* Intro */}
-        <Text style={styles.intro}>{strings.intro}</Text>
-
-        {/* What we collect */}
-        <Text style={styles.sectionHeading}>{strings.collect_heading}</Text>
-        {(strings.collect_items || []).map((item, i) => (
-          <View key={i} style={styles.bulletRow}>
-            <Ionicons name="checkmark-circle-outline" size={16} color={GREEN} style={{ marginTop: 2 }} />
-            <Text style={styles.bulletText}>{item}</Text>
+        <Text testID="consent-intro" style={styles.intro}>{strings.intro}</Text>
+        <Pressable testID="consent-open-terms-top" accessibilityRole="button" onPress={() => setShowTerms(true)} style={styles.termsLink}>
+          <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+          <Text style={styles.linkText}>{copy.termsLink}</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+        </Pressable>
+        <Text testID="consent-notice-version" style={styles.note}>Privacy notice · {CONSENT_NOTICE_VERSION}</Text>
+        <Text testID="consent-collect-heading" style={styles.sectionHeading}>{strings.collect_heading}</Text>
+        {strings.collect_items.map((item, i) => (
+          <View key={item} style={styles.bulletRow}>
+            <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
+            <Text testID={`consent-collect-item-${i}`} style={styles.bulletText}>{item}</Text>
           </View>
         ))}
-
-        {/* What we never do */}
-        <Text style={styles.sectionHeading}>{strings.never_heading}</Text>
-        {(strings.never_items || []).map((item, i) => (
-          <View key={i} style={styles.bulletRow}>
-            <Ionicons name="close-circle-outline" size={16} color={RED} style={{ marginTop: 2 }} />
-            <Text style={styles.bulletText}>{item}</Text>
+        <Text testID="consent-never-heading" style={styles.sectionHeading}>{strings.not_do_heading}</Text>
+        {strings.not_do_items.map((item, i) => (
+          <View key={item} style={styles.bulletRow}>
+            <Ionicons name="close-circle-outline" size={18} color={colors.error} />
+            <Text testID={`consent-never-item-${i}`} style={styles.bulletText}>{item}</Text>
           </View>
         ))}
+        <View style={styles.infoBox}><Text testID="consent-storage-notice" style={styles.infoText}>{fillPlaceholders(strings.storage)}</Text></View>
+        <Text testID="consent-rights-heading" style={styles.sectionHeading}>{strings.rights_heading}</Text>
+        <Text testID="consent-rights-notice" style={styles.bodyText}>{strings.rights_body}</Text>
+        <View style={styles.infoBox}><Text testID="consent-grievance-notice" style={styles.infoText}>{fillPlaceholders(strings.grievance)}</Text></View>
 
-        {/* Storage */}
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>{strings.storage}</Text>
-        </View>
-
-        {/* Rights */}
-        <Text style={styles.sectionHeading}>{strings.rights_heading}</Text>
-        <Text style={styles.bodyText}>{strings.rights_body}</Text>
-
-        {/* Grievance */}
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>{strings.grievance}</Text>
-        </View>
-
-        {/* ── Age gate ─────────────────────────────────────────── */}
-        <Text style={styles.sectionHeading}>{strings.age_heading}</Text>
+        <Text testID="consent-age-heading" style={styles.sectionHeading}>{copy.ageHeading}</Text>
         <View style={styles.radioGroup}>
-          <Pressable
-            style={[styles.radioBtn, age === '18+' && styles.radioBtnSelected]}
-            onPress={() => setAge('18+')}
-          >
-            <View style={[styles.radioCircle, age === '18+' && styles.radioCircleSelected]}>
-              {age === '18+' && <View style={styles.radioDot} />}
-            </View>
-            <Text style={[styles.radioLabel, age === '18+' && styles.radioLabelSelected]}>
-              {strings.age_18_plus}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.radioBtn, age === 'under18' && styles.radioBtnUnder]}
-            onPress={() => setAge('under18')}
-          >
-            <View style={[styles.radioCircle, age === 'under18' && styles.radioCircleUnder]}>
-              {age === 'under18' && <View style={styles.radioDotUnder} />}
-            </View>
-            <Text style={[styles.radioLabel, age === 'under18' && styles.radioLabelUnder]}>
-              {strings.age_under_18}
-            </Text>
-          </Pressable>
+          {(['18+', 'under18'] as const).map(value => (
+            <Pressable key={value} testID={value === '18+' ? 'consent-age-adult' : 'consent-age-under18'}
+              aria-checked={age === value} aria-disabled={saving}
+              accessibilityRole="radio" accessibilityState={{ checked: age === value, disabled: saving }} disabled={saving}
+              style={({ pressed }) => [styles.radioBtn, age === value && styles.radioSelected, pressed && styles.pressed]}
+              onPress={() => setAge(value)}>
+              <Ionicons name={age === value ? 'radio-button-on' : 'radio-button-off'} size={22} color={age === value ? colors.primary : colors.onSurfaceTertiary} />
+              <Text style={styles.radioLabel}>{value === '18+' ? strings.age_label : strings.age_under_label}</Text>
+            </Pressable>
+          ))}
         </View>
-
-        {/* Under-18 message */}
-        {age === 'under18' && (
-          <View style={styles.under18Box}>
-            <Ionicons name="information-circle-outline" size={20} color={NAVY} />
-            <Text style={styles.under18Text}>{strings.age_under_message}</Text>
-            <View style={styles.under18Btns}>
-              <Pressable
-                style={styles.under18Btn}
-                onPress={() => router.push('/(tabs)/lookup' as any)}
-              >
-                <Text style={styles.under18BtnText}>{strings.emergency_btn}</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.under18Btn, { backgroundColor: '#EEF2FF', borderColor: NAVY }]}
-                onPress={() => router.push('/(tabs)/rights' as any)}
-              >
-                <Text style={[styles.under18BtnText, { color: NAVY }]}>{strings.rights_btn}</Text>
-              </Pressable>
-            </View>
+        {age === 'under18' && <View testID="consent-under18-notice" style={styles.infoBox}>
+          <Text style={styles.bodyText}>{copy.under18}</Text>
+          <View style={styles.helpButtons}>
+            <Pressable testID="consent-emergency-help" accessibilityRole="button" onPress={() => setHelp('emergency')} style={styles.helpButton}><Text style={styles.linkText}>{copy.emergency}</Text></Pressable>
+            <Pressable testID="consent-public-rights" accessibilityRole="button" onPress={() => setHelp('rights')} style={styles.helpButton}><Text style={styles.linkText}>{copy.rights}</Text></Pressable>
           </View>
-        )}
+        </View>}
 
-        {/* ── Required checkboxes ──────────────────────────────── */}
         <View style={styles.divider} />
-
-        <Pressable style={styles.checkRow} onPress={() => setTerms(v => !v)}>
-          <View style={[styles.checkbox, termsTicked && styles.checkboxChecked]}>
-            {termsTicked && <Ionicons name="checkmark" size={14} color="#fff" />}
-          </View>
+        <Pressable testID="consent-open-terms" accessibilityRole="button" onPress={() => setShowTerms(true)} style={styles.termsLink}>
+          <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+          <Text style={styles.linkText}>{copy.termsLink}</Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+        </Pressable>
+        <Pressable testID="consent-terms-checkbox" accessibilityRole="checkbox" aria-checked={termsTicked} aria-disabled={saving} accessibilityState={{ checked: termsTicked, disabled: saving }}
+          disabled={saving} style={styles.checkRow} onPress={() => setTerms(v => !v)}>
+          <Ionicons name={termsTicked ? 'checkbox' : 'square-outline'} size={24} color={colors.primary} />
           <Text style={styles.checkLabel}>{strings.terms_checkbox}</Text>
         </Pressable>
-
-        <Pressable style={styles.checkRow} onPress={() => setData(v => !v)}>
-          <View style={[styles.checkbox, dataTicked && styles.checkboxChecked]}>
-            {dataTicked && <Ionicons name="checkmark" size={14} color="#fff" />}
-          </View>
+        <Pressable testID="consent-data-checkbox" accessibilityRole="checkbox" aria-checked={dataTicked} aria-disabled={saving} accessibilityState={{ checked: dataTicked, disabled: saving }}
+          disabled={saving} style={styles.checkRow} onPress={() => setData(v => !v)}>
+          <Ionicons name={dataTicked ? 'checkbox' : 'square-outline'} size={24} color={colors.primary} />
           <Text style={styles.checkLabel}>{strings.data_checkbox}</Text>
         </Pressable>
 
-        {/* ── Optional purposes ────────────────────────────────── */}
         <View style={styles.divider} />
-        <Text style={styles.optionalHeading}>{strings.optional_heading}</Text>
-
+        <Text testID="consent-optional-heading" style={styles.optionalHeading}>{strings.optional_heading}</Text>
         <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>{strings.analytics_label}</Text>
-          <Switch
-            value={analytics}
-            onValueChange={setAnalyt}
-            trackColor={{ false: BORDER, true: SAFFRON }}
-            thumbColor="#fff"
-          />
+          <Text testID="consent-analytics-label" style={styles.toggleLabel}>{strings.optional_analytics}</Text>
+          <Switch testID="consent-analytics-switch" accessibilityLabel={strings.optional_analytics} disabled={saving} value={analytics} onValueChange={setAnalytics}
+            trackColor={{ false: colors.border, true: colors.primary }} thumbColor={colors.onBrandPrimary} />
         </View>
-
         <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>{strings.updates_label}</Text>
-          <Switch
-            value={updates}
-            onValueChange={setUpdates}
-            trackColor={{ false: BORDER, true: SAFFRON }}
-            thumbColor="#fff"
-          />
+          <Text testID="consent-updates-label" style={styles.toggleLabel}>{strings.optional_updates}</Text>
+          <Switch testID="consent-updates-switch" accessibilityLabel={strings.optional_updates} disabled={saving} value={updates} onValueChange={setUpdates}
+            trackColor={{ false: colors.border, true: colors.primary }} thumbColor={colors.onBrandPrimary} />
         </View>
-
-        {/* ── Continue button ───────────────────────────────────── */}
-        <Pressable
-          style={[styles.continueBtn, !canContinue && styles.continueBtnDisabled]}
-          onPress={handleContinue}
-          disabled={!canContinue || saving}
-        >
-          {saving
-            ? <ActivityIndicator size="small" color="#fff" />
-            : <Text style={styles.continueBtnText}>{strings.continue_btn}</Text>
-          }
-        </Pressable>
+        <Text testID="consent-disclaimer" style={styles.note}>{strings.disclaimer}</Text>
       </ScrollView>
+
+      <View testID="consent-footer" style={styles.footer}>
+        <Text testID="consent-continue-guidance" accessibilityLiveRegion="polite" style={styles.guidance}>{guidance}</Text>
+        {saveError && <Text testID="consent-save-error" accessibilityRole="alert" style={styles.error}>{copy.saveError}</Text>}
+        <Pressable testID="consent-continue-button" accessibilityRole="button" accessibilityLabel={strings.continue_button}
+          aria-disabled={!canContinue || saving} aria-busy={saving}
+          accessibilityState={{ disabled: !canContinue || saving, busy: saving }} disabled={!canContinue || saving}
+          style={({ pressed }) => [styles.continueBtn, !canContinue && styles.continueDisabled, pressed && styles.pressed]} onPress={handleContinue}>
+          {saving ? <ActivityIndicator testID="consent-saving" color={colors.onBrandPrimary} />
+            : <Text testID="consent-continue-label" style={[styles.continueText, !canContinue && styles.disabledText]}>{strings.continue_button}</Text>}
+        </Pressable>
+      </View>
+      <ConsentTermsModal visible={showTerms} onClose={() => setShowTerms(false)} copy={copy} />
+      <ConsentPublicHelp mode={help} onClose={() => setHelp(null)} copy={copy} />
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safe:            { flex: 1, backgroundColor: BG },
-  scroll:          { flex: 1 },
-  content:         { padding: 20 },
-  titleRow:        { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  logoBox:         { width: 40, height: 40, borderRadius: 10, backgroundColor: SAFFRON, alignItems: 'center', justifyContent: 'center' },
-  logoChar:        { fontSize: 22, fontWeight: '800', color: NAVY },
-  title:           { fontSize: 22, fontWeight: '800', color: NAVY },
-  intro:           { fontSize: 14, color: '#374151', lineHeight: 22, marginBottom: 20 },
-  sectionHeading:  { fontSize: 14, fontWeight: '700', color: NAVY, marginTop: 20, marginBottom: 8 },
-  bodyText:        { fontSize: 13, color: '#374151', lineHeight: 20 },
-  bulletRow:       { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
-  bulletText:      { flex: 1, fontSize: 13, color: '#374151', lineHeight: 20 },
-  infoBox:         { backgroundColor: 'rgba(30,58,138,0.05)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(30,58,138,0.12)', padding: 12, marginTop: 12 },
-  infoText:        { fontSize: 12, color: MUTED, lineHeight: 18 },
-  // age gate
-  radioGroup:      { gap: 10, marginTop: 4 },
-  radioBtn:        { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1.5, borderColor: BORDER, borderRadius: 10, padding: 14, backgroundColor: '#fff' },
-  radioBtnSelected:{ borderColor: NAVY, backgroundColor: '#EEF2FF' },
-  radioBtnUnder:   { borderColor: '#F97316', backgroundColor: '#FFF7ED' },
-  radioCircle:     { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: BORDER, alignItems: 'center', justifyContent: 'center' },
-  radioCircleSelected: { borderColor: NAVY },
-  radioCircleUnder:{ borderColor: '#F97316' },
-  radioDot:        { width: 10, height: 10, borderRadius: 5, backgroundColor: NAVY },
-  radioDotUnder:   { width: 10, height: 10, borderRadius: 5, backgroundColor: '#F97316' },
-  radioLabel:      { fontSize: 14, color: '#374151', fontWeight: '500' },
-  radioLabelSelected: { color: NAVY, fontWeight: '700' },
-  radioLabelUnder: { color: '#F97316', fontWeight: '700' },
-  // under-18
-  under18Box:      { marginTop: 16, borderRadius: 10, backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FED7AA', padding: 14, gap: 10 },
-  under18Text:     { fontSize: 13, color: '#7C3AED', lineHeight: 20, flex: 1 },
-  under18Btns:     { flexDirection: 'row', gap: 10 },
-  under18Btn:      { flex: 1, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#F87171', borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
-  under18BtnText:  { fontSize: 13, fontWeight: '600', color: RED },
-  // checkboxes
-  divider:         { height: 1, backgroundColor: BORDER, marginVertical: 20 },
-  checkRow:        { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 },
-  checkbox:        { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: BORDER, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginTop: 1 },
-  checkboxChecked: { backgroundColor: NAVY, borderColor: NAVY },
-  checkLabel:      { flex: 1, fontSize: 13, color: '#374151', lineHeight: 20 },
-  // optional toggles
-  optionalHeading: { fontSize: 12, fontWeight: '700', color: MUTED, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
-  toggleRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: BORDER },
-  toggleLabel:     { flex: 1, fontSize: 13, color: '#374151', marginRight: 12 },
-  // continue btn
-  continueBtn:         { marginTop: 28, backgroundColor: NAVY, borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
-  continueBtnDisabled: { backgroundColor: '#CBD5E1' },
-  continueBtnText:     { color: '#fff', fontSize: 16, fontWeight: '700' },
-});

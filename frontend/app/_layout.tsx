@@ -1,6 +1,6 @@
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useCallback } from "react";
+import { useEffect } from "react";
 import { LogBox, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -9,7 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider, useAuth } from "@/src/auth";
-import { CONSENT_NOTICE_VERSION, CONSENT_VERSION_KEY } from "@/src/consentStrings";
+import { consentVersionKey, isCurrentConsent } from "@/src/consentStorage";
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
@@ -20,27 +20,18 @@ function ConsentGuard() {
   const router = useRouter();
   const segments = useSegments();
 
-  const checkConsent = useCallback(async () => {
-    if (loading) return;
-    // Never redirect from the consent screen itself
-    if (segments.includes('consent' as never)) return;
-
-    // Check stored local version first (covers pre-login visit)
-    const stored = await AsyncStorage.getItem(CONSENT_VERSION_KEY).catch(() => null);
-    const userVersion = (user as any)?.terms_version || null;
-    const effective = userVersion || stored;
-
-    if (!effective || effective < CONSENT_NOTICE_VERSION) {
-      const mode = user ? 'update' : undefined;
-      // Use router.push so user can come back if needed
-      router.push(mode
-        ? ({ pathname: '/consent', params: { mode } } as any)
-        : ('/consent' as any),
-      );
-    }
-  }, [loading, user, segments, router]);
-
-  useEffect(() => { checkConsent(); }, [checkConsent]);
+  useEffect(() => {
+    // Let the splash/language flow settle first. Never stack consent screens.
+    if (loading || !segments.length || segments[0] === 'language' || segments[0] === 'consent') return;
+    let active = true;
+    void (async () => {
+      const stored = await AsyncStorage.getItem(consentVersionKey(user?.id)).catch(() => null);
+      if (active && !isCurrentConsent(stored, user?.terms_version)) {
+        router.replace(user?.id ? { pathname: '/consent', params: { mode: 'update' } } : '/consent');
+      }
+    })();
+    return () => { active = false; };
+  }, [loading, user?.id, user?.terms_version, segments, router]);
 
   return null;
 }
