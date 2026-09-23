@@ -300,6 +300,21 @@ async def current_user(authorization: Optional[str] = Header(None)) -> dict:
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
     if not user:
         raise HTTPException(401, "User not found")
+    # ── DPDP / T&C §5.1: Age gate ──────────────────────────────────────────
+    # Block only when the field is explicitly False (set by consent gate).
+    # Absent / None means a pre-gate account — treated as adult to avoid
+    # false positives.  True = normal adult user.
+    if user.get("age_confirmed_18") is False:
+        raise HTTPException(403, {
+            "code": "minor_blocked",
+            "message": (
+                "Please ask a parent or guardian to help you set up Dhara. "
+                "You can still use Emergency Helplines and Know Your Rights "
+                "without an account."
+            ),
+            "helplines_url": "/api/emergency/helplines",
+            "rights_url":    "/api/legal/categories",
+        })
     return user
 
 
@@ -3642,6 +3657,11 @@ async def _startup():
     # scheduled run internally; costs nothing at boot.
     asyncio.create_task(run_push_jobs_loop(db, corpus_db))
 
+    # Fire-and-forget: DPDP/PIPEDA data-retention purge (see bottom of file).
+    # Runs immediately at startup then every 24 hours.
+    # consent_log is never touched by this job (retained indefinitely).
+    asyncio.create_task(run_retention_purge_loop())
+
 
 @app.on_event("shutdown")
 async def _shutdown():
@@ -3662,7 +3682,92 @@ async def _shutdown():
 #   npx expo export --platform web --output-dir ../backend/webdist
 
 # ─── Static web bundle (must stay the LAST route in the file) ────────────────
+# NOTE: GET endpoints for /api/user/my-data and /api/grievance are registered
+# HERE (before the SPA catch-all) so they are not swallowed by /{web_path:path}.
 # ============================================================================
+
+# ── My Data Portal — GET (before the SPA catch-all) ──────────────────────────
+
+@app.get("/api/user/my-data")
+async def get_my_data_summary(user: dict = Depends(current_user)):
+    """Return a structured summary of everything stored for the user.
+    Used by the 'My Data' portal (Settings → My Data) — T&C v2.0 clause 10.3."""
+    uid = user["id"]
+    msg_count   = await db.messages.count_documents({"user_id": uid})
+    fir_count   = await db.fir_sessions.count_documents({"user_id": uid})
+    saved_count = await db.saved_answers.count_documents({"user_id": uid})
+    consent_entry = await db.consent_log.find_one(
+        {"user_id": uid}, sort=[("timestamp", -1)], projection={"_id": 0}
+    )
+    tickets = await db.grievance_tickets.find(
+        {"user_id": uid},
+        {"_id": 0, "ticket_id": 1, "category": 1, "status": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(20)
+    return {
+        "profile": {
+            "name":       user.get("name", ""),
+            "email":      user.get("email", ""),
+            "phone":      user.get("phone", ""),
+            "created_at": user.get("created_at", ""),
+            "language":   user.get("language", "en"),
+            "state":      user.get("state", ""),
+            "is_pro":     user.get("is_pro", False),
+        },
+        "consent": {
+            "version":    consent_entry.get("notice_version") if consent_entry else user.get("terms_version"),
+            "accepted_at": consent_entry.get("timestamp") if consent_entry else user.get("terms_accepted_at"),
+            "purposes":   consent_entry.get("purposes") if consent_entry else user.get("consent_purposes"),
+            "language":   consent_entry.get("language") if consent_entry else "en",
+        },
+        "activity": {
+            "total_questions": msg_count,
+            "fir_sessions":    fir_count,
+            "saved_answers":   saved_count,
+        },
+        "grievances": tickets,
+        "data_region": "India (MongoDB Atlas — ap-south-1)",
+        "retention_policy": {
+            "chat_history":     "2 years from last activity",
+            "fir_drafts":       "Until account deletion + 30 days",
+            "voice_recordings": "Not retained — deleted after transcription",
+            "payment_records":  "7 years (tax law)",
+            "consent_records":  "Indefinite (legal proof of lawful processing)",
+            "otp_logs":         "90 days",
+        },
+    }
+
+
+@app.get("/api/user/my-data/export")
+async def export_my_data(user: dict = Depends(current_user)):
+    """Full portable data export (JSON) — 'Export my data' button."""
+    uid = user["id"]
+    messages      = await db.messages.find({"user_id": uid}, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    fir_sessions  = await db.fir_sessions.find({"user_id": uid}, {"_id": 0}).sort("updated_at", -1).to_list(200)
+    saved_answers = await db.saved_answers.find({"user_id": uid}, {"_id": 0}).to_list(500)
+    consent_log   = await db.consent_log.find({"user_id": uid}, {"_id": 0}).sort("timestamp", 1).to_list(100)
+    grievances    = await db.grievance_tickets.find({"user_id": uid}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return {
+        "exported_at":    datetime.now(timezone.utc).isoformat(),
+        "schema_version": "2.0",
+        "profile":        {k: v for k, v in user.items() if k not in ("password_hash", "_id")},
+        "consent_log":    consent_log,
+        "messages":       messages,
+        "fir_sessions":   fir_sessions,
+        "saved_answers":  saved_answers,
+        "grievances":     grievances,
+    }
+
+
+@app.get("/api/grievance")
+async def list_grievances(user: dict = Depends(current_user)):
+    """Return all grievance tickets raised by the authenticated user."""
+    tickets = await db.grievance_tickets.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return {"tickets": tickets, "count": len(tickets)}
+
+
+# ─── SPA catch-all (must stay LAST) ──────────────────────────────────────────
 from fastapi.staticfiles import StaticFiles as _StaticFiles
 from fastapi.responses import FileResponse as _FileResponse
 from pathlib import Path as _WebPath
@@ -3676,6 +3781,12 @@ if _WEB_DIR.is_dir():
 
     @app.get("/{web_path:path}", include_in_schema=False)
     async def _serve_expo_web(web_path: str):
+        # Never swallow API calls — they have dedicated routes but FastAPI
+        # resolves routes in registration order and this catch-all must not
+        # win against any /api/* handler added after the static mount block.
+        if web_path.startswith("api/"):
+            from fastapi import HTTPException as _HE
+            raise _HE(404, detail="Not Found")
         root = _WEB_DIR.resolve()
         candidate = (_WEB_DIR / web_path).resolve()
         if web_path and str(candidate).startswith(str(root)) and candidate.is_file():
@@ -3762,3 +3873,143 @@ async def update_privacy_choices(
         "event":            "privacy_choices_update",
     })
     return {"ok": True, "consent_purposes": new_purposes}
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MY DATA PORTAL — endpoints defined before the SPA catch-all (see above)
+# POST/PATCH endpoints that don't conflict with the catch-all stay here for
+# structural clarity alongside the Pydantic models and grievance POST.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GRIEVANCE TICKETS — DPDP Ch. IV: Grievance Redressal
+# ═══════════════════════════════════════════════════════════════════════════════
+
+GRIEVANCE_CATEGORIES = {
+    "data_access":     "Request to access my data",
+    "data_correction": "Request to correct my data",
+    "data_deletion":   "Request to delete my data",
+    "objection":       "Object to data processing",
+    "data_breach":     "Report a suspected data breach",
+    "other":           "Other privacy concern",
+}
+
+
+class GrievanceIn(BaseModel):
+    category: str           # one of GRIEVANCE_CATEGORIES keys
+    description: str = Field(default="", max_length=2000)
+    contact_email: Optional[str] = None  # alternate contact; defaults to account email
+
+
+@app.post("/api/grievance")
+async def submit_grievance(body: GrievanceIn, user: dict = Depends(current_user)):
+    """Create a privacy grievance ticket (DPDP §13(3) / PIPEDA §11).
+    Returns a reference ID the user can quote when following up."""
+    if body.category not in GRIEVANCE_CATEGORIES:
+        raise HTTPException(400, f"Unknown category. Valid values: {list(GRIEVANCE_CATEGORIES)}")
+
+    import random, string as _string
+    suffix = "".join(random.choices(_string.ascii_uppercase + _string.digits, k=6))
+    ticket_id = f"GRV-{datetime.now(timezone.utc).strftime('%Y%m')}-{suffix}"
+
+    doc = {
+        "ticket_id":   ticket_id,
+        "user_id":     user["id"],
+        "user_email":  body.contact_email or user.get("email", ""),
+        "category":    body.category,
+        "description": body.description.strip(),
+        "status":      "received",          # received → acknowledged → resolved
+        "created_at":  datetime.now(timezone.utc).isoformat(),
+        "updated_at":  datetime.now(timezone.utc).isoformat(),
+    }
+    await db.grievance_tickets.insert_one(doc)
+
+    return {
+        "ok":        True,
+        "ticket_id": ticket_id,
+        "category":  GRIEVANCE_CATEGORIES[body.category],
+        "status":    "received",
+        "message":   (
+            f"Your grievance has been recorded (reference: {ticket_id}). "
+            "We will acknowledge it within 48 hours and aim to resolve it within 30 days "
+            "as required under the DPDP Act 2023."
+        ),
+    }
+
+
+# list_grievances GET is defined before the SPA catch-all (see ~line 3762).
+
+
+# POST /api/user/data-export — stub endpoint (DPDP compliance notice screen)
+# Logs the request and confirms via API response. Actual export is sent by email
+# within 24 hours. No file generation needed in this sprint.
+@app.post("/api/user/data-export")
+async def request_data_export(user: dict = Depends(current_user)):
+    """Log a data export request and return a confirmation.
+    Fulfils: DHARA Data & Privacy screen → 'Download my data' card.
+    Actual data package is prepared and emailed within 24 hours."""
+    await db.data_export_requests.insert_one({
+        "user_id":      user["id"],
+        "email":        user.get("email", ""),
+        "requested_at": datetime.now(timezone.utc).isoformat(),
+        "status":       "pending",
+    })
+    return {
+        "ok": True,
+        "message": "We'll email your data export within 24 hours.",
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RETENTION PURGE JOB — DPDP §8(3): Data minimisation
+# consent_log is EXEMPT — retained indefinitely per T&C v2.0 clause 10.5
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def run_retention_purge_loop():
+    """Daily background job that hard-deletes records past their retention period.
+
+    Retention periods (T&C v2.0, clause 10.5):
+    - messages / fir_sessions  : 730 days (2 years) from created_at / updated_at
+    - usage_daily              : 90 days  (roll-up window)
+    - password_resets / otps   : 24 hours (security hygiene)
+    - consent_log              : EXEMPT — never purged (legal proof)
+    - grievance_tickets        : EXEMPT — purge only by explicit deletion request
+    """
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+
+            # ── messages: 730 days ──────────────────────────────────────────
+            cutoff_2yr = (now - timedelta(days=730)).isoformat()
+            r = await db.messages.delete_many({"created_at": {"$lt": cutoff_2yr}})
+            if r.deleted_count:
+                logger.info(f"[retention] messages purged: {r.deleted_count}")
+
+            # ── fir_sessions: 730 days (keyed on updated_at) ───────────────
+            r = await db.fir_sessions.delete_many({"updated_at": {"$lt": cutoff_2yr}})
+            if r.deleted_count:
+                logger.info(f"[retention] fir_sessions purged: {r.deleted_count}")
+
+            # ── usage_daily: 90 days (keyed on 'day' string YYYY-MM-DD) ────
+            day_90 = (now - timedelta(days=90)).strftime("%Y-%m-%d")
+            r = await db.usage_daily.delete_many({"day": {"$lt": day_90}})
+            if r.deleted_count:
+                logger.info(f"[retention] usage_daily purged: {r.deleted_count}")
+
+            # ── OTPs / password resets: 24 hours ───────────────────────────
+            cutoff_24h = (now - timedelta(hours=24)).isoformat()
+            for col in ("password_resets", "account_deletion_otps"):
+                r = await getattr(db, col).delete_many({"created_at": {"$lt": cutoff_24h}})
+                if r.deleted_count:
+                    logger.info(f"[retention] {col} purged: {r.deleted_count}")
+
+            logger.info("[retention] daily purge cycle complete")
+        except Exception:
+            logger.exception("[retention] purge job error — will retry in 1 h")
+            await asyncio.sleep(3600)
+            continue
+
+        # Sleep 24 h before next cycle
+        await asyncio.sleep(86400)

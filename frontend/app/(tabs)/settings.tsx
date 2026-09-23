@@ -355,6 +355,20 @@ export default function Settings() {
         </View>
 
         <Text style={styles.section}>Legal</Text>
+
+        {/* Data & Privacy — DPDP compliance notice (below Account, above About) */}
+        <Pressable
+          testID="data-privacy-btn"
+          style={styles.row}
+          onPress={() => router.push('/settings/data-privacy' as any)}
+        >
+          <Ionicons name="shield-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+            <Text style={styles.rowTitle}>Data &amp; Privacy</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
+        </Pressable>
+
         <Pressable testID="view-terms" style={styles.row} onPress={() => setShowTerms(true)}>
           <Ionicons name="document-text-outline" size={22} color={theme.colors.brand} />
           <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
@@ -374,6 +388,26 @@ export default function Settings() {
           <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
         </Pressable>
 
+        {/* Phase 2: My Data portal — DPDP §17 / T&C v2.0 clause 10.3 */}
+        <Pressable testID="my-data-button" style={styles.row} onPress={() => router.push('/my-data' as any)}>
+          <Ionicons name="person-circle-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+            <Text style={styles.rowTitle}>My Data</Text>
+            <Text style={styles.rowValue}>View, export, or delete your stored data</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
+        </Pressable>
+
+        {/* Phase 2: Privacy Concern / Grievance — DPDP Ch. IV */}
+        <Pressable testID="grievance-button" style={styles.row} onPress={() => router.push('/grievance' as any)}>
+          <Ionicons name="flag-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+            <Text style={styles.rowTitle}>Privacy Concern</Text>
+            <Text style={styles.rowValue}>Raise a data access, correction, or deletion request</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
+        </Pressable>
+
         <Text style={styles.section}>About</Text>
         <View style={styles.aboutCard}>
           <Text style={styles.aboutText}>
@@ -384,8 +418,8 @@ export default function Settings() {
         </View>
 
         <View testID="copyright-block" style={styles.copyBlock}>
-          <Text style={styles.copyLine}>© {new Date().getFullYear()} Callistus Moses</Text>
-          <Text style={styles.copySub}>An Msafe product · All rights reserved</Text>
+          <Text style={styles.copyLine}>© {new Date().getFullYear()} MSafe Solutions Inc.</Text>
+          <Text style={styles.copySub}>Calvil Technologies · All rights reserved</Text>
         </View>
 
         <Pressable testID="logout-button" style={styles.logoutBtn} onPress={confirmLogout}>
