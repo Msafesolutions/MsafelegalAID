@@ -1,10 +1,10 @@
 /**
- * FIR Draft Result Screen (v3)
+ * FIR Draft Result Screen (v3.3 — Issue 9 Section Drawer)
  * Displays the generated FIR complaint letter with share/export options.
  * Receives draft text and sessionId from the new Interview Engine.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet,
   ActivityIndicator, Share, Platform, Alert, Clipboard, Linking,
@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { API_BASE } from '@/src/auth';
+import FirSectionDrawer, { SectionItem, DroppedSection } from '@/src/components/FirSectionDrawer';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 const NAVY   = '#14365A';
@@ -46,11 +47,34 @@ export default function FIRResult() {
   // Draft text: either passed as param, or loaded from session API
   const draftText = params.draft || '';
 
+  // Issue 9: Section drawer state
+  const [showSectionDrawer, setShowSectionDrawer] = useState(false);
+  const [suggestedSections, setSuggestedSections] = useState<SectionItem[]>([]);
+  const [droppedSections, setDroppedSections] = useState<DroppedSection[]>([]);
+
+  // Load sections from session on mount
+  useEffect(() => {
+    if (!sessionId) return;
+    const loadSections = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/fir/session/${sessionId}`);
+        if (!res.ok) return;
+        const sess = await res.json();
+        if (sess.suggested_sections?.length > 0) {
+          setSuggestedSections(sess.suggested_sections);
+        }
+        if (sess.dropped_sections?.length > 0) {
+          setDroppedSections(sess.dropped_sections);
+        }
+      } catch { /* best effort */ }
+    };
+    loadSections();
+  }, [sessionId]);
+
   // ── Copy to clipboard ──────────────────────────────────────────────────────
   const handleCopy = useCallback(() => {
     if (!draftText) return;
     if (Platform.OS === 'web') {
-      // navigator.clipboard is available on web
       navigator.clipboard?.writeText(draftText).catch(() => {});
     } else {
       Clipboard.setString(draftText);
@@ -110,11 +134,9 @@ export default function FIRResult() {
     try {
       const pdfUrl = `${API_BASE}/api/fir/session/${sessionId}/draft.pdf`;
       if (Platform.OS === 'web') {
-        // On web: open in new tab
         Linking.openURL(pdfUrl);
         return;
       }
-      // On native: download and share
       const dir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
       if (!dir) throw new Error('No directory');
       const fileUri = dir + `FIR_Draft_${sessionId.slice(0, 8)}.pdf`;
@@ -136,18 +158,7 @@ export default function FIRResult() {
     }
   }, [sessionId]);
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.root}>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={NAVY} />
-          <Text style={styles.loadingText}>Loading your draft…</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (!draftText) {
+  if (loading || !draftText) {
     return (
       <SafeAreaView style={styles.root}>
         <View style={styles.center}>
@@ -169,6 +180,16 @@ export default function FIRResult() {
           <Text style={styles.headerTitle}>Your FIR Draft</Text>
           <Text style={styles.headerSub}>Ready to present at police station</Text>
         </View>
+        {/* Issue 9: Section menu button */}
+        {suggestedSections.length > 0 && (
+          <Pressable
+            onPress={() => setShowSectionDrawer(true)}
+            style={styles.sectionMenuBtn}
+            hitSlop={12}
+          >
+            <Ionicons name="list-outline" size={22} color={GOLD} />
+          </Pressable>
+        )}
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
@@ -189,6 +210,18 @@ export default function FIRResult() {
             You can file this FIR at ANY police station in India. They are legally required to accept it (Section 173(1) BNSS).
           </Text>
         </View>
+
+        {/* Issue 9: Sections summary badge (if sections available) */}
+        {suggestedSections.length > 0 && (
+          <Pressable style={styles.sectionsSummaryCard} onPress={() => setShowSectionDrawer(true)}>
+            <Ionicons name="library-outline" size={16} color={NAVY} />
+            <Text style={styles.sectionsSummaryText}>
+              {suggestedSections.length} BNS section{suggestedSections.length !== 1 ? 's' : ''} suggested
+              {droppedSections.length > 0 ? ` · ${droppedSections.length} not applicable` : ''}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={MUTED} />
+          </Pressable>
+        )}
 
         {/* Draft text */}
         <View style={styles.draftCard}>
@@ -231,7 +264,7 @@ export default function FIRResult() {
             'Print or save this draft on your phone.',
             'Visit the nearest police station (any station accepts Zero FIR).',
             'Give this document to the Station House Officer (SHO).',
-            'Insist on getting a copy of the registered FIR — it\'s your right.',
+            "Insist on getting a copy of the registered FIR — it's your right.",
             'Note the FIR number and officer\'s name for your records.',
           ].map((step, i) => (
             <View key={i} style={styles.stepRow}>
@@ -265,6 +298,14 @@ export default function FIRResult() {
         </Pressable>
 
       </ScrollView>
+
+      {/* Issue 9: Section Drawer (no jump in result — user is already in the draft view) */}
+      <FirSectionDrawer
+        visible={showSectionDrawer}
+        onClose={() => setShowSectionDrawer(false)}
+        suggestedSections={suggestedSections}
+        droppedSections={droppedSections}
+      />
     </SafeAreaView>
   );
 }
@@ -283,6 +324,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: '700', color: '#fff' },
   headerSub: { fontSize: 12, color: GOLD },
   backBtn: { padding: 4 },
+  sectionMenuBtn: { padding: 6 },
 
   // Scroll
   scroll: { flex: 1 },
@@ -303,6 +345,14 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   zeroFirText: { flex: 1, fontSize: 13, color: NAVY, lineHeight: 19 },
+
+  // Issue 9: Sections summary card
+  sectionsSummaryCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: CREAM, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  sectionsSummaryText: { flex: 1, fontSize: 13, color: NAVY, fontWeight: '600' },
 
   // Draft
   draftCard: {

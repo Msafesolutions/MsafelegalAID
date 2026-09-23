@@ -63,11 +63,25 @@ _SAFETY_KW: dict[str, list[str]] = {
 
 # Keywords indicating the user is in IMMEDIATE danger right now
 _EMERGENCY_NARRATIVE_KW = [
-    "help me now", "being attacked", "he is here", "he's here", "she is here",
-    "they are here", "in danger now", "save me", "will kill me", "killing me",
-    "beating me now", "is beating me", "please call police", "can't escape",
-    "trapped here", "attacking me", "hurting me right now", "running away",
-    "someone following me", "following me right now",
+    # Direct calls for help
+    "help me now", "please help me", "please come help", "need help now",
+    "need help right now", "right now please", "please come",
+    # Attacker presence
+    "he is here", "he's here", "she is here", "she's here",
+    "they are here", "he has come", "she has come",
+    # Being attacked RIGHT NOW
+    "being attacked", "attacking me", "beating me now", "is beating me",
+    "hurting me right now", "harming me now",
+    # Lethal threat NOW
+    "will kill me", "kill me now", "kill me right now", "trying to kill me",
+    "going to kill me", "wants to kill me", "killing me",
+    # Danger / confinement
+    "in danger now", "in danger right now", "right now in danger",
+    "save me", "can't escape", "trapped here", "cannot escape",
+    # Following/stalking NOW
+    "someone following me", "following me right now", "being followed now",
+    # Distress phrases
+    "please call police", "running away", "he is outside",
 ]
 
 
@@ -297,16 +311,20 @@ def _has_date_conflict(narrative: str, extracted_date: Optional[str]) -> Optiona
 
 _INCIDENT_KW_MAP: dict[str, list[str]] = {
     "theft":     ["stolen", "steal", "stole", "theft", "chori", "pickpocket",
-                  "missing phone", "missing wallet", "missing purse"],
-    "robbery":   ["robbery", "looted", "loot", "robbed", "snatched", "snatch",
-                  "dakaiti", "loot"],
+                  "missing phone", "missing wallet", "missing purse",
+                  "grabbed my", "grabbed the", "snatched my", "took my phone",
+                  "took my wallet", "took my bag", "took my laptop", "took my car",
+                  "my phone was taken", "mobile stolen", "bike stolen", "car stolen"],
+    "robbery":   ["robbery", "looted", "loot", "robbed", "dakaiti",
+                  "snatched at", "knife", "knifepoint", "gunpoint", "at gunpoint",
+                  "at knifepoint", "threatened with", "threatened at"],
     "assault":   ["beat", "beaten", "hit me", "hit us", "punch", "kick", "slap",
                   "physical", "attacked", "attack", "assault", "maara", "pita",
                   "injury", "hospital", "fracture", "wound"],
-    "harassment": ["harass", "bully", "bullied", "bully", "making fun", "mock",
-                   "teas", "taunt", "abuse", "abused", "verbal", "insult",
-                   "humiliate", "threaten", "threat", "intimidat", "scare",
-                   "menac", "mischief", "nuisance", "eve teas", "ragging"],
+    "harassment": ["harass", "bully", "bullied", "making fun", "mock",
+                   "teas", "taunt", "verbal abuse", "insulted",
+                   "humiliate", "intimidat", "menac", "mischief", "nuisance",
+                   "eve teas", "ragging"],
     "cyber_fraud":["online", "fraud", "cyber", "upi", "payment", "bank",
                    "account", "otp", "phishing", "scam", "cheated online",
                    "fake website", "fake call", "whatsapp"],
@@ -667,8 +685,9 @@ async def generate_draft(
         f"• BNS Section {s['section_number']}: {s['section_heading']}" for s in sections
     ) or "• To be determined by the investigating officer"
     ev_text = "\n".join(
-        f"• {e.get('filename', 'File')} ({e.get('file_type', 'document')})"
-        for e in evidence_files
+        f"• Exhibit {i+1}: {e.get('filename', 'File')}" +
+        (f" — {e.get('caption')}" if e.get('caption') else f" ({e.get('file_type', 'document')})")
+        for i, e in enumerate(evidence_files)
     ) or "None attached at this stage"
     loc = (slots.get("incident_gps_address") or slots.get("incident_place_text") or "[Not provided]")
     date_str = datetime.now(timezone.utc).strftime("%d %B %Y")
@@ -1053,10 +1072,16 @@ async def _dispatch(
 
         extracted = await extract_slots_llm(narrative, llm_key)
 
-        # ── FIX 8: Keyword fallback for incident_types ──────────────────────
+        # ── FIX 8: Keyword fallback + merge for incident_types ──────────────
         raw_types = extracted.get("incident_types") or []
+        kw_types = _keyword_classify(narrative)
         if not raw_types or raw_types == ["other"]:
-            raw_types = _keyword_classify(narrative)
+            # LLM gave nothing useful — use keyword results
+            raw_types = kw_types
+        else:
+            # LLM gave results — merge with keyword to catch what LLM missed
+            merged = list(set(raw_types) | (set(kw_types) - {"other"}))
+            raw_types = merged if merged else raw_types
         new_types = raw_types if raw_types else ["other"]
 
         # Merge extracted slots (never overwrite existing)
@@ -1153,6 +1178,29 @@ async def _dispatch(
             return await _enter_section_suggest(db, corpus_db, sid, slots, incident_types, now)
         pdef = PROBE_Q.get(cp, {})
         slot_key = pdef.get("slot")
+
+        # ── v3.3: Resume action — re-ask current probe without advancing ──────
+        if action == "resume":
+            session_fresh = await db.fir_sessions.find_one({"session_id": sid}, {"relative_date_display": 1})
+            rdd = (session_fresh or {}).get("relative_date_display")
+            if cp == "probe_date_confirm" and rdd:
+                bot_msg = (
+                    f"Welcome back! Continuing from where you left off.\n\n"
+                    f"I calculated the incident happened on **{rdd}**.\nIs that correct?"
+                )
+            else:
+                bot_msg = (
+                    f"Welcome back! Continuing from where you left off.\n\n"
+                    f"{pdef.get('message', 'Please continue.')}"
+                )
+            return {
+                "session_id": sid, "stage": STAGE_PROBE, "probe_key": cp,
+                "bot_message": bot_msg,
+                "input_type": pdef.get("input_type", INPUT_TEXT),
+                "quick_replies": pdef.get("quick_replies", []),
+                "skip_label": pdef.get("skip_label"),
+                "completed": False,
+            }
 
         if cp == "probe_place_gps":
             if gps and action != "skip":
@@ -1563,5 +1611,7 @@ async def _enter_section_suggest(
         "session_id": sid, "stage": STAGE_SECTION_SUGGEST,
         "bot_message": msg, "input_type": INPUT_CONFIRM,
         "quick_replies": ["Yes, proceed", "Go back"],
-        "suggested_sections": confirmed, "completed": False,
+        "suggested_sections": confirmed,
+        "dropped_sections": dropped,  # Issue 9: expose dropped sections for drawer
+        "completed": False,
     }

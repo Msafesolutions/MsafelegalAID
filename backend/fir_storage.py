@@ -115,6 +115,7 @@ async def upload_evidence(
         "file_type": file_type,
         "content_type": content_type,
         "size": result.get("size", len(data)),
+        "caption": "",  # Issue 17: caption field for evidence annex
     }
 
 

@@ -23,6 +23,7 @@ import {
   useAudioRecorder, RecordingPresets, setAudioModeAsync, AudioModule,
 } from 'expo-audio';
 import { whisperTranscribeFile } from '@/src/voice/stt';
+import FirSectionDrawer, { SectionItem, DroppedSection } from '@/src/components/FirSectionDrawer';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 const NAVY   = '#14365A';
@@ -70,6 +71,7 @@ interface TurnResponse {
   skip_label?: string;
   confirmed_address?: string;
   suggested_sections?: any[];
+  dropped_sections?: any[];
   slots_preview?: any;
   draft?: string;
   completed?: boolean;
@@ -86,6 +88,7 @@ interface UploadedFile {
   file_type: string;
   local_uri?: string;   // v3.3: client-side preview URI
   content_type?: string;
+  caption?: string;     // Issue 17: evidence caption
 }
 
 function msgId() {
@@ -116,6 +119,13 @@ export default function FirDraftScreen() {
   const [emergencyNumbers, setEmergencyNumbers] = useState<Array<{label: string; number: string}>>([]);
   const [savedSessionId, setSavedSessionId] = useState<string | null>(null);
   const [checkingResume, setCheckingResume] = useState(true);
+
+  // Issue 9: Section drawer state
+  const [showSectionDrawer, setShowSectionDrawer] = useState(false);
+  const [suggestedSections, setSuggestedSections] = useState<SectionItem[]>([]);
+  const [droppedSections, setDroppedSections] = useState<DroppedSection[]>([]);
+  const [sectionMsgId, setSectionMsgId] = useState<string | null>(null);
+  const messageYsRef = useRef<{[id: string]: number}>({});
 
   // ── Language ───────────────────────────────────────────────────────────────
   const [language, setLanguage] = useState('en');
@@ -172,17 +182,20 @@ export default function FirDraftScreen() {
   }, [messages, isLoading]);
 
   // ── Add message helper ─────────────────────────────────────────────────────
-  const addMessage = useCallback((role: 'bot' | 'user', text: string) => {
+  const addMessage = useCallback((role: 'bot' | 'user', text: string): string => {
+    const id = msgId();
     setMessages(prev => [...prev, {
-      id: msgId(), role, text,
+      id, role, text,
       timestamp: new Date().toISOString(),
     }]);
+    return id;
   }, []);
 
   // ── Apply turn response ───────────────────────────────────────────────────
   const applyTurn = useCallback((res: TurnResponse) => {
+    let botMsgId: string | undefined;
     if (res.bot_message) {
-      addMessage('bot', res.bot_message);
+      botMsgId = addMessage('bot', res.bot_message);
     }
     setCurrentStage(res.stage || '');
     setInputType(res.input_type || 'text');
@@ -197,6 +210,14 @@ export default function FirDraftScreen() {
         { label: 'Ambulance', number: '108' },
       ]);
       setShowEmergencyScreen(true);
+    }
+    // Issue 9: Capture sections when section_suggest stage is entered
+    if (res.suggested_sections && res.suggested_sections.length > 0) {
+      setSuggestedSections(res.suggested_sections);
+      if (botMsgId) setSectionMsgId(botMsgId);
+    }
+    if (res.dropped_sections && res.dropped_sections.length > 0) {
+      setDroppedSections(res.dropped_sections);
     }
   }, [addMessage]);
 
@@ -255,6 +276,29 @@ export default function FirDraftScreen() {
       setSessionId(sid);
       setLanguage(sess.language || 'en');
       await AsyncStorage.setItem(FIR_SESSION_KEY, sid);
+
+      // Issue 17: Restore evidence files with captions
+      const storedEvidence: any[] = sess.evidence_files || [];
+      if (storedEvidence.length > 0) {
+        const restored = storedEvidence.map((e: any) => ({
+          file_id: typeof e === 'string' ? e : e.file_id,
+          filename: typeof e === 'string' ? e : (e.filename || e),
+          file_type: e.file_type || 'document',
+          local_uri: undefined,
+          content_type: e.content_type,
+          caption: e.caption || '',
+        }));
+        setEvidenceFiles(restored);
+      }
+
+      // Issue 9: Restore sections if already suggested
+      if (sess.suggested_sections?.length > 0) {
+        setSuggestedSections(sess.suggested_sections);
+      }
+      if (sess.dropped_sections?.length > 0) {
+        setDroppedSections(sess.dropped_sections);
+      }
+
       // Restore last bot message from narrative_turns
       const turns: any[] = sess.narrative_turns || [];
       const lastBot = turns.filter((t: any) => t.role === 'bot').pop();
@@ -273,14 +317,10 @@ export default function FirDraftScreen() {
           const tData: TurnResponse = await tRes.json();
           applyTurn(tData);
         } else if (lastBot) {
-          addMessage('bot', `Welcome back! Continuing from where you left off.
-
-${lastBot.content || lastBot.text || ''}`);
+          addMessage('bot', `Welcome back! Continuing from where you left off.\n\n${lastBot.content || lastBot.text || ''}`);
         }
       } else if (lastBot) {
-        addMessage('bot', `Welcome back! Continuing from where you left off.
-
-${lastBot.content || lastBot.text || ''}`);
+        addMessage('bot', `Welcome back! Continuing from where you left off.\n\n${lastBot.content || lastBot.text || ''}`);
       } else {
         addMessage('bot', 'Welcome back! Please tell me what happened in your own words.');
         setInputType('voice_or_text');
@@ -446,6 +486,25 @@ Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
       Alert.alert('Error', 'Could not remove file. Please try again.');
     }
   };
+
+  // Issue 17: Update evidence caption
+  const captionTimersRef = useRef<{[fileId: string]: ReturnType<typeof setTimeout>}>({});
+  const handleCaptionChange = useCallback((fileId: string, caption: string) => {
+    // Update local state immediately
+    setEvidenceFiles(prev => prev.map(f => f.file_id === fileId ? { ...f, caption } : f));
+    // Debounce the PATCH to backend (500ms)
+    if (captionTimersRef.current[fileId]) clearTimeout(captionTimersRef.current[fileId]);
+    captionTimersRef.current[fileId] = setTimeout(async () => {
+      if (!sessionId) return;
+      try {
+        await fetch(`${API_BASE}/api/fir/session/${sessionId}/evidence/${fileId}/caption`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ caption }),
+        });
+      } catch { /* best effort */ }
+    }, 500);
+  }, [sessionId]);
 
   // ── Voice recording ────────────────────────────────────────────────────────
   const startRecording = async () => {
@@ -652,6 +711,16 @@ ${data.bot_message}`);
             <Ionicons name="arrow-undo-outline" size={20} color={GOLD} />
           </Pressable>
         )}
+        {/* Issue 9: Section menu button — visible when sections are available */}
+        {suggestedSections.length > 0 && (
+          <Pressable
+            onPress={() => setShowSectionDrawer(true)}
+            style={styles.pauseBtn}
+            hitSlop={12}
+          >
+            <Ionicons name="list-outline" size={22} color={GOLD} />
+          </Pressable>
+        )}
         <Pressable onPress={handlePause} style={styles.pauseBtn} hitSlop={12}>
           <Ionicons name="bookmark-outline" size={20} color={GOLD} />
         </Pressable>
@@ -670,7 +739,12 @@ ${data.bot_message}`);
           showsVerticalScrollIndicator={false}
         >
           {messages.map(msg => (
-            <MessageBubble key={msg.id} role={msg.role} text={msg.text} />
+            <View
+              key={msg.id}
+              onLayout={(e) => { messageYsRef.current[msg.id] = e.nativeEvent.layout.y; }}
+            >
+              <MessageBubble role={msg.role} text={msg.text} />
+            </View>
           ))}
           {isLoading && <TypingIndicator />}
           {/* v3.3: Save & Continue Later link */}
@@ -755,6 +829,7 @@ ${data.bot_message}`);
                 onSkip={() => sendTurn(undefined, undefined, 'skip')}
                 skipLabel={skipLabel}
                 onRemove={handleRemoveEvidence}
+                onCaptionChange={handleCaptionChange}
               />
             )}
 
@@ -782,6 +857,20 @@ ${data.bot_message}`);
           </View>
         )}
       </KeyboardAvoidingView>
+
+      {/* Issue 9: Section Drawer */}
+      <FirSectionDrawer
+        visible={showSectionDrawer}
+        onClose={() => setShowSectionDrawer(false)}
+        suggestedSections={suggestedSections}
+        droppedSections={droppedSections}
+        onJump={() => {
+          if (sectionMsgId && messageYsRef.current[sectionMsgId] !== undefined) {
+            scrollRef.current?.scrollTo({ y: Math.max(0, messageYsRef.current[sectionMsgId] - 20), animated: true });
+          }
+          setShowSectionDrawer(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -916,11 +1005,13 @@ function GPSWidget({
 }
 
 function EvidenceWidget({
-  files, uploading, onPick, onDone, onSkip, skipLabel, onRemove,
+  files, uploading, onPick, onDone, onSkip, skipLabel, onRemove, onCaptionChange,
 }: {
   files: UploadedFile[]; uploading: boolean;
   onPick: () => void; onDone: () => void; onSkip: () => void;
-  skipLabel?: string; onRemove?: (fileId: string) => void;
+  skipLabel?: string;
+  onRemove?: (fileId: string) => void;
+  onCaptionChange?: (fileId: string, caption: string) => void;
 }) {
   return (
     <View style={styles.widgetWrap}>
@@ -930,31 +1021,45 @@ function EvidenceWidget({
             const isImage = f.file_type === 'image' || (f.content_type || '').startsWith('image/');
             const isVideo = f.file_type === 'video' || (f.content_type || '').startsWith('video/');
             return (
-              <View key={f.file_id} style={styles.evidenceItem}>
-                {/* v3.3: Thumbnail */}
-                {isImage && f.local_uri ? (
-                  <Image
-                    source={{ uri: f.local_uri }}
-                    style={styles.evidenceThumb}
-                    resizeMode="cover"
+              <View key={f.file_id} style={styles.evidenceItemWrap}>
+                <View style={styles.evidenceItem}>
+                  {/* Thumbnail */}
+                  {isImage && f.local_uri ? (
+                    <Image
+                      source={{ uri: f.local_uri }}
+                      style={styles.evidenceThumb}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Ionicons
+                      name={isImage ? 'image-outline' : isVideo ? 'videocam-outline' : 'document-outline'}
+                      size={20} color={NAVY}
+                      style={{ marginRight: 4 }}
+                    />
+                  )}
+                  <Text style={styles.evidenceItemText} numberOfLines={1}>{f.filename}</Text>
+                  {/* × remove button */}
+                  {onRemove && (
+                    <Pressable
+                      onPress={() => onRemove(f.file_id)}
+                      style={styles.evidenceRemoveBtn}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="close-circle" size={18} color={RED} />
+                    </Pressable>
+                  )}
+                </View>
+                {/* Issue 17: Caption input */}
+                {onCaptionChange && (
+                  <TextInput
+                    style={styles.captionInput}
+                    value={f.caption || ''}
+                    onChangeText={(text) => onCaptionChange(f.file_id, text)}
+                    placeholder="Add a caption (e.g. broken window at entry)"
+                    placeholderTextColor={MUTED}
+                    returnKeyType="done"
+                    maxLength={200}
                   />
-                ) : (
-                  <Ionicons
-                    name={isImage ? 'image-outline' : isVideo ? 'videocam-outline' : 'document-outline'}
-                    size={20} color={NAVY}
-                    style={{ marginRight: 4 }}
-                  />
-                )}
-                <Text style={styles.evidenceItemText} numberOfLines={1}>{f.filename}</Text>
-                {/* v3.3: × remove button */}
-                {onRemove && (
-                  <Pressable
-                    onPress={() => onRemove(f.file_id)}
-                    style={styles.evidenceRemoveBtn}
-                    hitSlop={8}
-                  >
-                    <Ionicons name="close-circle" size={18} color={RED} />
-                  </Pressable>
                 )}
               </View>
             );
@@ -1193,9 +1298,22 @@ const styles = StyleSheet.create({
 
   // Evidence widget
   evidenceList: { gap: 6, marginBottom: 4 },
+  evidenceItemWrap: {
+    borderRadius: 8, overflow: 'hidden',
+    borderWidth: 1, borderColor: '#D1DCE8',
+    marginBottom: 2,
+  },
   evidenceItem: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: CREAM, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: CREAM, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  // Issue 17: caption input below each evidence thumbnail
+  captionInput: {
+    borderTopWidth: 1, borderTopColor: '#D1DCE8',
+    paddingHorizontal: 10, paddingVertical: 7,
+    fontSize: 12, color: NAVY,
+    backgroundColor: '#FAFAF8',
+    fontStyle: 'italic',
   },
   evidenceItemText: { fontSize: 13, color: NAVY, flex: 1 },
   evidenceBtns: { flexDirection: 'row', gap: 8 },

@@ -3431,6 +3431,29 @@ async def fir_delete_evidence(session_id: str, file_id: str):
     return {"ok": True, "deleted_file_id": file_id}
 
 
+# ── Issue 17: Update evidence caption ─────────────────────────────────────────
+class EvidenceCaptionBody(BaseModel):
+    caption: str = ""
+
+@api.patch("/fir/session/{session_id}/evidence/{file_id}/caption")
+async def fir_update_evidence_caption(session_id: str, file_id: str, body: EvidenceCaptionBody):
+    """Save a caption for an evidence file in the session."""
+    session = await db.fir_sessions.find_one({"session_id": session_id})
+    if not session:
+        raise HTTPException(404, "Session not found")
+    ev_list = session.get("evidence_files", [])
+    if not any(e.get("file_id") == file_id for e in ev_list):
+        raise HTTPException(404, "Evidence file not found")
+    await db.fir_sessions.update_one(
+        {"session_id": session_id, "evidence_files.file_id": file_id},
+        {"$set": {
+            "evidence_files.$.caption": body.caption,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {"ok": True, "file_id": file_id, "caption": body.caption}
+
+
 # ── v3.3: PDF export ──────────────────────────────────────────────────────────
 @api.get("/fir/session/{session_id}/draft.pdf")
 async def fir_get_pdf(session_id: str):
@@ -3484,6 +3507,25 @@ async def fir_get_pdf(session_id: str):
             story.append(Paragraph(safe, body_style))
         else:
             story.append(Spacer(1, 0.25 * cm))
+
+    # ── Issue 17: Evidence Annex with captions ────────────────────────────────
+    evidence_files = list(session.get("evidence_files", []))
+    if evidence_files:
+        heading_style = ParagraphStyle(
+            "DharaHeading", parent=styles["Heading2"],
+            fontSize=11, spaceBefore=12, spaceAfter=6, leading=16,
+        )
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(Paragraph("EVIDENCE ANNEX", heading_style))
+        for i, ev in enumerate(evidence_files):
+            fname = (ev.get("filename") or "File").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            caption = (ev.get("caption") or "").strip()
+            ftype = ev.get("file_type", "document")
+            if caption:
+                exhibit_line = f"<b>Exhibit {i+1}:</b> {fname} — {caption}"
+            else:
+                exhibit_line = f"<b>Exhibit {i+1}:</b> {fname} ({ftype})"
+            story.append(Paragraph(exhibit_line, body_style))
 
     doc.build(story)
     buf.seek(0)
