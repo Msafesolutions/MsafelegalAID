@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet, Text, Image } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/auth';
@@ -24,18 +24,17 @@ export default function Index() {
 
   return (
     <View style={styles.c} testID="splash-screen">
-      <Image source={require('../assets/images/icon.png')} style={styles.logo} resizeMode="contain" />
-      <Text style={styles.brand}>Dhara</Text>
-      <Text style={styles.tag}>आपके अधिकार, आपकी शक्ति</Text>
-      <ActivityIndicator color={theme.colors.brandSecondary} style={{ marginTop: 24 }} />
+      <Image
+        source={require('../assets/images/dhara_logo_full.png')}
+        style={styles.logo}
+        resizeMode="contain"
+      />
+      <ActivityIndicator color={theme.colors.gold} style={{ marginTop: 32 }} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  c: { flex: 1, backgroundColor: theme.colors.brand, alignItems: 'center', justifyContent: 'center' },
-  // Strict 1:1 square + contain → zero distortion on every viewport
-  logo: { width: 88, height: 88, aspectRatio: 1, borderRadius: 22, marginBottom: 16 },
-  brand: { fontFamily: theme.fonts.display, fontSize: 40, color: theme.colors.onBrandPrimary, fontWeight: '700' },
-  tag: { fontFamily: theme.fonts.body, color: theme.colors.brandSecondary, marginTop: 12, fontSize: 16 },
+  c: { flex: 1, backgroundColor: theme.colors.brand, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+  logo: { width: 260, height: 260, resizeMode: 'contain' },
 });

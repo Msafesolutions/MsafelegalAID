@@ -1,6 +1,6 @@
 /** Explicit age, terms and core-data consent. Optional purposes default to off. */
 import React, { useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -84,7 +84,7 @@ export default function ConsentScreen() {
     <SafeAreaView style={styles.safe} testID="consent-screen">
       <ScrollView testID="consent-scroll" style={styles.scroll} contentContainerStyle={styles.content}>
         <View style={styles.titleRow}>
-          <View style={styles.logoBox}><Text style={styles.logoChar}>ध</Text></View>
+          <Image source={require('../assets/images/dhara_icon.png')} style={styles.logoBox} resizeMode="contain" />
           <Text testID="consent-title" style={styles.title}>{strings.title}</Text>
         </View>
         <Text testID="consent-intro" style={styles.intro}>{strings.intro}</Text>

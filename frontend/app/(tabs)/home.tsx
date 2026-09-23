@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { setStatusBarStyle } from 'expo-status-bar';
@@ -30,7 +30,7 @@ export default function Home() {
   ];
   return <SafeAreaView style={styles.safe} edges={['top']} testID="home-screen">
     <View testID="home-header" style={styles.header}>
-      <View style={styles.logo}><Text style={styles.logoText}>ध</Text></View>
+      <Image source={require('../../assets/images/dhara_icon.png')} style={styles.logo} resizeMode="contain" />
       <View testID="home-brand-wrap" style={styles.brandWrap}><Text testID="home-brand" style={styles.brand} numberOfLines={1} adjustsFontSizeToFit>Dhara</Text><Text testID="home-tagline" style={styles.tagline}>YOUR LEGAL RIGHTS</Text></View>
       <Pressable testID="home-language" accessibilityRole="button" accessibilityLabel="Change language" style={styles.language} onPress={() => router.push({ pathname: '/language', params: { from: 'home' } })}>
         <Ionicons name="globe-outline" size={15} color={colors.onBrandPrimary} /><Text style={styles.languageText} numberOfLines={1}>{language.native}</Text><Ionicons name="chevron-down" size={12} color={colors.onBrandPrimary} />
@@ -63,8 +63,7 @@ export default function Home() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.primary },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 18 },
-  logo: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center' },
-  logoText: { fontSize: 22, color: colors.onGold, fontWeight: '800' },
+  logo: { width: 44, height: 44 },
   brandWrap: { flex: 1, minWidth: 0, flexShrink: 1 },
   brand: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 22, letterSpacing: 0.2 },
   tagline: { color: colors.onNavyMuted, fontSize: 8, lineHeight: 14, letterSpacing: 0.9 },

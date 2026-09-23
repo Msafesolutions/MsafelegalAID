@@ -329,11 +329,81 @@ _INCIDENT_KW_MAP: dict[str, list[str]] = {
                    "account", "otp", "phishing", "scam", "cheated online",
                    "fake website", "fake call", "whatsapp"],
     "domestic_violence": ["husband", "wife", "spouse", "domestic", "dowry",
-                          "marital", "in-law", "inlaw", "gharelu"],
+                          "marital", "in-law", "inlaw", "gharelu", "498a", "cruelty"],
     "sexual_harassment": ["molest", "grope", "voyeur", "stalk", "follow me",
                           "sexual", "inappropriate touch", "eve teas"],
+    "posh":      ["posh", "workplace harassment", "office harassment", "boss",
+                  "manager harass", "colleague harass", "sexual harassment at work",
+                  "internal complaints committee", "icc complaint"],
+    "consumer_fraud": ["amazon", "flipkart", "myntra", "meesho", "consumer",
+                       "e-commerce", "online shopping", "refund not received",
+                       "defective product", "delivery fraud", "fake product",
+                       "never delivered", "wrong product", "consumer court"],
     "murder":    ["killed", "death", "murder", "dead", "die", "hataaya"],
 }
+
+# ─── Module-specific welcome messages (shown when user pre-selects a module) ──
+_MODULE_WELCOME: dict[str, dict[str, str]] = {
+    "cybercrime": {
+        "en": "🔐 I'll help you file a Cybercrime complaint.\n\nThis covers: online fraud, UPI/banking scams, hacking, social media abuse, and sextortion.\n\n📞 Report at cybercrime.gov.in or call Cybercrime Helpline 1930 first to preserve evidence.",
+        "hi": "🔐 मैं आपकी साइबर अपराध की शिकायत दर्ज करने में मदद करूंगा।\n\nइसमें शामिल है: ऑनलाइन धोखाधड़ी, UPI/बैंकिंग घोटाले, हैकिंग, सोशल मीडिया दुरुपयोग।\n\n📞 पहले Cybercrime Helpline 1930 पर कॉल करें।",
+        "mr": "🔐 मी तुम्हाला सायबर गुन्ह्याची तक्रार दाखल करण्यात मदत करेन।\n\nयामध्ये समाविष्ट आहे: ऑनलाइन फसवणूक, UPI/बँकिंग घोटाळे.\n\n📞 प्रथम Cybercrime Helpline 1930 वर कॉल करा.",
+        "ta": "🔐 சைபர் கிரைம் புகார் பதிவு செய்ய உங்களுக்கு உதவுகிறேன்.\n\n📞 முதலில் Cybercrime Helpline 1930 ஐ அழையுங்கள்.",
+    },
+    "domestic_violence": {
+        "en": "🏠 I'll help you file a complaint under the Protection of Women from Domestic Violence Act and BNS Section 85 (cruelty).\n\n📞 Women Helpline: 181 (24×7 FREE)\n📞 NCW: 7827170170",
+        "hi": "🏠 मैं घरेलू हिंसा और BNS धारा 85 के तहत शिकायत दर्ज करने में मदद करूंगा।\n\n📞 महिला हेल्पलाइन: 181 (24×7 मुफ्त)",
+        "mr": "🏠 मी घरगुती हिंसाचार कायदा आणि BNS कलम 85 अंतर्गत तक्रार दाखल करण्यात मदत करेन.\n\n📞 महिला हेल्पलाइन: 181",
+        "ta": "🏠 குடும்ப வன்முறை சட்டம் மற்றும் BNS பிரிவு 85 கீழ் புகார் பதிவு செய்ய உதவுகிறேன்.\n\n📞 மகளிர் உதவி எண்: 181",
+    },
+    "theft": {
+        "en": "📱 I'll help you file a Theft / Robbery / Burglary complaint under BNS Sections 303–310.\n\nTip: Note your device's IMEI (dial *#06#) — it helps police trace stolen phones.",
+        "hi": "📱 मैं BNS धारा 303-310 के तहत चोरी / डकैती / सेंधमारी की शिकायत दर्ज करने में मदद करूंगा।\n\nटिप: अपने डिवाइस का IMEI नोट करें (*#06# डायल करें)।",
+        "mr": "📱 मी BNS कलम 303-310 अंतर्गत चोरी / दरोडा / घरफोडीची तक्रार दाखल करण्यात मदत करेन.",
+        "ta": "📱 BNS பிரிவு 303-310 கீழ் திருட்டு / கொள்ளை புகார் பதிவு செய்ய உதவுகிறேன்.",
+    },
+    "posh": {
+        "en": "👔 I'll help you file a POSH complaint (Workplace Sexual Harassment) under BNS Section 74, 75 and the POSH Act, 2013.\n\n⚖️ Your employer is legally required to have an Internal Complaints Committee (ICC). You may file there first, OR directly with the police.",
+        "hi": "👔 मैं BNS धारा 74, 75 और POSH अधिनियम 2013 के तहत कार्यस्थल यौन उत्पीड़न की शिकायत दर्ज करने में मदद करूंगा।",
+        "mr": "👔 मी BNS कलम 74, 75 आणि POSH कायदा 2013 अंतर्गत कामाच्या ठिकाणी लैंगिक छळाची तक्रार दाखल करण्यात मदत करेन.",
+        "ta": "👔 BNS பிரிவு 74, 75 மற்றும் POSH சட்டம் 2013 கீழ் பணியிட பாலியல் தொல்லை புகார் பதிவு செய்ய உதவுகிறேன்.",
+    },
+    "consumer_fraud": {
+        "en": "💳 I'll help you file a Consumer / Banking Fraud complaint under BNS Section 318 (cheating) and the Consumer Protection Act, 2019.\n\n📞 National Consumer Helpline: 1915\n🌐 consumerhelpline.gov.in",
+        "hi": "💳 मैं BNS धारा 318 (धोखाधड़ी) और उपभोक्ता संरक्षण अधिनियम 2019 के तहत शिकायत दर्ज करने में मदद करूंगा।\n\n📞 राष्ट्रीय उपभोक्ता हेल्पलाइन: 1915",
+        "mr": "💳 मी BNS कलम 318 आणि ग्राहक संरक्षण कायदा 2019 अंतर्गत तक्रार दाखल करण्यात मदत करेन.\n\n📞 राष्ट्रीय ग्राहक हेल्पलाइन: 1915",
+        "ta": "💳 BNS பிரிவு 318 மற்றும் நுகர்வோர் பாதுகாப்பு சட்டம் 2019 கீழ் புகார் பதிவு செய்ய உதவுகிறேன்.\n\n📞 தேசிய நுகர்வோர் உதவி எண்: 1915",
+    },
+}
+
+# ─── BNS section heading translations ────────────────────────────────────────
+_BNS_HEADING_TRANS: dict[str, dict[str, str]] = {
+    "74":  {"hi": "महिला की लज्जा भंग", "mr": "स्त्रीची लज्जाभंग", "ta": "பெண்ணின் கற்பை அழிக்கும் முயற்சி", "te": "మహిళ మర్యాద హాని", "kn": "ಮಹಿಳೆ ಮರ್ಯಾದೆ ಭಂಗ"},
+    "75":  {"hi": "यौन उत्पीड़न", "mr": "लैंगिक छळ", "ta": "பாலியல் தொல்லை", "te": "లైంగిక వేధింపు", "kn": "ಲೈಂಗಿಕ ಕಿರುಕುಳ"},
+    "77":  {"hi": "दृश्यरतिकता", "mr": "अश्लील छायाचित्रण", "ta": "ஒட்டுவேடிக்கை", "te": "అసభ్య చిత్రీకరణ", "kn": "ಅಶ್ಲೀಲ ಚಿತ್ರೀಕರಣ"},
+    "78":  {"hi": "पीछा करना", "mr": "पाठलाग करणे", "ta": "பின்தொடர்தல்", "te": "వెంబడించడం", "kn": "ಹಿಂಬಾಲಿಸುವಿಕೆ"},
+    "85":  {"hi": "पति या रिश्तेदारों द्वारा क्रूरता", "mr": "पती किंवा नातेवाईकांकडून क्रौर्य", "ta": "கணவன் அல்லது உறவினர்களால் கொடுமை", "te": "భర్త లేదా బంధువుల క్రూరత్వం", "kn": "ಪತಿ ಅಥವಾ ಸಂಬಂಧಿಕರಿಂದ ಕ್ರೌರ್ಯ"},
+    "101": {"hi": "हत्या", "mr": "खून", "ta": "கொலை", "te": "హత్య", "kn": "ಕೊಲೆ"},
+    "109": {"hi": "हत्या का प्रयास", "mr": "खुनाचा प्रयत्न", "ta": "கொலை முயற்சி", "te": "హత్యా ప్రయత్నం", "kn": "ಕೊಲೆ ಪ್ರಯತ್ನ"},
+    "115": {"hi": "स्वैच्छिक चोट", "mr": "ऐच्छिक दुखापत", "ta": "விருப்பமான காயம்", "te": "స్వచ్ఛంద గాయం", "kn": "ಸ್ವಯಂಪ್ರೇರಿತ ಗಾಯ"},
+    "117": {"hi": "स्वैच्छिक चोट का प्रयास", "mr": "ऐच्छिक दुखापत करण्याचा प्रयत्न", "ta": "காயப்படுத்தும் முயற்சி"},
+    "303": {"hi": "चोरी", "mr": "चोरी", "ta": "திருட்டு", "te": "దొంగతనం", "kn": "ಕಳ್ಳತನ"},
+    "304": {"hi": "घर में चोरी", "mr": "घरफोडी", "ta": "வீட்டு திருட்டு", "te": "ఇంట్లో దొంగతనం", "kn": "ಮನೆ ಕಳ್ಳತನ"},
+    "309": {"hi": "लूट", "mr": "दरोडा", "ta": "கொள்ளை", "te": "దోపిడీ", "kn": "ದರೋಡೆ"},
+    "310": {"hi": "डकैती", "mr": "जमावाने दरोडा", "ta": "கும்பல் கொள்ளை", "te": "దొంగల ముఠా దోపిడీ", "kn": "ಡಕಾಯಿತಿ"},
+    "316": {"hi": "आपराधिक विश्वासघात", "mr": "फौजदारी विश्वासघात", "ta": "நம்பிக்கை துரோகம்", "te": "నమ్మకద్రోహం", "kn": "ನಂಬಿಕೆ ದ್ರೋಹ"},
+    "318": {"hi": "धोखाधड़ी", "mr": "फसवणूक", "ta": "மோசடி", "te": "మోసం", "kn": "ವಂಚನೆ"},
+    "351": {"hi": "आपराधिक धमकी", "mr": "फौजदारी धमकी", "ta": "குற்றவியல் மிரட்டல்", "te": "నేర బెదిరింపు", "kn": "ಕ್ರಿಮಿನಲ್ ಬೆದರಿಕೆ"},
+    "352": {"hi": "जानबूझकर अपमान", "mr": "जाणूनबुजून अपमान", "ta": "வேண்டுமென்றே அவமானம்", "te": "ఉద్దేశపూర్వక అవమానం", "kn": "ಉದ್ದೇಶಪೂರ್ವಕ ಅವಮಾನ"},
+}
+
+
+def _translate_bns_heading(section_number: str, heading: str, language: str) -> str:
+    """Return translated BNS section heading if available, else original English."""
+    if language in ("en", "english", ""):
+        return heading
+    trans = _BNS_HEADING_TRANS.get(str(section_number), {})
+    return trans.get(language, heading)
 
 
 def _keyword_classify(narrative: str) -> list[str]:
@@ -459,6 +529,40 @@ PROBE_Q: dict[str, dict] = {
         "message": "Do you have any contact details of the scammer?\n(Phone number, email, UPI ID, website URL, bank account number — share whatever you have)",
         "slot": "scammer_contact", "input_type": INPUT_TEXT,
         "skip_label": "Don't have any contact details",
+    },
+    # ── Domestic Violence specific ─────────────────────────────────────────────
+    "probe_dv_duration": {
+        "message": "How long has this been happening?\n(e.g., 3 months, 2 years)",
+        "slot": "dv_duration", "input_type": INPUT_TEXT, "skip_label": "Skip",
+    },
+    "probe_dv_children": {
+        "message": "Are there children (under 18) in the household affected by this?\n(You don't need to share their names — this helps the magistrate under the DV Act)",
+        "slot": "dv_children", "input_type": INPUT_QUICK_REPLY,
+        "quick_replies": ["Yes, children are affected", "No children involved"],
+    },
+    # ── POSH / Workplace Harassment specific ─────────────────────────────────
+    "probe_posh_employer": {
+        "message": "What is the name of your employer/company and your workplace address?",
+        "slot": "posh_employer", "input_type": INPUT_TEXT, "skip_label": "Skip",
+    },
+    "probe_posh_role": {
+        "message": "What is your role at the company, and what is the harasser's designation or role?",
+        "slot": "posh_role", "input_type": INPUT_TEXT, "skip_label": "Skip",
+    },
+    "probe_posh_icc": {
+        "message": "Has this already been reported to your company's Internal Complaints Committee (ICC) under the POSH Act, 2013?",
+        "slot": "posh_icc", "input_type": INPUT_QUICK_REPLY,
+        "quick_replies": ["Yes — ICC complaint filed", "No — filing directly with police", "No ICC at my workplace"],
+    },
+    # ── Consumer / Banking Fraud specific ────────────────────────────────────
+    "probe_consumer_company": {
+        "message": "What is the name of the company or platform involved?\n(e.g., Amazon, Flipkart, HDFC Bank, Paytm, local shop)",
+        "slot": "consumer_company", "input_type": INPUT_TEXT, "skip_label": "Skip",
+    },
+    "probe_consumer_order_id": {
+        "message": "Do you have an order ID, transaction reference, or complaint number from the company?",
+        "slot": "consumer_order_id", "input_type": INPUT_TEXT,
+        "skip_label": "Don't have one",
     },
     "probe_date_confirm": {
         # message is set dynamically when this probe is served

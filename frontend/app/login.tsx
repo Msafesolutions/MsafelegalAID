@@ -54,9 +54,8 @@ export default function Login() {
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
         >
-        <Image source={require('../assets/images/icon.png')} style={styles.logo} resizeMode="contain" />
-        <Text style={styles.brand}>Dhara</Text>
-          <Text style={styles.tag}>Know your rights. Speak them.</Text>
+        <Image source={require('../assets/images/dhara_logo_full.png')} style={styles.logo} resizeMode="contain" />
+        <Text style={styles.tag}>Know your rights. Speak them.</Text>
 
           <View style={styles.card}>
             <Text style={styles.heading}>Welcome back</Text>
@@ -164,8 +163,8 @@ export default function Login() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.dhara.navy },
   scroll: { flexGrow: 1, padding: theme.spacing.xl, justifyContent: 'center' },
-  // Strict 1:1 square + contain → zero distortion on every viewport
-  logo: { width: 88, height: 88, aspectRatio: 1, alignSelf: 'center', borderRadius: 22, marginBottom: 12 },
+  // Full DHARA logo — wider than tall, no borderRadius needed
+  logo: { width: 200, height: 200, alignSelf: 'center', marginBottom: 8 },
   brand: { fontFamily: theme.fonts.display, fontSize: 44, color: theme.colors.onBrandPrimary, textAlign: 'center', fontWeight: '700' },
   // Tagline: gold-on-navy — 6.29:1 ✅ WCAG AA
   tag: { color: theme.dhara.gold, textAlign: 'center', marginTop: 8, fontSize: 15, fontWeight: '600' },
