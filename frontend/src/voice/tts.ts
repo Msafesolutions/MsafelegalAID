@@ -83,11 +83,13 @@ export type ChunkedSpeakerOptions = {
   /** Fires once, when the first clip actually starts. Useful for timing in logs. */
   onFirstAudio?: (msSinceStart: number) => void;
   onError?: (message: string) => void;
+  /** Browser policy blocked playback. Keep the prepared clip for a user tap. */
+  onPlaybackBlocked?: () => void;
 };
 
 /** Minimal slice of expo-audio's AudioPlayer that this module needs. */
 export type TtsPlayer = {
-  play: () => void;
+  play: () => void | Promise<void>;
   remove: () => void;
   setPlaybackRate?: (rate: number) => void;
   /** Must invoke the callback once when the clip finishes. */
@@ -192,6 +194,8 @@ export class ChunkedSpeaker {
   private nextPlayIndex = 0;
   private inFlight = 0;
   private player: TtsPlayer | null = null;
+  private currentAudio: WrittenAudio | null = null;
+  private blocked = false;
   private ended = false;
   private stopped = false;
   private startedAt = Date.now();
@@ -206,6 +210,13 @@ export class ChunkedSpeaker {
       !this.stopped &&
       (this.player !== null || this.ready.size > 0 || this.queue.length > 0 || this.inFlight > 0)
     );
+  }
+
+  get playbackBlocked() { return this.blocked; }
+
+  /** Must be called directly from a press handler (no fetch/timer before play). */
+  retryPlayback() {
+    if (!this.stopped && this.blocked && this.player) this.playCurrent();
   }
 
   /** Call with the full answer text received so far; safe to call on every stream tick. */
@@ -241,6 +252,7 @@ export class ChunkedSpeaker {
   stop() {
     if (this.stopped) return;
     this.stopped = true;
+    this.blocked = false;
     this.queue = [];
     this.teardownPlayer();
     for (const audio of this.ready.values()) {
@@ -260,6 +272,8 @@ export class ChunkedSpeaker {
         p.remove();
       } catch {}
     }
+    try { this.currentAudio?.cleanup(); } catch {}
+    this.currentAudio = null;
   }
 
   private pumpSynthesis() {
@@ -285,10 +299,9 @@ export class ChunkedSpeaker {
       this.ready.set(index, audio);
       this.pumpPlayback();
     } catch (e: any) {
-      // A failed clip must not wedge the queue: record a hole so playback skips past it.
-      this.ready.set(index, { uri: '', cleanup: () => {} });
+      if (this.stopped) return;
+      this.stop();
       this.opts.onError?.(e?.message || 'Could not play part of the answer.');
-      this.pumpPlayback();
     } finally {
       this.inFlight -= 1;
       if (!this.stopped) this.pumpSynthesis();
@@ -331,7 +344,15 @@ export class ChunkedSpeaker {
       return;
     }
 
-    const player = this.opts.createPlayer(audio.uri);
+    this.currentAudio = audio;
+    let player: TtsPlayer;
+    try {
+      player = this.opts.createPlayer(audio.uri);
+    } catch (error: any) {
+      this.stop();
+      this.opts.onError?.(error?.message || 'Playback failed.');
+      return;
+    }
     this.player = player;
 
     if (this.opts.rate && this.opts.rate !== 1) {
@@ -343,28 +364,46 @@ export class ChunkedSpeaker {
     player.onFinish(() => {
       if (this.player !== player) return;
       this.teardownPlayer();
-      try {
-        audio.cleanup();
-      } catch {}
       this.pumpPlayback();
     });
 
-    try {
-      player.play();
-    } catch (e: any) {
-      this.teardownPlayer();
-      try {
-        audio.cleanup();
-      } catch {}
-      this.opts.onError?.(e?.message || 'Playback failed.');
-      this.pumpPlayback();
-      return;
-    }
+    this.playCurrent();
+  }
 
-    if (!this.sawFirstAudio) {
-      this.sawFirstAudio = true;
+  private playCurrent() {
+    const player = this.player;
+    if (!player || this.stopped) return;
+    this.blocked = false;
+    const started = () => {
+      if (this.stopped || this.player !== player) return;
+      this.blocked = false;
       this.opts.onSpeakingChange?.(true);
-      this.opts.onFirstAudio?.(Date.now() - this.startedAt);
+      if (!this.sawFirstAudio) {
+        this.sawFirstAudio = true;
+        this.opts.onFirstAudio?.(Date.now() - this.startedAt);
+      }
+    };
+    const failed = (error: any) => {
+      // Navigation/stop may reject an in-flight play promise: already cleaned up.
+      if (this.stopped || this.player !== player) return;
+      if (error?.name === 'NotAllowedError' && this.opts.onPlaybackBlocked) {
+        this.blocked = true;
+        this.opts.onPlaybackBlocked();
+        return;
+      }
+      this.stop();
+      this.opts.onError?.(error?.message || 'Playback failed.');
+    };
+
+    try {
+      const result = player.play();
+      if (result && typeof result.then === 'function') {
+        void result.then(started).catch(failed);
+      } else {
+        started();
+      }
+    } catch (e: any) {
+      failed(e);
     }
   }
 }

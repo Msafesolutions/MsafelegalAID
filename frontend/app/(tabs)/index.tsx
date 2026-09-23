@@ -30,6 +30,8 @@ import {
 } from 'expo-audio';
 import { speakNative, stopNativeTTS } from '@/src/voice/native-tts';
 import { ChunkedSpeaker } from '@/src/voice/tts';
+import { createBrowserTtsPlayer } from '@/src/voice/browserPlayer';
+import { VoiceNotice } from '@/src/components/VoiceNotice';
 import { File, Paths } from 'expo-file-system';
 import { useAuth, API_BASE, logClientError } from '@/src/auth';
 import { theme } from '@/src/theme';
@@ -289,6 +291,8 @@ export default function ChatScreen() {
   const ttsPlayerReleaseTimerRef = useRef<any>(null);
   /** Active chunked speaker, so stopCloudTTS() can tear the whole queue down. */
   const speakerRef = useRef<ChunkedSpeaker | null>(null);
+  const browserAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [blockedVoiceId, setBlockedVoiceId] = useState<string | null>(null);
   /**
    * Conversation generation counter. Incremented each time the user starts a
    * new conversation so that a racing SSE session-frame from the *previous*
@@ -822,6 +826,7 @@ export default function ChatScreen() {
    * Xiaomi, etc.) that ship non-Google TTS engines by default.
    */
   const stopCloudTTS = useCallback(() => {
+    setBlockedVoiceId(null);
     // Kill the whole chunk queue first — otherwise the next clip starts playing
     // after the user has asked for silence (or opened the mic).
     try {
@@ -853,6 +858,10 @@ export default function ChatScreen() {
 
   const speak = useCallback(
     async (msgId: string, text: string) => {
+      if (blockedVoiceId === msgId && speakerRef.current?.playbackBlocked) {
+        speakerRef.current.retryPlayback();
+        return;
+      }
       // Toggle: tapping speaker while loading OR playing immediately stops
       if (speakingId === msgId || ttsLoadingId === msgId) {
         stopCloudTTS();
@@ -951,6 +960,11 @@ export default function ChatScreen() {
         // (github.com/expo/expo/discussions/18869), so wait for isLoaded with a hard
         // fallback timer, and never let a missing finish event stall the queue.
         createPlayer: (uri) => {
+          if (Platform.OS === 'web') {
+            if (!browserAudioRef.current) browserAudioRef.current = new Audio();
+            browserAudioRef.current.volume = ttsVolume;
+            return createBrowserTtsPlayer(browserAudioRef.current, uri);
+          }
           const player = createAudioPlayer({ uri });
           try { player.setPlaybackRate(speechRate, 'high'); } catch {}
           try { player.volume = ttsVolume; } catch {}
@@ -1018,6 +1032,7 @@ export default function ChatScreen() {
 
         onSpeakingChange: (isSpeaking) => {
           if (isSpeaking) {
+            setBlockedVoiceId(null);
             setTtsLoadingId(null);
             setSpeakingId(msgId);
             return;
@@ -1030,8 +1045,14 @@ export default function ChatScreen() {
           }
         },
 
-        onError: (message) => {
+        onPlaybackBlocked: () => {
           if (speakerRef.current !== speaker) return;
+          setTtsLoadingId(null);
+          setSpeakingId(null);
+          setBlockedVoiceId(msgId);
+        },
+        onError: (message) => {
+          if (speakerRef.current && speakerRef.current !== speaker) return;
           setTtsLoadingId(null);
           setSpeakingId(null);
           speakerRef.current = null;
@@ -1056,7 +1077,7 @@ export default function ChatScreen() {
       // still keeps the FIRST request short, which is where the latency win comes from.
       speaker.end(text.slice(0, 3800));
     },
-    [speakingId, ttsLoadingId, language, speechRate, ttsVolume, ttsVoiceMode, token, stopCloudTTS],
+    [speakingId, ttsLoadingId, blockedVoiceId, language, speechRate, ttsVolume, ttsVoiceMode, token, stopCloudTTS],
   );
   speakRef.current = speak;
 
@@ -1534,7 +1555,7 @@ export default function ChatScreen() {
       {/* ── HEADER — title · lang chip · usage pill · New Chat ─────────────── */}
       <View style={styles.header}>
         {/* Left: branding + language chip */}
-        <View style={{ flexShrink: 1 }}>
+        <View style={styles.headerBrand}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={styles.title}>Dhara</Text>
             {isPro && (
@@ -1556,7 +1577,7 @@ export default function ChatScreen() {
         </View>
 
         {/* Right: usage pill (inline) + New Chat */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <View style={styles.headerButtons}>
           {!!user && (
             <>
               {user.daily_queries_left !== undefined && user.daily_queries_left !== null ? (
@@ -1616,6 +1637,12 @@ export default function ChatScreen() {
             <Ionicons name="close" size={18} color={theme.colors.onSurfaceTertiary} />
           </Pressable>
         </View>
+      )}
+      {blockedVoiceId && (
+        <VoiceNotice testID="chat-playback-notice"
+          message="Your browser paused audio. Tap Play voice to listen, or continue with text."
+          onPlay={() => speakerRef.current?.retryPlayback()}
+          onDismiss={stopCloudTTS} />
       )}
 
       {/* ── COMPACT CONTROLS BAR — mode toggle + upgrade chip (single row) ── */}
@@ -2321,6 +2348,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: theme.spacing.xl,
@@ -2329,6 +2358,8 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.divider,
     backgroundColor: theme.colors.surface,
   },
+  headerBrand: { flexShrink: 0 },
+  headerButtons: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, maxWidth: '100%' },
   title: { fontFamily: theme.fonts.display, fontSize: 26, fontWeight: '700', color: theme.colors.brand },
   subtitle: { color: theme.colors.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
   // Language indicator chip below the title — tappable so users can switch language directly
@@ -2363,10 +2394,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.xs,
     backgroundColor: theme.colors.surface,
-    minHeight: 32,
+    minHeight: 44,
   },
+  newChatText: { color: theme.colors.brand, fontSize: 13, fontWeight: '500' },
   historyHeaderBtn: {
-    width: 36, height: 36, borderRadius: 18,
+    width: 44, height: 44, borderRadius: 22, flexShrink: 0,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: theme.colors.surfaceSecondary,
     borderWidth: 1, borderColor: theme.colors.border,

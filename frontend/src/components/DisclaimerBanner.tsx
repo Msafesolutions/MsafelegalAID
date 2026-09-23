@@ -6,7 +6,7 @@ import { t } from '@/src/i18n';
 
 /**
  * Non-dismissible legal disclaimer banner — localized.
- * Rendered globally above the tab bar via (tabs)/_layout.tsx.
+ * Rendered below the tab bar, inside the layout's bottom safe area.
  */
 export const DISCLAIMER_TEXT =
   'DHARA provides legal information, not legal advice. This does not create an advocate-client relationship. Verify with a qualified advocate before acting. © Callistus Moses · MSafe Solutions.';
@@ -26,6 +26,7 @@ export function DisclaimerBanner({ testID = 'global-disclaimer' }: { testID?: st
 
 const styles = StyleSheet.create({
   wrap: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 6,

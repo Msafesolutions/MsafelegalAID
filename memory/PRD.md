@@ -1,7 +1,26 @@
-# Gandhikar — PRD
+# Dhara (formerly Gandhikar) — PRD
 
 ## Vision
 A dignified, free, bilingual+multilingual AI legal companion for every Indian citizen. Empower — never threaten. Named after Mahatma Gandhi. Truth, non-violence, rights.
+
+## Current scope — September 2026 maintenance
+- User reported cropped bottom navigation icons/labels and requested checking other screens.
+- Additional report: iPhone Safari users opening the FIR assistant saw an uncaught browser permission error.
+- Phase A stabilisation only. Phase B incident modules remain **ON HOLD**.
+- Existing architecture remains Expo SDK 54 / Expo Router, FastAPI, MongoDB. FIR state machine: `backend/fir_engine.py`; conversation UI: `frontend/app/fir-draft/index.tsx`.
+
+### Implemented and verified in this maintenance pass
+- Bottom navigation now reserves enough height for icons, labels, and padding; hidden History no longer consumes a seventh slot. Bottom safe area is owned by the outer layout, with the disclaimer in normal flow below navigation.
+- Phone-width header controls wrap instead of overlapping. FIR probe/section actions have a separate row and 44pt header touch targets.
+- FIR and main chat web audio use a browser player that returns the actual `play()` promise. Safari `NotAllowedError` shows **Play voice / Use text**, retaining prepared audio for a direct user-tap retry without another synthesis call. Stop/navigation safely handle pending playback cancellation; no global error suppression added.
+- FIR microphone denials show inline guidance rather than an invisible browser alert. Recorder is prepared before recording, early release is guarded, and web recordings use Blob multipart uploads. Native FIR speech uses the current File/Paths API.
+- Resumed `free_narrative` sessions retain the microphone as well as their conversation thread. No backend interview logic changed.
+- Verification: five local audio regression tests passed; 320/390pt browser checks across all six tabs, history, drafts and FIR; simulated Safari audio denial/retry and microphone denial recovered without unhandled rejections. Narrative save/resume retested successfully.
+
+### Remaining priorities
+- **P0:** Affected users to confirm the fix on physical iPhone Safari; actual native audio hardware and real-browser permission prompts cannot be certified by desktop simulation.
+- **P1:** Global evidence upload end-to-end verification remains pending from the prior handoff (not expanded into this task). No paid STT/TTS provider checks in this pass.
+- **P2 / ON HOLD:** Phase B incident modules, advocate-verified non-cognizable routing, translation review, Legal Vault/share links. Existing unrelated TypeScript diagnostics remain; see `memory/ui_voice_verification.md`.
 
 ## Problem
 Most Indians (and even many officials) don't know the Bharatiya Nyaya Sanhita (BNS 2023), Constitution articles, or judgment guidelines. A citizen at a police stop, an FIR desk, or a traffic check should be able to instantly know what the law says — in their own language, spoken aloud if they can't read.

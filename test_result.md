@@ -151,6 +151,20 @@ backend:
           comment: "⚠️ NOT TESTED: Endpoint requires actual audio file upload. Cannot test without audio sample. Endpoint is available and configured correctly based on code review."
 
 frontend:
+  - task: "Bottom navigation clipping and browser voice permission recovery"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/_layout.tsx; frontend/app/(tabs)/index.tsx; frontend/app/fir-draft/index.tsx; frontend/src/voice/tts.ts; frontend/src/voice/browserPlayer.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "user"
+          comment: "Icons/labels cropped on iPhone; many Safari testers get an uncaught permission error in FIR draft. Requested checking other screens."
+        - working: true
+          agent: "main"
+          comment: "Fixed tab content height, hidden History spacing, safe-area ownership, and phone header layout. Web audio now handles the play promise locally, offers direct-tap retry on NotAllowedError, and cleans up pending playback safely. FIR microphone denial is visible; early release is guarded. Five local regression tests pass; 320/390pt checks across six tabs plus history/drafts/FIR pass. Browser-simulated audio/mic denial has zero unhandled rejections. Free-narrative save/resume microphone retested successfully. Physical iPhone confirmation still pending; paid voice providers not called in these checks. Details: memory/ui_voice_verification.md."
   - task: "WhatsApp-style mic UI (hold-to-record, slide-to-cancel, release-to-send)"
     implemented: true
     working: true

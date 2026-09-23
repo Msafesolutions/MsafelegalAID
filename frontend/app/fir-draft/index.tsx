@@ -9,14 +9,10 @@ import {
   ActivityIndicator, Platform, Alert, KeyboardAvoidingView, Linking, Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-// Platform-guarded: expo-location crashes on web due to version mismatch.
-// On native, we load it dynamically. On web, Location stays null and GPS is skipped.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Location: typeof import('expo-location') | null =
-  Platform.OS !== 'web' ? (() => { try { return require('expo-location'); } catch { return null; } })() : null;
+import { File, Paths } from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 import { API_BASE, useAuth } from '@/src/auth';
 import {
@@ -25,7 +21,15 @@ import {
 } from 'expo-audio';
 import { whisperTranscribeFile } from '@/src/voice/stt';
 import { ChunkedSpeaker } from '@/src/voice/tts';
+import { createBrowserTtsPlayer } from '@/src/voice/browserPlayer';
+import { VoiceNotice } from '@/src/components/VoiceNotice';
+import { theme } from '@/src/theme';
 import FirSectionDrawer, { SectionItem, DroppedSection } from '@/src/components/FirSectionDrawer';
+
+// Native location is optional; importing it on web fails in the installed version.
+const Location: typeof import('expo-location') | null =
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  Platform.OS !== 'web' ? (() => { try { return require('expo-location'); } catch { return null; } })() : null;
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 const NAVY   = '#14365A';
@@ -140,6 +144,10 @@ export default function FirDraftScreen() {
   const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
   const [ttsLoadingMsgId, setTtsLoadingMsgId] = useState<string | null>(null);
   const speakerRef   = useRef<InstanceType<typeof ChunkedSpeaker> | null>(null);
+  const browserAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
+  const autoSpeakTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speakingIdRef = useRef<string | null>(null);
   // Forward-declared refs to avoid stale closures in applyTurn callback
   const autoSpeakRef = useRef(true);
@@ -153,6 +161,9 @@ export default function FirDraftScreen() {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [isRecording, setIsRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const recordingRequestedRef = useRef(false);
+  const recordingActiveRef = useRef(false);
+  const recordingStartingRef = useRef(false);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -245,7 +256,8 @@ export default function FirDraftScreen() {
     // TTS: auto-speak bot message
     if (botMsgId && res.bot_message) {
       // Use ref to avoid stale closure
-      setTimeout(() => {
+      if (autoSpeakTimerRef.current) clearTimeout(autoSpeakTimerRef.current);
+      autoSpeakTimerRef.current = setTimeout(() => {
         if (autoSpeakRef.current && botMsgId) {
           speakRef.current?.(botMsgId, res.bot_message!);
         }
@@ -307,6 +319,7 @@ export default function FirDraftScreen() {
       const sess = await res.json();
       setSessionId(sid);
       setLanguage(sess.language || 'en');
+      setCurrentStage(sess.stage || 'safety_gate');
       await AsyncStorage.setItem(FIR_SESSION_KEY, sid);
 
       // Issue 17: Restore evidence files with captions
@@ -357,7 +370,7 @@ export default function FirDraftScreen() {
       } else {
         // Session may already be at section_suggest or later — just restore UI
         addMessage('bot', 'Welcome back! Your session has been restored.');
-        setInputType('text');
+        setInputType(sess.stage === 'free_narrative' ? 'voice_or_text' : 'text');
       }
     } catch {
       Alert.alert('Error', 'Could not resume session. Please start a new one.');
@@ -542,21 +555,42 @@ Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
 
   // ── Voice recording ────────────────────────────────────────────────────────
   const startRecording = async () => {
+    if (transcribing || recordingStartingRef.current || recordingActiveRef.current) return;
+    recordingRequestedRef.current = true;
+    recordingStartingRef.current = true;
+    stopTTS();
+    setVoiceNotice(null);
     try {
-      await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       const { status } = await AudioModule.requestRecordingPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Microphone access required', 'Please allow microphone access to use voice input.');
+        setVoiceNotice('Microphone access is blocked. Allow microphone access in your browser or device settings, or type your answer below.');
         return;
       }
-      await recorder.record();
+      if (!recordingRequestedRef.current) return;
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      // A permission prompt or preparation can outlast the user's press.
+      // Stop and discard immediately rather than recording after they let go.
+      if (!recordingRequestedRef.current) {
+        await recorder.stop();
+        if (Platform.OS === 'web' && recorder.uri) URL.revokeObjectURL(recorder.uri);
+        return;
+      }
+      recordingActiveRef.current = true;
       setIsRecording(true);
     } catch {
-      Alert.alert('Recording failed', 'Could not start recording.');
+      setIsRecording(false);
+      setVoiceNotice('Could not access the microphone. Check its permission, end any active call, or type your answer below.');
+    } finally {
+      recordingStartingRef.current = false;
     }
   };
 
   const stopRecording = async () => {
+    recordingRequestedRef.current = false;
+    if (!recordingActiveRef.current) return;
+    recordingActiveRef.current = false;
     setIsRecording(false);
     setTranscribing(true);
     try {
@@ -564,13 +598,15 @@ Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
       const uri = recorder.uri;
       if (!uri) throw new Error('No recording URI');
       const langCode = FIR_LANGUAGES.find(l => l.code === language)?.sttLang || 'en-IN';
+      if (!API_BASE || !token) throw new Error('Voice input is unavailable');
       // Fixed: correct arg order — apiBase, token, uri, languageHint
-      const result = await whisperTranscribeFile(API_BASE, token || '', uri, langCode);
+      const result = await whisperTranscribeFile(API_BASE, token, uri, langCode);
       const text = result?.text || '';
       if (text) setTextInput(prev => (prev ? prev + ' ' + text : text));
     } catch {
-      Alert.alert('Transcription failed', 'Please type your response instead.');
+      setVoiceNotice('Could not transcribe this recording. Please try again or type your response instead.');
     } finally {
+      if (Platform.OS === 'web' && recorder.uri) URL.revokeObjectURL(recorder.uri);
       setTranscribing(false);
     }
   };
@@ -624,17 +660,34 @@ ${data.bot_message}`);
 
   // ── TTS: stop any ongoing speech ──────────────────────────────────────────
   const stopTTS = useCallback(() => {
+    if (autoSpeakTimerRef.current) clearTimeout(autoSpeakTimerRef.current);
     try { speakerRef.current?.stop(); } catch {}
     speakerRef.current = null;
     setSpeakingMsgId(null);
     setTtsLoadingMsgId(null);
     speakingIdRef.current = null;
+    setPlaybackBlocked(false);
+    setVoiceNotice(null);
   }, []);
+
+  useFocusEffect(useCallback(() => () => {
+    stopTTS();
+    recordingRequestedRef.current = false;
+    if (recordingActiveRef.current) {
+      recordingActiveRef.current = false;
+      setIsRecording(false);
+      void recorder.stop().catch(() => {});
+    }
+  }, [recorder, stopTTS]));
 
   // Keep forward-declared refs current
   useEffect(() => { autoSpeakRef.current = autoSpeak; }, [autoSpeak]);
 
   const speak = useCallback(async (msgId: string, text: string) => {
+    if (speakingIdRef.current === msgId && speakerRef.current?.playbackBlocked) {
+      speakerRef.current.retryPlayback();
+      return;
+    }
     // Toggle: tap again to stop
     if (speakingMsgId === msgId || ttsLoadingMsgId === msgId) { stopTTS(); return; }
     stopTTS();
@@ -649,6 +702,7 @@ ${data.bot_message}`);
       }
     } catch {}
 
+    if (speakingIdRef.current !== msgId) return;
     const speaker = new ChunkedSpeaker({
       apiBase: API_BASE,
       token,
@@ -662,7 +716,6 @@ ${data.bot_message}`);
           return { uri: url, cleanup: () => { try { (globalThis as any).URL.revokeObjectURL(url); } catch {} } };
         }
         // Native: write to cache file
-        const { Paths, File } = require('expo-file-system/legacy');
         const arr = new Uint8Array(buf);
         let bin = '';
         const CHUNK = 0x8000;
@@ -678,7 +731,12 @@ ${data.bot_message}`);
         return { uri: file.uri, cleanup: () => { try { file.delete(); } catch {} } };
       },
       createPlayer: (uri: string) => {
+        if (Platform.OS === 'web') {
+          if (!browserAudioRef.current) browserAudioRef.current = new Audio();
+          return createBrowserTtsPlayer(browserAudioRef.current, uri);
+        }
         const player = createAudioPlayer({ uri });
+        let disposed = false;
         let started = false; let finished = false; let onDone: (() => void) | null = null;
         let finishedBeforeSubscribe = false;
         const fireFinish = () => {
@@ -686,8 +744,8 @@ ${data.bot_message}`);
           if (onDone) onDone(); else finishedBeforeSubscribe = true;
         };
         const tryStart = () => {
-          if (started) return; started = true;
-          try { player.play(); } catch { setTimeout(() => { try { player.play(); } catch {} }, 150); }
+          if (started || disposed) return; started = true;
+          try { player.play(); } catch { setTimeout(() => { if (!disposed) { try { player.play(); } catch {} } }, 150); }
         };
         try {
           (player as any).addListener?.('playbackStatusUpdate', (st: any) => {
@@ -696,11 +754,11 @@ ${data.bot_message}`);
           });
         } catch {}
         if ((player as any).isLoaded) tryStart();
-        setTimeout(() => { if (!started) tryStart(); }, 2500);
+        const startGuard = setTimeout(() => { if (!started) tryStart(); }, 2500);
         const guard = setTimeout(fireFinish, 90_000);
         return {
           play: () => tryStart(),
-          remove: () => { clearTimeout(guard); try { player.pause(); } catch {} try { player.remove(); } catch {} },
+          remove: () => { disposed = true; clearTimeout(startGuard); clearTimeout(guard); try { player.pause(); } catch {} try { player.remove(); } catch {} },
           setPlaybackRate: (r: number) => { try { player.setPlaybackRate(r); } catch {} },
           onFinish: (cb: () => void) => {
             onDone = cb;
@@ -709,15 +767,34 @@ ${data.bot_message}`);
         };
       },
       onSpeakingChange: (speaking: boolean) => {
+        if (speaking && speakingIdRef.current === msgId) {
+          setSpeakingMsgId(msgId);
+          setTtsLoadingMsgId(null);
+          setPlaybackBlocked(false);
+          setVoiceNotice(null);
+        }
         if (!speaking && speakingIdRef.current === msgId) {
           setSpeakingMsgId(null);
+          setTtsLoadingMsgId(null);
           speakingIdRef.current = null;
         }
       },
+      onPlaybackBlocked: () => {
+        if (speakerRef.current !== speaker) return;
+        setSpeakingMsgId(null);
+        setTtsLoadingMsgId(null);
+        setPlaybackBlocked(true);
+        setVoiceNotice('Your browser paused audio. Tap Play voice to listen, or continue with text. Your complaint is unaffected.');
+      },
+      onError: (message: string) => {
+        if (speakerRef.current !== speaker) return;
+        setSpeakingMsgId(null);
+        setTtsLoadingMsgId(null);
+        setPlaybackBlocked(false);
+        setVoiceNotice(message.includes('429') ? 'The daily voice limit has been reached. You can still continue with text.' : 'Voice is unavailable right now. You can continue with text and try listening again later.');
+      },
     });
     speakerRef.current = speaker;
-    setSpeakingMsgId(msgId);
-    setTtsLoadingMsgId(null);
     speaker.end(text);
   }, [speakingMsgId, ttsLoadingMsgId, stopTTS, token, language]);
 
@@ -801,7 +878,7 @@ ${data.bot_message}`);
           </View>
 
           {/* Start button */}
-          <Pressable style={styles.startBtn} onPress={startSession}>
+          <Pressable testID="fir-start-complaint" style={styles.startBtn} onPress={startSession}>
             <Text style={styles.startBtnText}>{savedSessionId ? 'Start New Complaint' : 'Start My Complaint'}</Text>
             <Ionicons name="arrow-forward" size={20} color="#fff" />
           </Pressable>
@@ -834,41 +911,22 @@ ${data.bot_message}`);
       )}
 
       {/* Header */}
+      <View style={styles.headerShell} testID="fir-chat-header">
       <View style={styles.chatHeader}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+        <Pressable testID="fir-header-back" accessibilityLabel="Go back" onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={SURFACE} />
         </Pressable>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>FIR Draft Assistant</Text>
+          <Text testID="fir-header-title" style={styles.headerTitle}>FIR Draft Assistant</Text>
           <Text style={styles.headerLang}>{selectedLang.native}</Text>
         </View>
-        {/* v3.4: Probe progress counter "Q X/Y" */}
-        {probeTotal > 0 && currentStage === 'probe' && (
-          <View style={styles.progressChip}>
-            <Text style={styles.progressText}>Q {probeCurrentNum}/{probeTotal}</Text>
-          </View>
-        )}
-        {/* v3.3: Back probe button */}
-        {currentStage === 'probe' && (
-          <Pressable onPress={handleBack} style={styles.pauseBtn} hitSlop={12}>
-            <Ionicons name="arrow-undo-outline" size={20} color={GOLD} />
-          </Pressable>
-        )}
-        {/* Issue 9: Section menu button — visible when sections are available */}
-        {suggestedSections.length > 0 && (
-          <Pressable
-            onPress={() => setShowSectionDrawer(true)}
-            style={styles.pauseBtn}
-            hitSlop={12}
-          >
-            <Ionicons name="list-outline" size={22} color={GOLD} />
-          </Pressable>
-        )}
         {/* TTS auto-speak toggle */}
         <Pressable
+          testID="fir-auto-speak-toggle"
+          accessibilityLabel={autoSpeak ? 'Turn automatic voice off' : 'Turn automatic voice on'}
+          accessibilityState={{ checked: autoSpeak }}
           onPress={() => { setAutoSpeak(p => !p); if (autoSpeak) stopTTS(); }}
           style={styles.pauseBtn}
-          hitSlop={12}
         >
           <Ionicons
             name={autoSpeak ? 'volume-high-outline' : 'volume-mute-outline'}
@@ -876,10 +934,35 @@ ${data.bot_message}`);
             color={autoSpeak ? GOLD : MUTED}
           />
         </Pressable>
-        <Pressable onPress={handlePause} style={styles.pauseBtn} hitSlop={12}>
+        <Pressable testID="fir-save-pause" accessibilityLabel="Save and continue later" onPress={handlePause} style={styles.pauseBtn}>
           <Ionicons name="bookmark-outline" size={20} color={GOLD} />
         </Pressable>
       </View>
+      {(currentStage === 'probe' || suggestedSections.length > 0) && (
+        <View style={styles.headerActions} testID="fir-header-actions">
+          {probeTotal > 0 && currentStage === 'probe' && (
+            <View style={styles.progressChip} testID="fir-probe-progress">
+              <Text style={styles.progressText}>Q {probeCurrentNum}/{probeTotal}</Text>
+            </View>
+          )}
+          {currentStage === 'probe' && (
+            <Pressable testID="fir-previous-question" accessibilityLabel="Previous question" onPress={handleBack} style={styles.pauseBtn}>
+              <Ionicons name="arrow-undo-outline" size={20} color={GOLD} />
+            </Pressable>
+          )}
+          {suggestedSections.length > 0 && (
+            <Pressable testID="fir-sections-button" accessibilityLabel="Suggested sections" onPress={() => setShowSectionDrawer(true)} style={styles.pauseBtn}>
+              <Ionicons name="list-outline" size={22} color={GOLD} />
+            </Pressable>
+          )}
+        </View>
+      )}
+      </View>
+      {voiceNotice && (
+        <VoiceNotice testID="fir-voice-notice" message={voiceNotice}
+          onPlay={playbackBlocked ? () => speakerRef.current?.retryPlayback() : undefined}
+          onDismiss={() => { if (playbackBlocked) { setAutoSpeak(false); stopTTS(); } setVoiceNotice(null); }} />
+      )}
 
       <KeyboardAvoidingView
         style={styles.flex1}
@@ -1072,6 +1155,7 @@ function MessageBubble({
         {/* TTS speaker button on bot messages */}
         {isBot && msgId && onSpeak && (
           <Pressable
+            testID={`fir-listen-${msgId}`}
             onPress={() => onSpeak(msgId, text)}
             style={styles.ttsBubbleBtn}
             hitSlop={8}
@@ -1195,6 +1279,8 @@ function TextInputArea({
         {/* Paperclip attach button */}
         {onAttach && (
           <Pressable
+            testID="fir-attach-evidence"
+            accessibilityLabel="Attach evidence"
             style={styles.attachBtn}
             onPress={onAttach}
             hitSlop={8}
@@ -1219,7 +1305,10 @@ function TextInputArea({
         />
         {showVoice && (
           <Pressable
+            testID="fir-mic-button"
+            accessibilityLabel="Hold to record your answer"
             style={[styles.micBtn, isRecording && styles.micBtnActive]}
+            disabled={transcribing}
             onPressIn={onStartRecord}
             onPressOut={onStopRecord}
           >
@@ -1483,15 +1572,17 @@ const styles = StyleSheet.create({
   startBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   // Chat header
+  headerShell: { backgroundColor: theme.dhara.navy, flexShrink: 0 },
   chatHeader: {
     backgroundColor: NAVY, flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12, gap: 12,
+    paddingHorizontal: 12, paddingVertical: 8, gap: 4,
   },
-  headerCenter: { flex: 1 },
+  headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
+  headerCenter: { flex: 1, minWidth: 0 },
   headerTitle: { fontSize: 15, fontWeight: '700', color: '#fff' },
   headerLang: { fontSize: 12, color: GOLD },
-  backBtn: { padding: 4 },
-  pauseBtn: { padding: 4 },
+  backBtn: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  pauseBtn: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   // v3.4: Probe progress chip in header
   progressChip: {
     backgroundColor: 'rgba(255,255,255,0.12)',

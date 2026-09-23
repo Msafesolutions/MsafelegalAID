@@ -361,8 +361,14 @@ export async function whisperTranscribeFile(
   languageHint?: string
 ): Promise<WhisperTranscribeResult> {
   const form = new FormData();
-  // @ts-expect-error RN FormData file
-  form.append('audio', { uri, name: 'audio.m4a', type: 'audio/m4a' });
+  if (Platform.OS === 'web') {
+    const blob = await (await fetch(uri)).blob();
+    const extension = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm';
+    form.append('audio', blob, `audio.${extension}`);
+  } else {
+    // @ts-expect-error RN FormData file
+    form.append('audio', { uri, name: 'audio.m4a', type: 'audio/m4a' });
+  }
   if (languageHint) form.append('language', languageHint);
   const res = await fetch(`${apiBase}/api/voice/transcribe`, {
     method: 'POST',

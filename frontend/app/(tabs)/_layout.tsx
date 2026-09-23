@@ -1,6 +1,8 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { View, Platform } from 'react-native';
+import { View, Platform, StyleSheet, useWindowDimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { PlatformPressable } from '@react-navigation/elements';
 import { useEffect } from 'react';
 import { theme } from '@/src/theme';
 import { DisclaimerBanner } from '@/src/components/DisclaimerBanner';
@@ -10,7 +12,7 @@ import { t } from '@/src/i18n';
 
 /**
  * Tab layout with a non-dismissible global legal disclaimer banner
- * pinned just above the tab bar. It appears on ALL tabs.
+ * below the tab bar. The outer safe area protects both on ALL tabs.
  *
  * Also owns the auth guard: whenever `token` becomes null (e.g. user tapped
  * Sign Out on Settings), we force-redirect to /login. Without this guard the
@@ -20,6 +22,7 @@ import { t } from '@/src/i18n';
 export default function TabsLayout() {
   const { token, loading, language } = useAuth();
   const router = useRouter();
+  const { fontScale } = useWindowDimensions();
 
   useEffect(() => {
     if (loading) return;
@@ -44,21 +47,22 @@ export default function TabsLayout() {
   if (!token) return null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
-      <View style={{ flex: 1 }}>
+    <SafeAreaView style={styles.root} edges={['bottom']} testID="tabs-layout">
+      <View style={styles.content}>
         <Tabs
+          safeAreaInsets={{ bottom: 0 }}
           screenOptions={{
             headerShown: false,
             tabBarActiveTintColor: theme.colors.brand,
             tabBarInactiveTintColor: theme.colors.onSurfaceTertiary,
-            tabBarStyle: {
-              backgroundColor: theme.colors.surface,
-              borderTopColor: theme.colors.divider,
-              height: 64,
-              paddingBottom: 8,
-              paddingTop: 8,
-            },
-            tabBarLabelStyle: { fontWeight: '600', fontSize: 11 },
+            // Icon (28), label (16+), item padding (10), bar padding (16).
+            // The old 64pt bar left just 47pt and clipped the label's baseline.
+            tabBarStyle: [styles.tabBar, { height: 60 + Math.ceil(16 * Math.max(1, fontScale)) }],
+            tabBarLabelPosition: 'below-icon',
+            tabBarLabelStyle: styles.tabLabel,
+            tabBarIconStyle: styles.tabIcon,
+            tabBarItemStyle: styles.tabItem,
+            tabBarButton: props => <PlatformPressable {...props} style={[props.style, styles.tabButton]} />,
           }}
         >
           <Tabs.Screen
@@ -95,7 +99,7 @@ export default function TabsLayout() {
             name="history"
             options={{
               title: 'History',
-              tabBarButton: () => null, // hidden from tab bar; accessible via header icon
+              href: null, // No empty seventh slot; still reachable via header icon.
             }}
           />
           <Tabs.Screen
@@ -130,8 +134,24 @@ export default function TabsLayout() {
           />
         </Tabs>
       </View>
-      {/* Non-dismissible legal disclaimer — appears on every tab, above tab bar. */}
+      {/* In normal layout below the tabs, never over their icons or labels. */}
       <DisclaimerBanner />
-    </View>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: theme.colors.surface },
+  content: { flex: 1, minHeight: 0 },
+  tabBar: {
+    backgroundColor: theme.colors.surface,
+    borderTopColor: theme.colors.divider,
+    paddingTop: 8,
+    paddingBottom: 8,
+    flexShrink: 0,
+  },
+  tabItem: { minHeight: 52, minWidth: 0 },
+  tabButton: { paddingHorizontal: 1 },
+  tabIcon: { width: 32, height: 28, flexShrink: 0 },
+  tabLabel: { fontWeight: '600', fontSize: 11, lineHeight: 16, flexShrink: 0 },
+});
