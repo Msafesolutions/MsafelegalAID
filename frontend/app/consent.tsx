@@ -47,7 +47,7 @@ export default function ConsentScreen() {
 
   const PLACEHOLDERS: Record<string, string> = {
     '{{DATA_LOCATION}}':           'India (cloud-hosted, encrypted at rest)',
-    '{{GRIEVANCE_OFFICER_NAME}}':  'Grievance Officer, Calviltech Digital Solutions Pvt Ltd',
+    '{{GRIEVANCE_OFFICER_NAME}}':  'The Grievance Officer, Calvil Technologies',
     '{{GRIEVANCE_EMAIL}}':         'grievance@calviltech.com',
   };
 

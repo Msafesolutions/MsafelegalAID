@@ -32,19 +32,16 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: 6,
-    backgroundColor: '#FFF6E5',
+    backgroundColor: theme.colors.surfaceSecondary,
     borderTopWidth: 1,
-    borderTopColor: '#F0D68A',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0D68A',
+    borderTopColor: theme.colors.divider,
   },
   text: {
     flex: 1,
-    // dhara.textSecondary (#4A5A6E) on amber bg (#FFF6E5) = 6.60:1 ✅ WCAG AA
-    // Legal text: 12px minimum — not fine-print size — this copy has legal function.
     color: theme.dhara.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '500',
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '400',
+    opacity: 0.8,
   },
 });

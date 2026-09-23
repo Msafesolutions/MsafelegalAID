@@ -18,6 +18,11 @@ export const theme = {
     onBrandTertiary: '#FDFBF7',
     gold: '#D4AF37',
     goldSoft: '#F5E3A3',
+    // ── Spec-aligned accent / primary tokens (EMMY-HOME-SCREEN-FIX) ──────────
+    accent: '#F59E0B',         // saffron — FAB, CTA button, logo mark
+    accentDark: '#D97706',     // saffron dark — hover / pressed states
+    primary: '#1E3A8A',        // deep blue — header, CTA card bg
+    primaryMid: '#1D4ED8',     // mid blue — active nav, progress bar
     success: '#2D6A4F',
     warning: '#D97706',
     error: '#B91C1C',

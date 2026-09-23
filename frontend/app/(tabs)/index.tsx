@@ -9,7 +9,6 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
-  Switch,
   Animated,
   PanResponder,
   type GestureResponderEvent,
@@ -408,10 +407,19 @@ export default function ChatScreen() {
   }, []);
 
   const isPro = !!user?.is_pro;
+  // `remaining` tracks pro-mode samples left — used by the backend 402 paywall flow.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const remaining =
     samplesRemaining !== null
       ? samplesRemaining
       : (user?.pro_samples_remaining ?? user?.pro_samples_limit ?? 5);
+
+  // Auto-enable pro mode once we know the user is a Pro subscriber.
+  // This replaces the removed manual toggle — pro users always get pro-quality
+  // answers and pro suggestion chips; non-pro users stay in basic mode.
+  useEffect(() => {
+    if (isPro) setProMode(true);
+  }, [isPro]);
 
   // Keep the usage meter fresh the moment the chat screen opens, not just
   // after the first message is sent.
@@ -1574,34 +1582,8 @@ export default function ChatScreen() {
           </Pressable>
         </View>
 
-        {/* Right: usage pill (inline) + New Chat */}
+        {/* Right: New Chat + History — clean header, no usage clutter */}
         <View style={styles.headerButtons}>
-          {!!user && (
-            <>
-              {user.daily_queries_left !== undefined && user.daily_queries_left !== null ? (
-                <View style={styles.usagePill} testID="usage-pill-queries">
-                  <Ionicons name="chatbubble-ellipses-outline" size={11} color={theme.colors.brand} />
-                  <Text style={styles.usagePillText}>
-                    {user.daily_queries_left}/{user.daily_queries_cap ?? 30}
-                  </Text>
-                </View>
-              ) : isPro ? (
-                <View style={[styles.usagePill, { backgroundColor: '#FFF8E7' }]} testID="usage-pill-pro">
-                  <Ionicons name="star" size={11} color={theme.colors.brandSecondary} />
-                  <Text style={[styles.usagePillText, { color: theme.colors.brandSecondary }]}>
-                    ∞ Pro
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.usagePill} testID="usage-pill-questions">
-                  <Ionicons name="chatbubble-ellipses-outline" size={11} color={theme.colors.brand} />
-                  <Text style={styles.usagePillText}>
-                    {user.daily_questions_left ?? '—'}/{user.daily_questions_cap ?? 30}
-                  </Text>
-                </View>
-              )}
-            </>
-          )}
           <Pressable testID="new-chat-button" style={styles.newChatBtn} onPress={startNewChat}>
             <Ionicons name="add" size={16} color={theme.colors.brand} />
             <Text style={styles.newChatText}>{t('home.newChat', language.code)}</Text>
@@ -1643,65 +1625,6 @@ export default function ChatScreen() {
           onDismiss={stopCloudTTS} />
       )}
 
-      {/* ── COMPACT CONTROLS BAR — mode toggle + upgrade chip (single row) ── */}
-      <View style={styles.controlsBar} testID="controls-bar">
-        {/* Mode toggle */}
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Switch
-            testID="pro-mode-switch"
-            value={proMode}
-            onValueChange={(v) => {
-              setProMode(v);
-              if (v && !isPro && remaining <= 0) {
-                setPaywall({
-                  samples_used: user?.pro_samples_limit ?? 5,
-                  samples_limit: user?.pro_samples_limit ?? 5,
-                  pro_price_label: '₹99',
-                  pro_price_usd_label: '$5',
-                  message:
-                    "You've used all your free Pro-quality samples. Upgrade to Pro to unlock unlimited lawyer-style deep answers, drafts, action plans and escalation paths.",
-                });
-              }
-            }}
-            trackColor={{ true: theme.colors.brandSecondary, false: theme.colors.borderStrong }}
-            thumbColor={theme.colors.surface}
-            style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
-          />
-          <View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Ionicons
-                name={proMode ? 'scale-outline' : 'book-outline'}
-                size={13}
-                color={theme.colors.brand}
-              />
-              <Text style={styles.modeLabelCompact}>
-                {proMode ? t('home.proMode', language.code) : t('home.basicMode', language.code)}
-              </Text>
-            </View>
-            <Text style={styles.modeSubCompact}>
-              {proMode
-                ? isPro
-                  ? 'Deep answers'
-                  : `${remaining} samples left`
-                : 'Free during community launch'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Upgrade chip — inline, only for non-Pro on basic mode */}
-        {!isPro && !proMode && (
-          <Pressable
-            testID="chat-upgrade-cta"
-            style={styles.upgradeChip}
-            onPress={() => router.push('/upgrade')}
-          >
-            <Ionicons name="star" size={13} color={theme.colors.onBrandSecondary} />
-            <Text style={styles.upgradeChipText}>Pro ₹99</Text>
-            <Ionicons name="chevron-forward" size={13} color={theme.colors.onBrandSecondary} />
-          </Pressable>
-        )}
-      </View>
-
       {/* Persistent entry point — the flagship Voice FIR Drafting Assistant
           must be discoverable at all times, not just from an empty-state
           suggestion chip that disappears once the user starts chatting. */}
@@ -1726,7 +1649,7 @@ export default function ChatScreen() {
           <Text style={styles.firResumeSectionTitle}>Continue your reports</Text>
           {activeFirSessions.map((sess: any) => {
             const dateStr = sess.updated_at ? new Date(sess.updated_at).toLocaleDateString('en-IN') : '';
-            const types = (sess.incident_types || ['complaint']).join(', ');
+            const incidentTypes: string[] = sess.incident_types || ['complaint'];
             const stage = sess.stage ? sess.stage.replace(/_/g, ' ') : 'in progress';
             return (
               <Pressable
@@ -1734,12 +1657,23 @@ export default function ChatScreen() {
                 style={styles.firResumeCard}
                 onPress={() => router.push({ pathname: '/fir-draft', params: { resumeId: sess.session_id } } as any)}
               >
-                <Ionicons name="document-text-outline" size={20} color={theme.colors.brand} />
+                <View style={styles.firResumeIconWrap}>
+                  <Ionicons name="document-text-outline" size={18} color={theme.colors.brand} />
+                </View>
                 <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.firResumeCardTitle} numberOfLines={1}>{types}</Text>
+                  {/* Crime-type badges — each type displayed as a readable pill */}
+                  <View style={styles.crimeTypeBadgeRow}>
+                    {incidentTypes.slice(0, 3).map((type: string, i: number) => (
+                      <View key={i} style={styles.crimeTypeBadge}>
+                        <Text style={styles.crimeTypeBadgeText} numberOfLines={1}>
+                          {type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ')}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                   <Text style={styles.firResumeCardSub}>{stage} · {dateStr}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.muted} />
+                <Ionicons name="chevron-forward" size={16} color={theme.colors.onSurfaceTertiary} />
               </Pressable>
             );
           })}
@@ -1791,6 +1725,24 @@ export default function ChatScreen() {
                   </Pressable>
                 ))}
               </View>
+
+              {/* ── Pro upgrade card — bottom of empty state, non-Pro users only ── */}
+              {!isPro && (
+                <Pressable
+                  testID="pro-upgrade-card"
+                  style={styles.proUpgradeCard}
+                  onPress={() => router.push('/upgrade')}
+                >
+                  <View style={styles.proUpgradeIconWrap}>
+                    <Ionicons name="star" size={16} color="#fff" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.proUpgradeTitle}>Upgrade to Pro</Text>
+                    <Text style={styles.proUpgradeSub}>Lawyer-style deep answers, drafts & action plans</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#D97706" />
+                </Pressable>
+              )}
             </View>
           ) : (
             messages.map((m) => (
@@ -3077,5 +3029,68 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textDecorationLine: 'underline',
     fontWeight: '600',
+  },
+  // ── Resume card: crime-type badge chips ────────────────────────────────────
+  firResumeIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: 'rgba(30, 58, 138, 0.07)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  crimeTypeBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginBottom: 3,
+  },
+  crimeTypeBadge: {
+    backgroundColor: 'rgba(30, 58, 138, 0.08)',
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 138, 0.18)',
+  },
+  crimeTypeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  // ── Pro upgrade card (empty state, bottom) ─────────────────────────────────
+  proUpgradeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: theme.spacing.lg,
+    padding: theme.spacing.lg,
+    borderRadius: theme.radius.lg,
+    backgroundColor: '#FFFBEC',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    gap: theme.spacing.md,
+    width: '100%',
+  },
+  proUpgradeIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  proUpgradeTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  proUpgradeSub: {
+    fontSize: 12,
+    color: '#92400E',
+    marginTop: 2,
+    lineHeight: 16,
+    opacity: 0.75,
   },
 });
