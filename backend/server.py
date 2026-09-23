@@ -88,6 +88,12 @@ RAZORPAY_ME_URL = os.environ.get("RAZORPAY_ME_URL", "https://razorpay.me/@calvil
 # ─── eCourtsIndia partner API ──────────────────────────────────────────────────
 ECOURTS_TOKEN = os.getenv("ECOURTS_API_TOKEN", "")
 ECOURTS_BASE  = os.getenv("ECOURTS_API_BASE", "https://webapi.ecourtsindia.com")
+
+# ── Server-side LLM config — never expose to clients ──────────────────────────
+# These values are authoritative; any model_provider/model_name sent by the
+# client is silently ignored (see Fix 2 in the P0 security sprint).
+SERVER_CHAT_PROVIDER = os.getenv("CHAT_PROVIDER", "anthropic")
+SERVER_CHAT_MODEL    = os.getenv("CHAT_MODEL",    "claude-sonnet-4-6")
 PRO_PRICE_INR = int(os.environ.get("PRO_PRICE_INR", "9900"))  # paise (₹99)
 PRO_PRICE_LABEL = os.environ.get("PRO_PRICE_LABEL", "₹99")
 PRO_PRICE_USD = int(os.environ.get("PRO_PRICE_USD", "500"))  # cents
@@ -188,8 +194,8 @@ class ChatIn(BaseModel):
     language: str = "en"
     language_name: str = "English"
     language_native: Optional[str] = None
-    model_provider: str = "anthropic"
-    model_name: str = "claude-sonnet-4-5-20250929"
+    # model_provider / model_name intentionally removed from accepted fields.
+    # The server always uses SERVER_CHAT_PROVIDER / SERVER_CHAT_MODEL (P0-Fix2).
     mode: str = "basic"  # "basic" | "pro"
 
 class ClientErrorLogIn(BaseModel):
@@ -295,6 +301,19 @@ async def current_user(authorization: Optional[str] = Header(None)) -> dict:
     if not user:
         raise HTTPException(401, "User not found")
     return user
+
+
+async def current_user_optional(authorization: Optional[str] = Header(None)) -> Optional[dict]:
+    """Like current_user but returns None instead of raising 401 when unauthenticated.
+    Used for endpoints that support both authenticated and anonymous access."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+    except jwt.PyJWTError:
+        return None
+    return await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
 
 # ---------- System prompts ----------
 def build_system_prompt(
@@ -921,7 +940,7 @@ async def meter_llm_use(user: dict, kind: str) -> None:
             },
         )
 
-async def translate_for_retrieval(text: str, model_provider: str, model_name: str) -> str:
+async def translate_for_retrieval(text: str) -> str:
     """One-shot, non-streaming translation of a non-English question into English,
     used ONLY so the deterministic corpus retrieval (English keywords) can find
     the right verified law. Never shown to the user and never treated as a legal
@@ -960,7 +979,7 @@ async def translate_for_retrieval(text: str, model_provider: str, model_name: st
                 "Input: 'किरायेदार बेदखली' → Output: tenant eviction rent landlord Transfer Property Act\n"
                 "Output ONLY the keywords — no explanation, no notes."
             ),
-        ).with_model(model_provider, model_name)
+        ).with_model(SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL)
         result = await _aio.wait_for(
             translator.send_message(UserMessage(text=text)),
             timeout=7.0,   # never block retrieval > 7 s
@@ -1118,7 +1137,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     retrieval_text = body.message
     _is_indic = needs_retrieval_translation(body.message)
     if _is_indic:
-        retrieval_text = await translate_for_retrieval(body.message, body.model_provider, body.model_name)
+        retrieval_text = await translate_for_retrieval(body.message)
         _same = retrieval_text == body.message
         logger.info(
             "retrieval-bridge | indic=True | translation_ok=%s | q=%r | t=%r",
@@ -1448,7 +1467,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         api_key=EMERGENT_LLM_KEY,
         session_id=session_id,
         system_message=system_prompt,
-    ).with_model(body.model_provider, body.model_name)
+    ).with_model(SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL)
 
     def sse(obj: dict) -> bytes:
         return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
@@ -1656,7 +1675,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
                     api_key=EMERGENT_LLM_KEY,
                     session_id=f"{session_id}-langfix",
                     system_message=repair_prompt(lang_display),
-                ).with_model(body.model_provider, body.model_name)
+                ).with_model(SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL)
                 translated = await fixer.send_message(UserMessage(text=sanitized))
                 translated = sanitize_model_output(str(translated or "")).strip()
                 if translated and not needs_language_repair(translated, body.language):
@@ -3339,6 +3358,46 @@ async def fir_get_session(session_id: str):
     return doc
 
 
+# ── P0-Fix1: Secure draft retrieval — no PII in URL ───────────────────────────
+@app.get("/api/fir/session/{session_id}/draft")
+async def fir_get_session_draft(
+    session_id: str,
+    request: Request,
+    user: Optional[dict] = Depends(current_user_optional),
+):
+    """Return the generated FIR draft text for a session.
+
+    Security rules (P0-Fix1):
+    • Logged-in user: must own the session (session.user_id == user.id) → 403 otherwise.
+    • Anonymous session (user_id starts with 'anon-'): knowledge of the UUID
+      session_id is treated as sufficient proof of ownership (the UUID is never
+      in the URL, only obtained from the interview flow itself).
+    • No draft_text field yet → 404 (interview not complete).
+    """
+    doc = await db.fir_sessions.find_one(
+        {"session_id": session_id},
+        {"_id": 0, "draft_text": 1, "user_id": 1},
+    )
+    if not doc:
+        raise HTTPException(404, "Session not found")
+
+    owner_id: str = doc.get("user_id") or ""
+    is_anon = owner_id.startswith("anon-") or owner_id == ""
+
+    if not is_anon:
+        # Require authenticated caller who owns this session
+        if user is None:
+            raise HTTPException(401, "Authentication required")
+        if owner_id != user["id"]:
+            raise HTTPException(403, "Access denied")
+
+    draft = doc.get("draft_text") or ""
+    if not draft:
+        raise HTTPException(404, "Draft not ready yet")
+
+    return {"session_id": session_id, "draft_text": draft}
+
+
 # ── v3.3: Pause session ───────────────────────────────────────────────────────
 @api.post("/fir/session/{session_id}/pause")
 async def fir_pause_session(session_id: str):
@@ -3622,3 +3681,84 @@ if _WEB_DIR.is_dir():
         if web_path and str(candidate).startswith(str(root)) and candidate.is_file():
             return _FileResponse(candidate)
         return _FileResponse(root / "index.html")
+
+
+
+# ── P0-Fix4: Consent Gate endpoints ──────────────────────────────────────────
+
+class ConsentLogIn(BaseModel):
+    """Payload written by the consent gate. Works for both anonymous and
+    authenticated callers; caller must supply one of user_id or anon_id."""
+    notice_version: str
+    purposes: dict          # {"core": true, "analytics": bool, "updates": bool}
+    language: str
+    age_confirmed_18: bool
+    app_version: str = "1.0.0"
+    anon_id: Optional[str] = None   # for pre-login / anonymous users
+
+
+@app.post("/api/consent/log")
+async def log_consent(
+    body: ConsentLogIn,
+    user: Optional[dict] = Depends(current_user_optional),
+):
+    """Append-only consent log (DPDP §6, PIPEDA Principle 3).
+    Never updates or deletes rows — only inserts."""
+    entry = {
+        "user_id":          user["id"] if user else None,
+        "anon_id":          body.anon_id if not user else None,
+        "notice_version":   body.notice_version,
+        "purposes":         body.purposes,
+        "language":         body.language,
+        "age_confirmed_18": body.age_confirmed_18,
+        "timestamp":        datetime.now(timezone.utc).isoformat(),
+        "app_version":      body.app_version,
+    }
+    await db.consent_log.insert_one(entry)
+
+    # If authenticated, also update the user record with the latest consent info
+    if user:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {
+                "terms_version":      body.notice_version,
+                "terms_accepted":     True,
+                "terms_accepted_at":  entry["timestamp"],
+                "consent_purposes":   body.purposes,
+                "age_confirmed_18":   body.age_confirmed_18,
+                "consent_language":   body.language,
+            }},
+        )
+    return {"ok": True}
+
+
+class PrivacyChoicesIn(BaseModel):
+    analytics: bool
+    updates: bool
+
+
+@app.patch("/api/user/privacy-choices")
+async def update_privacy_choices(
+    body: PrivacyChoicesIn,
+    user: dict = Depends(current_user),
+):
+    """Let the user flip optional consent purposes (DPDP right to withdraw)."""
+    new_purposes = {"core": True, "analytics": body.analytics, "updates": body.updates}
+    now = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"consent_purposes": new_purposes, "terms_accepted_at": now}},
+    )
+    # Write a consent_log entry so every change is auditable
+    await db.consent_log.insert_one({
+        "user_id":          user["id"],
+        "anon_id":          None,
+        "notice_version":   user.get("terms_version", ""),
+        "purposes":         new_purposes,
+        "language":         user.get("consent_language", "en"),
+        "age_confirmed_18": user.get("age_confirmed_18", True),
+        "timestamp":        now,
+        "app_version":      "1.0.0",
+        "event":            "privacy_choices_update",
+    })
+    return {"ok": True, "consent_purposes": new_purposes}

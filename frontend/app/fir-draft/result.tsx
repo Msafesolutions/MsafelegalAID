@@ -1,7 +1,6 @@
 /**
- * FIR Draft Result Screen (v3.3 — Issue 9 Section Drawer)
+ * FIR Draft Result Screen (v3.4 — P0-Fix1: draft loaded from server, not URL)
  * Displays the generated FIR complaint letter with share/export options.
- * Receives draft text and sessionId from the new Interview Engine.
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -14,7 +13,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
-import { API_BASE } from '@/src/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE, useAuth } from '@/src/auth';
 import FirSectionDrawer, { SectionItem, DroppedSection } from '@/src/components/FirSectionDrawer';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -35,17 +35,53 @@ const HELPLINES = [
 ];
 
 export default function FIRResult() {
-  const params = useLocalSearchParams<{ sessionId?: string; draft?: string }>();
+  const params = useLocalSearchParams<{ sessionId?: string }>();
   const router = useRouter();
+  const { token } = useAuth();
 
-  const [loading] = useState(false);
+  // P0-Fix1: draft is fetched from the server, never from URL params
+  const [draftText, setDraftText] = useState('');
+  const [draftLoading, setDraftLoading] = useState(true);
+  const [draftError, setDraftError] = useState('');
   const [copyDone, setCopyDone] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const sessionId = params.sessionId || '';
 
-  // Draft text: either passed as param, or loaded from session API
-  const draftText = params.draft || '';
+  // Fetch draft securely from the server
+  useEffect(() => {
+    if (!sessionId) {
+      setDraftError('Session ID missing. Please go back and try again.');
+      setDraftLoading(false);
+      return;
+    }
+    const fetchDraft = async () => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${API_BASE}/api/fir/session/${sessionId}/draft`, { headers });
+        if (res.status === 403) {
+          setDraftError('Access denied. This draft belongs to another account.');
+          return;
+        }
+        if (res.status === 404) {
+          setDraftError('Draft not found. The interview may not be complete.');
+          return;
+        }
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        const data = await res.json();
+        setDraftText(data.draft_text || '');
+        // P0-Fix1e: clear local interview state after successful draft load
+        await AsyncStorage.removeItem('fir_draft_state').catch(() => {});
+        await AsyncStorage.removeItem('gk_fir_session').catch(() => {});
+      } catch (e: any) {
+        setDraftError('Could not load your draft. Please check your connection and try again.');
+      } finally {
+        setDraftLoading(false);
+      }
+    };
+    fetchDraft();
+  }, [sessionId, token]);
 
   // Issue 9: Section drawer state
   const [showSectionDrawer, setShowSectionDrawer] = useState(false);
@@ -158,12 +194,26 @@ export default function FIRResult() {
     }
   }, [sessionId]);
 
-  if (loading || !draftText) {
+  if (draftLoading) {
     return (
       <SafeAreaView style={styles.root}>
         <View style={styles.center}>
           <ActivityIndicator size="large" color={NAVY} />
           <Text style={styles.loadingText}>Loading your draft…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (draftError || !draftText) {
+    return (
+      <SafeAreaView style={styles.root}>
+        <View style={styles.center}>
+          <Ionicons name="alert-circle-outline" size={48} color={RED} />
+          <Text style={[styles.loadingText, { color: RED, marginTop: 12 }]}>{draftError || 'Draft could not be loaded.'}</Text>
+          <Pressable onPress={() => router.back()} style={{ marginTop: 20, padding: 12, backgroundColor: NAVY, borderRadius: 8 }}>
+            <Text style={{ color: '#fff', fontWeight: '600' }}>← Go Back</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );

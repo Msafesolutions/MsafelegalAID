@@ -196,7 +196,7 @@ const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicon
 ];
 
 export default function ChatScreen() {
-  const { token, user, language, model, autoSpeak, ttsVolume, ttsVoiceMode, refreshUser, forceLogout } = useAuth();
+  const { token, user, language, autoSpeak, ttsVolume, ttsVoiceMode, refreshUser, forceLogout } = useAuth();
   const router = useRouter();
   const [messages, setMessages] = useState<Msg[]>([]);
   // Per-message toggle for the "View Legal Details" summary-first disclosure.
@@ -506,8 +506,6 @@ export default function ChatScreen() {
             language: language.code,
             language_name: language.name,
             language_native: language.native,
-            model_provider: model.provider,
-            model_name: model.name,
             mode: modeToSend,
           }),
         });
@@ -814,7 +812,7 @@ export default function ChatScreen() {
         setStreaming(false);
       }
     },
-    [streaming, token, sessionId, language, model, proMode, refreshUser, autoSpeak, forceLogout]
+    [streaming, token, sessionId, language, proMode, refreshUser, autoSpeak, forceLogout]
   );
 
   /**

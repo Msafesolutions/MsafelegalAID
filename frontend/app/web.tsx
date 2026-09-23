@@ -123,8 +123,6 @@ export default function WebPortal() {
             language:        selectedLang.code,
             language_name:   selectedLang.name,
             language_native: selectedLang.native,
-            model_provider:  'anthropic',
-            model_name:      'claude-sonnet-4-5-20250929',
             mode:            'basic',
           }),
         });

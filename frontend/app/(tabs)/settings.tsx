@@ -364,6 +364,16 @@ export default function Settings() {
           <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
         </Pressable>
 
+        {/* P0-Fix4: Privacy choices row */}
+        <Pressable style={styles.row} onPress={() => router.push('/consent?mode=update' as any)}>
+          <Ionicons name="shield-checkmark-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+            <Text style={styles.rowTitle}>Privacy Choices</Text>
+            <Text style={styles.rowValue}>Manage analytics & update preferences</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={theme.colors.onSurfaceTertiary} />
+        </Pressable>
+
         <Text style={styles.section}>About</Text>
         <View style={styles.aboutCard}>
           <Text style={styles.aboutText}>

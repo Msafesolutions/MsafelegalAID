@@ -723,11 +723,10 @@ ${data.bot_message}`);
   useEffect(() => {
     if (draft) {
       const sid = sessionId;
-      const d = draft;
       setTimeout(() => {
         router.push({
           pathname: '/fir-draft/result',
-          params: { sessionId: sid || '', draft: d },
+          params: { sessionId: sid || '' },
         });
       }, 800);
     }
@@ -1184,7 +1183,7 @@ ${data.bot_message}`);
                 style={styles.viewDraftBtn}
                 onPress={() => router.push({
                   pathname: '/fir-draft/result',
-                  params: { sessionId: sessionId || '', draft: draft || '' },
+                  params: { sessionId: sessionId || '' },
                 })}
               >
                 <Ionicons name="document-text-outline" size={22} color="#fff" />

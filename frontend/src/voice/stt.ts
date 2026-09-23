@@ -1,17 +1,15 @@
 /**
  * STT Strategy — swappable Speech-to-Text providers.
  *
- * Switch provider via `EXPO_PUBLIC_STT_PROVIDER=native|whisper` in .env.
+ * Switch provider via `EXPO_PUBLIC_STT_PROVIDER=native|cloud` in .env.
  *
- * - `native`  → on-device via expo-speech-recognition (iOS SFSpeechRecognizer + Android SpeechRecognizer).
+ * - `native` → on-device STT (iOS SFSpeechRecognizer + Android SpeechRecognizer).
  *              ZERO API cost, works offline. Requires dev/APK build (not Expo Go / web).
  *              Language coverage depends on device OS.
  *
- * - `whisper` → cloud OpenAI Whisper via /api/voice/transcribe (uses your Emergent LLM key).
- *              Best accuracy for 22 Indian languages, needs internet, ~$0.006/min.
+ * - `cloud`  → cloud STT via /api/voice/transcribe (high-accuracy, 22 Indian languages).
+ *              Needs internet connection.
  *
- * The strategy pattern lets you upgrade to Whisper later with a single env-var flip
- * once revenue justifies the cost, without touching any UI code.
  */
 
 import { Platform } from 'react-native';

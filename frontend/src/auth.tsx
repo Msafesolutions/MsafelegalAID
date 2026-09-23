@@ -18,7 +18,7 @@ const TTS_VOICE_KEY  = 'dhara_tts_voice';
 
 export type User = { id: string; email: string; name: string; phone?: string; language: string; state?: string | null; state_name?: string; is_grandfathered?: boolean; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; drafts_used?: number; drafts_free_limit?: number; drafts_remaining?: number; daily_queries_cap?: number | null; daily_queries_left?: number | null; daily_questions_cap?: number | null; daily_questions_left?: number | null; daily_voice_cap?: number | null; daily_voice_left?: number | null; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
 export type Language = { code: string; name: string; native: string; tts: string };
-export type ModelChoice = { provider: string; name: string; label: string; recommended?: boolean };
+export type ModelChoice = { label: string; recommended?: boolean };
 
 type AuthCtx = {
   token: string | null;
@@ -26,8 +26,6 @@ type AuthCtx = {
   loading: boolean;
   language: Language;
   setLanguage: (l: Language) => Promise<void>;
-  model: ModelChoice;
-  setModel: (m: ModelChoice) => Promise<void>;
   autoSpeak: boolean;
   setAutoSpeak: (v: boolean) => Promise<void>;
   /** Playback loudness for spoken answers, 0.0–1.0. Persisted across sessions. */
@@ -43,20 +41,13 @@ type AuthCtx = {
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   hydrateSession: (token: string, user: User) => Promise<void>;
-  /** True right after any API call comes back 401 mid-session (expired/invalid
-   * token) — distinct from simply never having logged in. The login screen
-   * reads this to show "Your session has expired" instead of a blank form. */
   sessionExpired: boolean;
   clearSessionExpired: () => void;
-  /** Call this from ANY authenticated fetch call site the moment it sees a 401.
-   * Logs the user out and flags sessionExpired so the auth guard in
-   * (tabs)/_layout.tsx redirects to /login with the right message. */
   forceLogout: () => Promise<void>;
 };
 
 export type TtsVoiceMode = 'cloud' | 'device-female' | 'device-male';
-const DEFAULT_LANG:  Language     = { code: 'en', name: 'English', native: 'English', tts: 'en-IN' };
-const DEFAULT_MODEL: ModelChoice  = { provider: 'anthropic', name: 'claude-sonnet-4-5-20250929', label: 'Dhara AI', recommended: true };
+const DEFAULT_LANG: Language = { code: 'en', name: 'English', native: 'English', tts: 'en-IN' };
 
 const Ctx = createContext<AuthCtx | null>(null);
 
@@ -65,7 +56,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANG);
-  const [model, setModelState] = useState<ModelChoice>(DEFAULT_MODEL);
   const [autoSpeak, setAutoSpeakState] = useState<boolean>(true);
   const [ttsVolume, setTtsVolumeState] = useState<number>(1.0);
   const [ttsVoiceMode, setTtsVoiceModeState] = useState<TtsVoiceMode>('cloud');
@@ -105,11 +95,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const [t, u, l, m2, a, v, vm] = await Promise.all([
+      const [t, u, l, a, v, vm] = await Promise.all([
         AsyncStorage.getItem(TOKEN_KEY),
         AsyncStorage.getItem(USER_KEY),
         AsyncStorage.getItem(LANG_KEY),
-        AsyncStorage.getItem(MODEL_KEY),
         AsyncStorage.getItem(AUTO_SPEAK_KEY),
         AsyncStorage.getItem(TTS_VOLUME_KEY),
         AsyncStorage.getItem(TTS_VOICE_KEY),
@@ -117,7 +106,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (t) setToken(t);
       if (u) setUser(JSON.parse(u));
       if (l) setLanguageState(JSON.parse(l));
-      if (m2) setModelState(JSON.parse(m2));
       if (a !== null) setAutoSpeakState(a === '1');
       if (v !== null) {
         const n = parseFloat(v);
@@ -176,7 +164,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+    // P0-Fix1e: clear FIR session data on logout
+    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, 'fir_draft_state', 'gk_fir_session']);
     setToken(null);
     setUser(null);
   };
@@ -195,11 +184,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setLanguage = useCallback(async (l: Language) => {
     setLanguageState(l);
     await AsyncStorage.setItem(LANG_KEY, JSON.stringify(l));
-  }, []);
-
-  const setModel = useCallback(async (m: ModelChoice) => {
-    setModelState(m);
-    await AsyncStorage.setItem(MODEL_KEY, JSON.stringify(m));
   }, []);
 
   const setAutoSpeak = useCallback(async (v: boolean) => {
@@ -286,7 +270,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token, forceLogout]);
 
   return (
-    <Ctx.Provider value={{ token, user, loading, language, setLanguage, model, setModel, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, ttsVoiceMode, setTtsVoiceMode, setUserState, login, register, loginWithGoogle, logout, refreshUser, hydrateSession: persist, sessionExpired, clearSessionExpired, forceLogout }}>
+    <Ctx.Provider value={{ token, user, loading, language, setLanguage, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, ttsVoiceMode, setTtsVoiceMode, setUserState, login, register, loginWithGoogle, logout, refreshUser, hydrateSession: persist, sessionExpired, clearSessionExpired, forceLogout }}>
       {children}
     </Ctx.Provider>
   );
