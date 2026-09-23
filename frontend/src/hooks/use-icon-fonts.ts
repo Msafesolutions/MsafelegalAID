@@ -44,16 +44,18 @@ const iconFontMap = (): Record<string, string> =>
     Object.entries(ICON_FAMILIES).map(([key, file]) => [key, cdnUrl(file)]),
   );
 
+// On web: only load the Ionicons font (most used icon family) to prevent
+// the "icon flash" on first render while keeping load time minimal.
+// Full CDN map is only needed in Expo Go (StoreClient) on Android.
+const webFontMap = (): Record<string, string> => ({
+  ionicons: cdnUrl("Ionicons"),
+});
+
 export const useIconFonts = (): readonly [boolean, Error | null] =>
   useFonts(
-    // Load from CDN only in Expo Go (StoreClient) on Android — Metro's TTF
-    // resolver returns 0-byte files there. On web, @expo/vector-icons injects
-    // CSS font-faces automatically; loading via FontFace API blocks the render
-    // until ALL CDN requests finish (or time-out), causing a persistent blank
-    // screen in environments where the FontFace API is restricted (e.g. CSP
-    // or sandboxed Playwright). On native dev/prod builds, autolinking handles
-    // the font bundling so we also pass an empty map.
     Constants.executionEnvironment === ExecutionEnvironment.StoreClient
-      ? iconFontMap()
-      : {},
+      ? iconFontMap()        // Expo Go Android: all families from CDN
+      : typeof document !== "undefined"
+        ? webFontMap()       // Web: Ionicons only to fix icon flash
+        : {},                // Native dev/prod build: autolinking handles it
   );

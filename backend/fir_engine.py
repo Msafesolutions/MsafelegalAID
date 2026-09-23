@@ -1,7 +1,22 @@
 """
-DHARA FIR Interview Engine — v3 (GPS + Evidence)
+DHARA FIR Interview Engine — v3.2 (GPS + Evidence + Quality Fixes)
 Conversational, stage-based FIR drafting assistant.
 Fresh session isolation: every session is 100% blank — no carryover.
+
+v3.1 fixes (2026-09):
+  1. Date contradiction detection: "today" vs explicit extracted date.
+  2. Place validation: off-topic answers go to parked_questions, re-ask place.
+  3. parked_questions: new field, populated on off-topic probe answers.
+  4. Accused slot guard: witness-about-accused answers rerouted to witnesses.
+  5. Witness follow-up: vague witness answers trigger name/detail probe.
+  6. Phone validation: placeholder / non-numeric phone → one retry.
+  7. Section mapping fix: BNS 77/78 removed from general harassment.
+  8. Incident type fallback: keyword classifier when LLM returns only ["other"].
+
+v3.2 fixes (2026-09):
+  5b. Vague witness detection: now catches answers with no names/numbers regardless of length.
+  9.  Citation Guard: dropped_sections written to DB with reason_dropped field.
+      suggest_sections() now returns (confirmed, dropped) tuple.
 """
 from __future__ import annotations
 
@@ -9,7 +24,7 @@ import uuid
 import json
 import re
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional
 import httpx
 import logging
@@ -52,11 +67,253 @@ def _detect_safety_flags(text: str) -> list[str]:
     return [f for f, kws in _SAFETY_KW.items() if any(k in t for k in kws)]
 
 
+# ─── Helper validators ────────────────────────────────────────────────────────
+
+# Location-type words that suggest a valid place answer
+_PLACE_KW = [
+    "road", "street", "nagar", "colony", "area", "sector", "phase", "block",
+    "city", "town", "village", "district", "state", "tehsil", "taluk",
+    "park", "market", "market", "station", "chowk", "bazaar", "marg", "lane",
+    "near", "beside", "opposite", "behind", "in front", "next to",
+    "at", "in the", "on the", "under", "inside", "outside", "between",
+    "mall", "hospital", "school", "college", "office", "building", "flat",
+    "house", "floor", "floor", "delhi", "mumbai", "bangalore", "bengaluru",
+    "chennai", "hyderabad", "kolkata", "pune", "ahmedabad", "surat",
+    "jaipur", "lucknow", "kanpur", "nagpur", "patna", "indore", "bhopal",
+    "pin", "pincode", "zip", "highway", "nh-", "sh-", "bridge",
+]
+
+# Patterns that clearly indicate a non-place answer
+_NON_PLACE_PATTERNS = [
+    r"^how (do|can|will|should|would|to)",
+    r"^what (is|are|was|were|should|would|can)",
+    r"^why (is|are|was|did|should|would)",
+    r"^(can|could|will|would|should|shall) (you|i|we|he|she|they)",
+    r"^please (tell|explain|help|advise|suggest|let)",
+    r"^i (want|need|don't|dont|wish|am|was|have|had)",
+    r"^(not|na|none|nil|skip)",
+]
+
+
+def _is_valid_place_response(text: str) -> bool:
+    """Return True if text looks like a place description."""
+    if not text or len(text.strip()) < 3:
+        return True  # accept very short answers (abbreviations etc.)
+    t = text.lower().strip()
+    # Reject clear non-place patterns (questions, requests, denials)
+    for pat in _NON_PLACE_PATTERNS:
+        if re.match(pat, t):
+            return False
+    # Accept if it contains any place keyword
+    if any(kw in t for kw in _PLACE_KW):
+        return True
+    # Accept short answers (could be neighbourhood name, place abbreviation)
+    if len(t.split()) <= 4:
+        return True
+    # Long sentence with no location keywords = likely off-topic
+    return False
+
+
+_WITNESS_KW = ["witness", "saw", "they were", "my friend", "present", "there"]
+_VAGUE_WITNESS = ["yes", "yeah", "yep", "sure", "there were", "yes there",
+                  "they were witnesses", "they are witnesses", "they were present",
+                  "my friends were", "few people"]
+
+# Common sentence-starter or generic words that are capitalised but are NOT person names
+_COMMON_CAPS: set[str] = {
+    "Yes", "No", "There", "They", "The", "This", "That", "Some", "My",
+    "His", "Her", "Our", "We", "He", "She", "It", "But", "And", "Or",
+    "Few", "Many", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight",
+    "People", "Person", "Witnesses", "Witness", "Friends", "Neighbours",
+    "Neighbors", "Bystanders", "Someone", "Anyone", "Everyone",
+    "About", "Around", "Nearby", "Present",
+}
+
+
+def _is_witness_answer_in_accused_probe(text: str) -> bool:
+    """Return True if an answer to 'who did this' is actually about witnesses."""
+    t = text.lower().strip()
+    return any(kw in t for kw in ["witness", "witnesses", "they were there",
+                                   "they witnessed", "saw it", "they saw"])
+
+
+def _is_vague_witness_response(text: str) -> bool:
+    """Return True if witness answer is too vague (no names/numbers given).
+
+    A witness answer is considered specific if it contains:
+    - at least one digit run that looks like a phone number, OR
+    - at least one capitalized word that is NOT a common English word
+      (i.e., a real person name such as 'Ramesh', 'Priya', 'Suresh')
+    """
+    if not text:
+        return True
+    t = text.lower().strip()
+    # Very short or just "yes / yeah / sure"
+    if len(t) < 30 and any(t.startswith(v) for v in _VAGUE_WITNESS):
+        return True
+    # Check for any digit sequence (phone numbers)
+    has_digit = any(c.isdigit() for c in text)
+    if has_digit:
+        return False
+    # Check for a real person name: capitalised word NOT in our common-caps exclusion list
+    cap_words = re.findall(r"\b[A-Z][a-z]{2,}\b", text)
+    has_person_name = any(w not in _COMMON_CAPS for w in cap_words)
+    if has_person_name:
+        return False
+    # No phone number, no person name → vague
+    return True
+
+
+_PLACEHOLDER_PHONE = [
+    r"^0+$",          # 000, 00000, 0000000000
+    r"^1+$",          # 111...
+    r"^9+$",
+    r"^\d{1,4}$",     # too short (1–4 digits)
+    r"^(n/?a|na|none|no|not available|unknown|skip)$",
+    r"put as",        # "put as 00000"
+    r"xxx+",
+]
+
+
+def _is_valid_phone(text: str) -> bool:
+    """Return True if text looks like a real contact number."""
+    if not text:
+        return False
+    t = text.strip().lower()
+    # Match placeholder patterns
+    for pat in _PLACEHOLDER_PHONE:
+        if re.search(pat, t):
+            return False
+    # Extract digits only
+    digits = re.sub(r"\D", "", text)
+    # Indian mobile: 10 digits, starts with 6-9
+    if len(digits) == 10 and digits[0] in "6789":
+        return True
+    # Landline with STD (8-11 digits including STD code)
+    if 8 <= len(digits) <= 11:
+        return True
+    return False
+
+
+# ─── Date contradiction helpers ───────────────────────────────────────────────
+
+_TODAY_KW = ["today", "aaj", "this evening", "this morning", "this afternoon",
+             "just now", "a few hours", "tonight", "aaj raat", "aaj subah"]
+_YESTERDAY_KW = ["yesterday", "kal", "last night", "last evening"]
+
+
+def _narrative_mentions_today(text: str) -> bool:
+    t = text.lower()
+    return any(kw in t for kw in _TODAY_KW)
+
+
+def _narrative_mentions_yesterday(text: str) -> bool:
+    t = text.lower()
+    return any(kw in t for kw in _YESTERDAY_KW)
+
+
+def _has_date_conflict(narrative: str, extracted_date: Optional[str]) -> Optional[str]:
+    """
+    Returns the conflict message if there's a date contradiction, else None.
+    Checks:
+    - Narrative says "today" but extracted date != today
+    - Narrative says "yesterday" but extracted date != yesterday
+    - Extracted year differs significantly from current year
+    """
+    if not extracted_date:
+        return None
+    today = date.today()
+    today_str = today.isoformat()  # YYYY-MM-DD
+    today_fmt = today.strftime("%d %B %Y")
+
+    # Try to parse the extracted date
+    parsed = None
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d"):
+        try:
+            parsed = datetime.strptime(extracted_date.strip(), fmt).date()
+            break
+        except ValueError:
+            continue
+
+    if parsed is None:
+        return None
+
+    # Check 1: narrative says "today" but extracted date is not today
+    if _narrative_mentions_today(narrative) and parsed != today:
+        # Format the extracted date nicely
+        parsed_fmt = parsed.strftime("%d %B %Y")
+        return (
+            f"You mentioned 'today' — did this happen on **{today_fmt}** (today) "
+            f"or was it **{parsed_fmt}** as mentioned?"
+        )
+
+    # Check 2: narrative says "yesterday" but extracted date is not yesterday
+    from datetime import timedelta
+    yesterday = today - timedelta(days=1)
+    if _narrative_mentions_yesterday(narrative) and parsed != yesterday:
+        parsed_fmt = parsed.strftime("%d %B %Y")
+        yesterday_fmt = yesterday.strftime("%d %B %Y")
+        return (
+            f"You mentioned 'yesterday' — did this happen on **{yesterday_fmt}** "
+            f"or was it **{parsed_fmt}** as mentioned?"
+        )
+
+    # Check 3: extracted year is more than 1 year before today (likely LLM default)
+    if abs(parsed.year - today.year) > 1:
+        parsed_fmt = parsed.strftime("%d %B %Y")
+        return (
+            f"I noted the date as {parsed_fmt} — could you confirm the year? "
+            f"(The current year is {today.year})"
+        )
+
+    return None
+
+
+# ─── Incident type keyword fallback classifier ────────────────────────────────
+
+_INCIDENT_KW_MAP: dict[str, list[str]] = {
+    "theft":     ["stolen", "steal", "stole", "theft", "chori", "pickpocket",
+                  "missing phone", "missing wallet", "missing purse"],
+    "robbery":   ["robbery", "looted", "loot", "robbed", "snatched", "snatch",
+                  "dakaiti", "loot"],
+    "assault":   ["beat", "beaten", "hit me", "hit us", "punch", "kick", "slap",
+                  "physical", "attacked", "attack", "assault", "maara", "pita",
+                  "injury", "hospital", "fracture", "wound"],
+    "harassment": ["harass", "bully", "bullied", "bully", "making fun", "mock",
+                   "teas", "taunt", "abuse", "abused", "verbal", "insult",
+                   "humiliate", "threaten", "threat", "intimidat", "scare",
+                   "menac", "mischief", "nuisance", "eve teas", "ragging"],
+    "cyber_fraud":["online", "fraud", "cyber", "upi", "payment", "bank",
+                   "account", "otp", "phishing", "scam", "cheated online",
+                   "fake website", "fake call", "whatsapp"],
+    "domestic_violence": ["husband", "wife", "spouse", "domestic", "dowry",
+                          "marital", "in-law", "inlaw", "gharelu"],
+    "sexual_harassment": ["molest", "grope", "voyeur", "stalk", "follow me",
+                          "sexual", "inappropriate touch", "eve teas"],
+    "murder":    ["killed", "death", "murder", "dead", "die", "hataaya"],
+}
+
+
+def _keyword_classify(narrative: str) -> list[str]:
+    """Fast keyword-based incident type classification as a fallback."""
+    t = narrative.lower()
+    found: list[str] = []
+    for itype, kws in _INCIDENT_KW_MAP.items():
+        if any(kw in t for kw in kws):
+            found.append(itype)
+    return found if found else ["other"]
+
+
 # ─── Probe question definitions ───────────────────────────────────────────────
 PROBE_Q: dict[str, dict] = {
     "probe_date": {
         "message": "When did this happen? (date and year if possible)",
         "slot": "incident_date", "input_type": INPUT_TEXT, "skip_label": "Skip",
+    },
+    "probe_date_confirm": {
+        # message is set dynamically; placeholder here
+        "message": "Could you confirm the date of the incident?",
+        "slot": "incident_date", "input_type": INPUT_TEXT, "skip_label": "Skip — keep as extracted",
     },
     "probe_time": {
         "message": "At approximately what time did this happen?",
@@ -103,6 +360,11 @@ PROBE_Q: dict[str, dict] = {
         "message": "Were there any witnesses?\nNames and contact numbers if available.",
         "slot": "witnesses", "input_type": INPUT_TEXT, "skip_label": "No witnesses",
     },
+    "probe_witnesses_detail": {
+        "message": "You mentioned witnesses were present — could you share their names or contact numbers so the police can reach them?",
+        "slot": "witnesses_detail", "input_type": INPUT_TEXT,
+        "skip_label": "Not available right now",
+    },
     "probe_evidence": {
         "message": "Do you have evidence to attach?\n(Photos, videos, screenshots, medical reports, receipts — up to 10 files)",
         "slot": None, "input_type": INPUT_EVIDENCE,
@@ -121,19 +383,26 @@ PROBE_Q: dict[str, dict] = {
         "message": "Your mobile number (the police can reach you on this):",
         "slot": "informant_phone", "input_type": INPUT_TEXT,
     },
+    "probe_informant_phone_retry": {
+        "message": "That doesn't look like a valid mobile number — the police will need to reach you.\nPlease enter a 10-digit Indian mobile number:",
+        "slot": "informant_phone", "input_type": INPUT_TEXT, "skip_label": "Skip — I'll share it at the station",
+    },
 }
 
 # ─── Incident type → BNS section mapping (Citation Guard source-of-truth) ─────
-# Sections are looked up from DB. LLM NEVER outputs section numbers directly.
+# FIX v3.1: BNS 77 (Voyeurism) and 78 (Stalking) removed from general "harassment".
+# They are now in dedicated subtypes only.
 INCIDENT_SECTIONS: dict[str, list[str]] = {
-    "theft":             ["303"],
-    "robbery":           ["309", "310"],
-    "assault":           ["115", "117"],
-    "harassment":        ["77", "78", "351"],
-    "cyber_fraud":       ["318"],
-    "domestic_violence": ["85"],
-    "murder":            ["101", "109"],
-    "other":             [],
+    "theft":              ["303"],
+    "robbery":            ["309", "310"],
+    "assault":            ["115", "117"],
+    "harassment":         ["351", "352"],          # Criminal intimidation + Intentional insult
+    "sexual_harassment":  ["74", "75", "77", "78", "351"],  # Sexual offences
+    "stalking":           ["78"],
+    "cyber_fraud":        ["318"],
+    "domestic_violence":  ["85"],
+    "murder":             ["101", "109"],
+    "other":              [],
 }
 # Sections dropped when user confirmed NO injury
 _INJURY_REQUIRED: set[str] = {"115", "117", "124"}
@@ -141,11 +410,16 @@ _INJURY_REQUIRED: set[str] = {"115", "117", "124"}
 _PROPERTY_REQUIRED: set[str] = {"303", "309", "310"}
 
 
-def _build_probe_queue(slots: dict, incident_types: list[str]) -> list[str]:
+def _build_probe_queue(
+    slots: dict, incident_types: list[str],
+    date_conflict_msg: Optional[str] = None,
+) -> list[str]:
     """Build ordered probe queue from missing slots + incident types."""
     q: list[str] = []
-    # Location slots
-    if not slots.get("incident_date"):
+    # Date confirmation if there's a conflict
+    if date_conflict_msg and not slots.get("incident_date"):
+        q.append("probe_date")
+    elif not slots.get("incident_date"):
         q.append("probe_date")
     if not slots.get("incident_time"):
         q.append("probe_time")
@@ -162,6 +436,8 @@ def _build_probe_queue(slots: dict, incident_types: list[str]) -> list[str]:
     if "cyber_fraud" in incident_types and not slots.get("cyber_amount"):
         q.append("probe_cyber_amount")
     if "harassment" in incident_types and slots.get("harassment_mode") is None:
+        q.append("probe_harassment_online")
+    if "sexual_harassment" in incident_types and slots.get("harassment_mode") is None:
         q.append("probe_harassment_online")
     # Common optional
     if not slots.get("accused"):
@@ -194,10 +470,12 @@ async def reverse_geocode(lat: float, lng: float) -> Optional[str]:
 
 
 # ─── LLM slot extraction ──────────────────────────────────────────────────────
-_EXTRACT_SYS = """You are a legal intake assistant for Indian FIR complaints.
+def _make_extract_sys() -> str:
+    today_str = date.today().strftime("%d %B %Y")
+    return f"""You are a legal intake assistant for Indian FIR complaints.
 Extract structured information from an incident narrative.
 Return ONLY valid JSON (no markdown, no explanation) with these exact fields:
-{
+{{
   "incident_date": null,
   "incident_time": null,
   "incident_place": null,
@@ -208,9 +486,14 @@ Return ONLY valid JSON (no markdown, no explanation) with these exact fields:
   "words_or_threats": null,
   "incident_types": [],
   "description": ""
-}
-For incident_types use ONLY: ["theft","robbery","assault","harassment","cyber_fraud","domestic_violence","murder","other"]
-For injury/property_loss: "yes" / "no" / null (null = not clearly mentioned)"""
+}}
+For incident_types use ONLY these exact strings (choose all that apply):
+["theft","robbery","assault","harassment","sexual_harassment","stalking","cyber_fraud","domestic_violence","murder","other"]
+For injury/property_loss: "yes" / "no" / null (null = not clearly mentioned)
+DATES: Today's date is {today_str}. When no year is specified in the narrative, assume the current year {date.today().year}.
+If the narrative says 'today', set incident_date to today's date: {date.today().isoformat()}.
+If the narrative says 'yesterday', set incident_date to {(date.today().replace(day=date.today().day-1)).isoformat()} (yesterday).
+"""  # noqa: E501
 
 
 async def extract_slots_llm(narrative: str, llm_key: str) -> dict:
@@ -220,7 +503,7 @@ async def extract_slots_llm(narrative: str, llm_key: str) -> dict:
             LlmChat(
                 api_key=llm_key,
                 session_id=f"fir-extract-{uuid.uuid4()}",
-                system_message=_EXTRACT_SYS,
+                system_message=_make_extract_sys(),
             )
             .with_model("anthropic", "claude-haiku-4-5")
             .with_params(max_tokens=600)
@@ -238,17 +521,20 @@ async def extract_slots_llm(narrative: str, llm_key: str) -> dict:
             "incident_date": None, "incident_time": None, "incident_place": None,
             "accused": None, "witnesses": None, "injury": None,
             "property_loss": None, "words_or_threats": None,
-            "incident_types": ["other"],
+            "incident_types": [],  # empty so keyword classifier kicks in
             "description": narrative[:400],
         }
 
 
 # ─── Section suggestion with Citation Guard ───────────────────────────────────
-async def suggest_sections(corpus_db, incident_types: list[str], slots: dict) -> list[dict]:
+async def suggest_sections(
+    corpus_db, incident_types: list[str], slots: dict
+) -> tuple[list[dict], list[dict]]:
     """
     Look up BNS sections from DB based on incident types (Citation Guard).
     Apply consistency check — drop sections that contradict user input.
-    Returns list of confirmed section dicts.
+    Returns (confirmed_sections, dropped_sections) where each dropped entry
+    has {section_number, reason_dropped}.
     """
     from corpus_db import lookup_section as db_lookup
 
@@ -257,10 +543,15 @@ async def suggest_sections(corpus_db, incident_types: list[str], slots: dict) ->
     for t in incident_types:
         candidates.update(INCIDENT_SECTIONS.get(t, []))
 
-    # ── Consistency check ────────────────────────────────────────────────────
+    # ── Consistency check with reason tracking ────────────────────────────
+    dropped_ids: list[dict] = []
     if str(slots.get("injury", "")).lower().startswith("no"):
+        for sec_id in _INJURY_REQUIRED & candidates:
+            dropped_ids.append({"section_number": sec_id, "reason_dropped": "contradicts injury=none"})
         candidates -= _INJURY_REQUIRED
     if str(slots.get("property_loss", "")).lower().startswith("no"):
+        for sec_id in _PROPERTY_REQUIRED & candidates:
+            dropped_ids.append({"section_number": sec_id, "reason_dropped": "contradicts property_loss=none"})
         candidates -= _PROPERTY_REQUIRED
 
     confirmed: list[dict] = []
@@ -277,7 +568,7 @@ async def suggest_sections(corpus_db, incident_types: list[str], slots: dict) ->
         except Exception as exc:
             logger.warning(f"[suggest_sections] lookup {sec_id} failed: {exc}")
 
-    return confirmed
+    return confirmed, dropped_ids
 
 
 # ─── Draft generation ─────────────────────────────────────────────────────────
@@ -305,11 +596,23 @@ async def generate_draft(
     loc = (slots.get("incident_gps_address") or slots.get("incident_place_text") or "[Not provided]")
     date_str = datetime.now(timezone.utc).strftime("%d %B %Y")
 
+    # Build witness text (combine witnesses + witnesses_detail)
+    witnesses_val = slots.get("witnesses", "None mentioned")
+    witnesses_detail = slots.get("witnesses_detail")
+    if witnesses_detail and witnesses_detail.lower() not in ["not available right now", "skip", "n/a"]:
+        witnesses_val = f"{witnesses_val}; {witnesses_detail}"
+
     lang_line = (
         f"Then repeat the ENTIRE letter in {language_name}, "
         f"preceded by: --- {language_name.upper()} TRANSLATION ---"
         if language not in ("en", "english") else ""
     )
+
+    # IMPORTANT: Only include incident_place_text if it actually looks like a place.
+    # Off-topic answers stored in the field are filtered here as a final safety net.
+    place_display = loc
+    if loc and not _is_valid_place_response(loc):
+        place_display = "[To be provided at the time of statement recording]"
 
     prompt = f"""Generate a formal FIR complaint letter with the following details:
 
@@ -318,13 +621,13 @@ Complainant address: {slots.get('informant_address', '[Not provided]')}
 Contact number: {slots.get('informant_phone', '[Not provided]')}
 Date of incident: {slots.get('incident_date', '[Not specified]')}
 Time of incident: {slots.get('incident_time', '[Not specified]')}
-Place of incident: {loc}
+Place of incident: {place_display}
 Incident description: {slots.get('description', '[Not provided]')}
 Accused: {slots.get('accused', 'Not identified')}
 Injury: {slots.get('injury', 'Not reported')}
 Property loss / stolen items: {slots.get('property_loss', 'Not reported')}{' | ' + str(slots.get('theft_items','')) if slots.get('theft_items') else ''}
 Additional details: {slots.get('cyber_amount', '')} {slots.get('assault_mlc', '')} {slots.get('harassment_mode', '')}
-Witnesses: {slots.get('witnesses', 'None mentioned')}
+Witnesses: {witnesses_val}
 
 Applicable BNS sections (suggested):
 {sec_text}
@@ -358,7 +661,7 @@ FREE LEGAL AID: NALSA 15100 | Women Helpline 181 | Cybercrime 1930 | Police 100"
         return (await chat.send_message(UserMessage(text=prompt)) or "").strip()
     except Exception as e:
         logger.error(f"[generate_draft] LLM failed: {e}")
-        return _fallback_draft(slots, sec_text, ev_text, date_str, loc)
+        return _fallback_draft(slots, sec_text, ev_text, date_str, place_display)
 
 
 def _fallback_draft(slots: dict, sec_text: str, ev_text: str, date_str: str, loc: str) -> str:
@@ -405,21 +708,23 @@ def _build_summary(slots: dict, sections: list[dict], incident_types: list[str])
     lines: list[str] = []
     dt = (slots.get("incident_date") or "") + (" " + slots.get("incident_time", "") if slots.get("incident_time") else "")
     if dt.strip():
-        lines.append(f"\ud83d\udcc5 When: {dt.strip()}")
+        lines.append(f"\U0001f4c5 When: {dt.strip()}")
     loc = slots.get("incident_gps_address") or slots.get("incident_place_text")
-    if loc:
-        lines.append(f"\ud83d\udccd Where: {str(loc)[:120]}")
+    if loc and _is_valid_place_response(str(loc)):
+        lines.append(f"\U0001f4cd Where: {str(loc)[:120]}")
+    elif loc:
+        lines.append("\U0001f4cd Where: To be confirmed at the time of statement")
     if incident_types:
         lines.append(f"\u2696\ufe0f Type: {', '.join(t.replace('_', ' ').title() for t in incident_types)}")
     if slots.get("accused"):
-        lines.append(f"\ud83d\udc64 Accused: {str(slots.get('accused', ''))[:100]}")
+        lines.append(f"\U0001f464 Accused: {str(slots.get('accused', ''))[:100]}")
     if slots.get("injury"):
-        lines.append(f"\ud83c\udfe5 Injury: {slots.get('injury')}")
+        lines.append(f"\U0001f3e5 Injury: {slots.get('injury')}")
     if slots.get("informant_name"):
-        lines.append(f"\ud83d\udcdd Complainant: {slots.get('informant_name')}")
+        lines.append(f"\U0001f4dd Complainant: {slots.get('informant_name')}")
     if sections:
         sec_list = ", ".join(f"BNS {s['section_number']}" for s in sections[:4])
-        lines.append(f"\ud83d\udccb Suggested sections: {sec_list}")
+        lines.append(f"\U0001f4cb Suggested sections: {sec_list}")
     return "\n".join(lines) or "Summary not available"
 
 
@@ -436,7 +741,7 @@ async def create_session(
     blank_slots = {
         "incident_date": None, "incident_time": None,
         "incident_place_text": None, "incident_gps": None, "incident_gps_address": None,
-        "description": None, "accused": None, "witnesses": None,
+        "description": None, "accused": None, "witnesses": None, "witnesses_detail": None,
         "injury": None, "property_loss": None, "words_or_threats": None,
         "theft_items": None, "cyber_amount": None, "assault_mlc": None, "harassment_mode": None,
         "informant_name": None, "informant_address": None, "informant_phone": None,
@@ -458,6 +763,9 @@ async def create_session(
         "suggested_sections": [],
         "dropped_sections": [],
         "safety_flags": [],
+        "parked_questions": [],        # v3.1: off-topic user responses parked here
+        "date_conflict_msg": None,     # v3.1: set when contradiction detected
+        "phone_retry_done": False,     # v3.1: one phone retry flag
         "draft": None,
         "created_at": now,
         "updated_at": now,
@@ -548,16 +856,16 @@ async def _dispatch(
         lines = ["Thank you for trusting DHARA with your complaint."]
         if not_safe:
             lines += [
-                "\n⚠️ If you are in immediate danger:",
-                "📞 Police: 100",
-                "📞 Women Helpline: 181",
-                "📞 NALSA Legal Aid: 15100 (free)",
+                "\n\u26a0\ufe0f If you are in immediate danger:",
+                "\U0001f4de Police: 100",
+                "\U0001f4de Women Helpline: 181",
+                "\U0001f4de NALSA Legal Aid: 15100 (free)",
                 "\nYou can still use DHARA to prepare your complaint — let's continue.",
             ]
         if "POCSO" in sf:
-            lines.append("\n🆘 This may involve a child — Childline: 1098 (24×7 FREE)")
+            lines.append("\n\U0001f198 This may involve a child — Childline: 1098 (24×7 FREE)")
         elif sf:
-            lines.append("\n🆘 Women / DV Helpline: 181 (24×7 FREE)")
+            lines.append("\n\U0001f198 Women / DV Helpline: 181 (24×7 FREE)")
         lines.append("\nPlease tell me in your own words: what happened?\nTake your time — speak or type freely.")
         await db.fir_sessions.update_one(
             {"session_id": sid},
@@ -580,6 +888,13 @@ async def _dispatch(
                 "input_type": INPUT_VOICE_TEXT, "quick_replies": [], "completed": False,
             }
         extracted = await extract_slots_llm(narrative, llm_key)
+
+        # ── FIX 8: Keyword fallback for incident_types ──────────────────────
+        raw_types = extracted.get("incident_types") or []
+        if not raw_types or raw_types == ["other"]:
+            raw_types = _keyword_classify(narrative)
+        new_types = raw_types if raw_types else ["other"]
+
         # Merge extracted slots (never overwrite existing)
         for key in ["incident_date", "incident_time", "accused", "witnesses",
                     "injury", "property_loss", "words_or_threats", "description"]:
@@ -587,29 +902,40 @@ async def _dispatch(
                 slots[key] = extracted[key]
         if extracted.get("incident_place") and not slots.get("incident_place_text"):
             slots["incident_place_text"] = extracted["incident_place"]
-        new_types = extracted.get("incident_types") or ["other"]
+
+        # ── FIX 1: Date contradiction detection ─────────────────────────────
+        date_conflict_msg = _has_date_conflict(narrative, extracted.get("incident_date"))
+        if date_conflict_msg:
+            # Clear the potentially wrong extracted date so probe_date is triggered
+            slots["incident_date"] = None
+
         sf_all = list(set(list(session.get("safety_flags", [])) + _detect_safety_flags(narrative)))
-        probe_queue = _build_probe_queue(slots, new_types)
+        probe_queue = _build_probe_queue(slots, new_types, date_conflict_msg)
         first_probe = probe_queue[0] if probe_queue else None
         remaining = probe_queue[1:] if probe_queue else []
+
         await db.fir_sessions.update_one(
             {"session_id": sid},
             {"$set": {
                 "stage": STAGE_PROBE if first_probe else STAGE_SECTION_SUGGEST,
                 "incident_types": new_types, "slots": slots,
                 "pending_probes": remaining, "current_probe": first_probe,
-                "safety_flags": sf_all, "updated_at": now,
+                "safety_flags": sf_all,
+                "date_conflict_msg": date_conflict_msg,
+                "updated_at": now,
             }},
         )
         if first_probe:
             types_str = " and ".join(t.replace("_", " ") for t in new_types[:2])
             pdef = PROBE_Q[first_probe]
+            # For probe_date when conflict detected, use the conflict message
+            bot_msg_suffix = date_conflict_msg if (first_probe == "probe_date" and date_conflict_msg) else pdef["message"]
             return {
                 "session_id": sid, "stage": STAGE_PROBE, "probe_key": first_probe,
                 "bot_message": (
                     f"Thank you for sharing that. I can see this involves {types_str}.\n\n"
                     f"I have a few clarifying questions to complete your complaint.\n\n"
-                    f"{pdef['message']}"
+                    f"{bot_msg_suffix}"
                 ),
                 "input_type": pdef["input_type"],
                 "quick_replies": pdef.get("quick_replies", []),
@@ -638,7 +964,7 @@ async def _dispatch(
                 )
                 return {
                     "session_id": sid, "stage": STAGE_GPS_CONFIRM,
-                    "bot_message": f"I found this address:\n\n\ud83d\udccd {addr}\n\nIs this correct?",
+                    "bot_message": f"I found this address:\n\n\U0001f4cd {addr}\n\nIs this correct?",
                     "input_type": INPUT_QUICK_REPLY,
                     "quick_replies": ["Yes, that's correct", "No, use text description"],
                     "confirmed_address": addr, "completed": False,
@@ -656,18 +982,143 @@ async def _dispatch(
 
         elif slot_key:
             if action == "skip":
-                pass
+                pass  # advance to next probe
+
             elif user_message:
-                if cp == "probe_injury":
+                # ── FIX 2 & 3: Place validation + parked_questions ───────────
+                if cp == "probe_place_text":
+                    if _is_valid_place_response(user_message):
+                        slots["incident_place_text"] = user_message
+                        await db.fir_sessions.update_one(
+                            {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                        )
+                    else:
+                        # Park the off-topic response and RE-ASK the same probe
+                        await db.fir_sessions.update_one(
+                            {"session_id": sid},
+                            {
+                                "$push": {"parked_questions": {
+                                    "probe": cp,
+                                    "user_response": user_message,
+                                    "reason": "off_topic",
+                                    "timestamp": now,
+                                }},
+                                "$set": {"updated_at": now},
+                            },
+                        )
+                        # Return the same probe question again with a note
+                        return {
+                            "session_id": sid, "stage": STAGE_PROBE, "probe_key": cp,
+                            "bot_message": (
+                                f"I've noted your question and will come back to it.\n\n"
+                                f"For the complaint, I need the **location** of the incident.\n"
+                                f"{pdef['message']}"
+                            ),
+                            "input_type": pdef["input_type"],
+                            "quick_replies": pdef.get("quick_replies", []),
+                            "skip_label": pdef.get("skip_label"),
+                            "completed": False,
+                        }
+
+                # ── FIX 4: Accused slot guard ────────────────────────────────
+                elif cp == "probe_accused":
+                    if _is_witness_answer_in_accused_probe(user_message):
+                        # User is answering about witnesses, not accused
+                        # Route to witnesses slot if not already set
+                        if not slots.get("witnesses"):
+                            slots["witnesses"] = user_message
+                        slots["accused"] = "Not identified by complainant"
+                        await db.fir_sessions.update_one(
+                            {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                        )
+                    else:
+                        slots["accused"] = user_message
+                        await db.fir_sessions.update_one(
+                            {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                        )
+
+                # ── FIX 5: Witness vague answer → follow-up probe ─────────────
+                elif cp == "probe_witnesses":
+                    slots["witnesses"] = user_message
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
+                    if _is_vague_witness_response(user_message):
+                        # Insert detail follow-up NEXT in the queue
+                        new_pending = ["probe_witnesses_detail"] + pending_probes
+                        await db.fir_sessions.update_one(
+                            {"session_id": sid},
+                            {"$set": {"pending_probes": new_pending, "updated_at": now}}
+                        )
+                        return await _advance_probe(
+                            db, corpus_db, sid, slots, new_pending, incident_types, now
+                        )
+
+                elif cp == "probe_witnesses_detail":
+                    # Append detail to existing witnesses string
+                    existing = slots.get("witnesses", "")
+                    slots["witnesses_detail"] = user_message
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
+
+                # ── FIX 6: Phone validation + one retry ──────────────────────
+                elif cp == "probe_informant_phone":
+                    if not _is_valid_phone(user_message):
+                        phone_retry_done = session.get("phone_retry_done", False)
+                        if not phone_retry_done:
+                            # One retry
+                            await db.fir_sessions.update_one(
+                                {"session_id": sid},
+                                {"$set": {
+                                    "phone_retry_done": True,
+                                    "pending_probes": ["probe_informant_phone_retry"] + pending_probes,
+                                    "updated_at": now,
+                                }},
+                            )
+                            return {
+                                "session_id": sid, "stage": STAGE_PROBE,
+                                "probe_key": "probe_informant_phone_retry",
+                                "bot_message": PROBE_Q["probe_informant_phone_retry"]["message"],
+                                "input_type": INPUT_TEXT,
+                                "skip_label": PROBE_Q["probe_informant_phone_retry"]["skip_label"],
+                                "quick_replies": [], "completed": False,
+                            }
+                        else:
+                            # Second attempt — accept whatever they give (maybe they have a reason)
+                            slots["informant_phone"] = user_message
+                            await db.fir_sessions.update_one(
+                                {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                            )
+                    else:
+                        slots["informant_phone"] = user_message
+                        await db.fir_sessions.update_one(
+                            {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                        )
+
+                elif cp == "probe_informant_phone_retry":
+                    # Accept whatever is given at this point
+                    slots["informant_phone"] = user_message
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
+
+                elif cp == "probe_injury":
                     ml = user_message.lower()
                     slots["injury"] = "yes" if ("yes" in ml or "injur" in ml) else "no"
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
                 elif cp == "probe_harassment_online":
                     slots["harassment_mode"] = user_message
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
                 else:
                     slots[slot_key] = user_message
-                await db.fir_sessions.update_one(
-                    {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}},
-                )
+                    await db.fir_sessions.update_one(
+                        {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
+                    )
 
         return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now)
 
@@ -778,10 +1229,15 @@ async def _enter_section_suggest(
     db, corpus_db, sid: str, slots: dict, incident_types: list[str], now: str,
 ) -> dict:
     """Run Citation Guard and enter section_suggest stage."""
-    confirmed = await suggest_sections(corpus_db, incident_types, slots)
+    confirmed, dropped = await suggest_sections(corpus_db, incident_types, slots)
     await db.fir_sessions.update_one(
         {"session_id": sid},
-        {"$set": {"stage": STAGE_SECTION_SUGGEST, "suggested_sections": confirmed, "updated_at": now}},
+        {"$set": {
+            "stage": STAGE_SECTION_SUGGEST,
+            "suggested_sections": confirmed,
+            "dropped_sections": dropped,
+            "updated_at": now,
+        }},
     )
     if confirmed:
         sec_lines = "\n".join(
