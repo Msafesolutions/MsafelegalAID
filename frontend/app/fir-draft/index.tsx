@@ -51,6 +51,61 @@ const FIR_LANGUAGES = [
 ];
 const FIR_LANG_KEY = 'fir_draft_lang_v3';
 const FIR_SESSION_KEY = 'fir_active_session_v3';
+const FIR_MODULE_KEY = 'fir_selected_module_v1';
+
+// ── Incident modules ──────────────────────────────────────────────────────────
+const INCIDENT_MODULES = [
+  {
+    key: 'cybercrime',
+    emoji: '💻',
+    label: 'Cybercrime',
+    sublabel: 'Online fraud · UPI scam · Hacking',
+    bns: 'IT Act · BNS 318',
+    color: '#1A3F74',
+  },
+  {
+    key: 'domestic_violence',
+    emoji: '🏠',
+    label: 'Domestic Violence',
+    sublabel: 'Dowry · 498A · DV Act',
+    bns: 'BNS 85 · DV Act',
+    color: '#7B2D8B',
+  },
+  {
+    key: 'theft',
+    emoji: '📱',
+    label: 'Theft / Robbery',
+    sublabel: 'Stolen phone · Snatching · Burglary',
+    bns: 'BNS 303–310',
+    color: '#B45309',
+  },
+  {
+    key: 'posh',
+    emoji: '👔',
+    label: 'Workplace Harassment',
+    sublabel: 'POSH Act · Sexual harassment at work',
+    bns: 'BNS 74–75 · POSH 2013',
+    color: '#0F766E',
+  },
+  {
+    key: 'consumer_fraud',
+    emoji: '💳',
+    label: 'Consumer / Banking Fraud',
+    sublabel: 'E-commerce · UPI · Defective goods',
+    bns: 'BNS 318 · Consumer Act',
+    color: '#1D4ED8',
+  },
+  {
+    key: 'other',
+    emoji: '❓',
+    label: 'Other Incident',
+    sublabel: 'Assault · Murder · General complaint',
+    bns: 'All BNS sections',
+    color: '#4B5563',
+  },
+] as const;
+
+type ModuleKey = typeof INCIDENT_MODULES[number]['key'];
 
 // Allowed file types for evidence upload
 const ALLOWED_MIME = [
@@ -159,6 +214,8 @@ export default function FirDraftScreen() {
   // ── Language ───────────────────────────────────────────────────────────────
   const [language, setLanguage] = useState('en');
   const [sessionStarted, setSessionStarted] = useState(false);
+  // ── Module selection ───────────────────────────────────────────────────────
+  const [selectedModule, setSelectedModule] = useState<ModuleKey | null>(null);
 
   // ── Voice recording ────────────────────────────────────────────────────────
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -299,6 +356,7 @@ export default function FirDraftScreen() {
           user_id: user?.id || `anon-${Date.now()}`,
           language,
           session_location_start: sessionLocationStart,
+          incident_type: selectedModule ?? 'other',
         }),
       });
       if (!res.ok) throw new Error('Session creation failed');
@@ -949,6 +1007,34 @@ ${data.bot_message}`);
             </View>
           </View>
 
+          {/* ── Incident Module Picker ────────────────────────────────── */}
+          <Text style={styles.langLabel}>What happened?</Text>
+          <View style={styles.moduleGrid}>
+            {INCIDENT_MODULES.map(mod => {
+              const isSelected = selectedModule === mod.key;
+              return (
+                <Pressable
+                  key={mod.key}
+                  testID={`module-${mod.key}`}
+                  style={[styles.moduleCard, isSelected && { borderColor: mod.color, borderWidth: 2.5, backgroundColor: `${mod.color}12` }]}
+                  onPress={() => setSelectedModule(isSelected ? null : mod.key)}
+                >
+                  <View style={[styles.moduleEmojiBadge, { backgroundColor: `${mod.color}18` }]}>
+                    <Text style={styles.moduleEmoji}>{mod.emoji}</Text>
+                  </View>
+                  <View style={styles.moduleInfo}>
+                    <Text style={[styles.moduleLabel, isSelected && { color: mod.color }]} numberOfLines={1}>{mod.label}</Text>
+                    <Text style={styles.moduleSub} numberOfLines={1}>{mod.sublabel}</Text>
+                    <Text style={[styles.moduleBns, { color: mod.color }]} numberOfLines={1}>{mod.bns}</Text>
+                  </View>
+                  {isSelected && (
+                    <Ionicons name="checkmark-circle" size={18} color={mod.color} style={styles.moduleCheck} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+
           {/* Language picker */}
           <Text style={styles.langLabel}>Draft language</Text>
           <View style={styles.langRow}>
@@ -976,7 +1062,13 @@ ${data.bot_message}`);
 
           {/* Start button */}
           <Pressable testID="fir-start-complaint" style={styles.startBtn} onPress={startSession}>
-            <Text style={styles.startBtnText}>{savedSessionId ? 'Start New Complaint' : 'Start My Complaint'}</Text>
+            {selectedModule && selectedModule !== 'other' ? (
+              <Text style={styles.startBtnText}>
+                {`Start ${INCIDENT_MODULES.find(m => m.key === selectedModule)?.label ?? ''} Complaint`}
+              </Text>
+            ) : (
+              <Text style={styles.startBtnText}>{savedSessionId ? 'Start New Complaint' : 'Start My Complaint'}</Text>
+            )}
             <Ionicons name="arrow-forward" size={20} color="#fff" />
           </Pressable>
         </ScrollView>
@@ -1675,6 +1767,20 @@ const styles = StyleSheet.create({
   langChipActive: { backgroundColor: NAVY, borderColor: NAVY },
   langChipText: { fontSize: 13, color: MUTED, fontWeight: '500' },
   langChipTextActive: { color: '#fff' },
+  // ── Module grid ────────────────────────────────────────────────────────────
+  moduleGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 22 },
+  moduleCard: {
+    width: '47.5%', flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: SURFACE, borderRadius: 12, borderWidth: 1.5,
+    borderColor: BORDER, paddingVertical: 10, paddingHorizontal: 10, minHeight: 66,
+  },
+  moduleEmojiBadge: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  moduleEmoji: { fontSize: 20 },
+  moduleInfo: { flex: 1, minWidth: 0 },
+  moduleLabel: { fontSize: 12.5, fontWeight: '700', color: NAVY, lineHeight: 17 },
+  moduleSub: { fontSize: 10.5, color: MUTED, marginTop: 1, lineHeight: 14 },
+  moduleBns: { fontSize: 10, fontWeight: '600', marginTop: 2 },
+  moduleCheck: { position: 'absolute', top: 6, right: 6 },
   disclaimer: {
     flexDirection: 'row', gap: 8, backgroundColor: '#F0F4FF',
     borderRadius: 10, padding: 12, marginBottom: 24,

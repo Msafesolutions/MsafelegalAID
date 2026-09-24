@@ -585,6 +585,8 @@ INCIDENT_SECTIONS: dict[str, list[str]] = {
     "stalking":           ["78"],
     "cyber_fraud":        ["318"],
     "domestic_violence":  ["85"],
+    "posh":               ["74", "75", "78", "351"],  # POSH + Criminal intimidation + Stalking
+    "consumer_fraud":     ["318", "316"],             # Cheating + Criminal breach of trust
     "murder":             ["101", "109"],
     "other":              [],
 }
@@ -638,6 +640,32 @@ def _build_probe_queue(
         q.append("probe_harassment_online")
     if "sexual_harassment" in incident_types and slots.get("harassment_mode") is None:
         q.append("probe_harassment_online")
+    # ── Domestic Violence specific ────────────────────────────────────────────
+    if "domestic_violence" in incident_types:
+        if not slots.get("dv_duration"):
+            q.append("probe_dv_duration")
+        if slots.get("dv_children") is None:
+            q.append("probe_dv_children")
+    # ── POSH / Workplace Harassment specific ──────────────────────────────────
+    if "posh" in incident_types:
+        if not slots.get("posh_employer"):
+            q.append("probe_posh_employer")
+        if not slots.get("posh_role"):
+            q.append("probe_posh_role")
+        if slots.get("posh_icc") is None:
+            q.append("probe_posh_icc")
+    # ── Consumer / Banking Fraud specific ─────────────────────────────────────
+    if "consumer_fraud" in incident_types:
+        if not slots.get("consumer_company"):
+            q.append("probe_consumer_company")
+        if not slots.get("consumer_order_id"):
+            q.append("probe_consumer_order_id")
+        if not slots.get("cyber_amount"):
+            q.append("probe_cyber_amount")
+        if not slots.get("transaction_ids"):
+            q.append("probe_transaction_ids")
+        if not slots.get("scammer_contact"):
+            q.append("probe_scammer_contact")
     # Common optional
     if not slots.get("accused"):
         q.append("probe_accused")
@@ -687,7 +715,7 @@ Return ONLY valid JSON (no markdown, no explanation) with these exact fields:
   "description": ""
 }}
 For incident_types use ONLY these exact strings (choose all that apply):
-["theft","robbery","assault","harassment","sexual_harassment","stalking","cyber_fraud","domestic_violence","murder","other"]
+["theft","robbery","assault","harassment","sexual_harassment","stalking","cyber_fraud","domestic_violence","posh","consumer_fraud","murder","other"]
 For injury/property_loss: "yes" / "no" / null (null = not clearly mentioned)
 DATES: Today's date is {today_str}. When no year is specified in the narrative, assume the current year {date.today().year}.
 If the narrative says 'today', set incident_date to today's date: {date.today().isoformat()}.
@@ -727,13 +755,14 @@ async def extract_slots_llm(narrative: str, llm_key: str) -> dict:
 
 # ─── Section suggestion with Citation Guard ───────────────────────────────────
 async def suggest_sections(
-    corpus_db, incident_types: list[str], slots: dict
+    corpus_db, incident_types: list[str], slots: dict, language: str = "en"
 ) -> tuple[list[dict], list[dict]]:
     """
     Look up BNS sections from DB based on incident types (Citation Guard).
     Apply consistency check — drop sections that contradict user input.
     Returns (confirmed_sections, dropped_sections) where each dropped entry
     has {section_number, reason_dropped}.
+    Headings are translated to `language` when a translation exists.
     """
     from corpus_db import lookup_section as db_lookup
 
@@ -758,9 +787,13 @@ async def suggest_sections(
         try:
             doc = await db_lookup(corpus_db, sec_id, act_hint="Bharatiya Nyaya Sanhita")
             if doc and not doc.get("is_dead_law") and not doc.get("dead_warning"):
+                raw_heading = doc.get("section_heading", "")
                 confirmed.append({
                     "section_number": doc.get("section_number", sec_id),
-                    "section_heading": doc.get("section_heading", ""),
+                    "section_heading": _translate_bns_heading(
+                        doc.get("section_number", sec_id), raw_heading, language
+                    ),
+                    "section_heading_en": raw_heading,   # always keep English for the draft
                     "act_name": doc.get("act_name", "Bharatiya Nyaya Sanhita, 2023"),
                     "judicial_flag": doc.get("judicial_flag"),
                 })
@@ -948,6 +981,7 @@ async def create_session(
     user_id: str,
     language: str,
     session_location_start: Optional[dict] = None,
+    incident_type: Optional[str] = None,
 ) -> dict:
     """Create a fresh, blank FIR session. No carryover from any previous session."""
     sid = str(uuid.uuid4())
@@ -962,7 +996,26 @@ async def create_session(
         "incident_place_detail": None, "transaction_ids": None, "scammer_contact": None,
         "date_confirmed": None,
         "informant_name": None, "informant_address": None, "informant_phone": None,
+        # New module-specific slots
+        "dv_duration": None, "dv_children": None,
+        "posh_employer": None, "posh_role": None, "posh_icc": None,
+        "consumer_company": None, "consumer_order_id": None,
     }
+    # Pre-seed incident type if user selected a module
+    pre_seeded_types: list[str] = []
+    if incident_type and incident_type not in ("other", "Other", ""):
+        # Map frontend module keys to engine incident type strings
+        _type_map = {
+            "cybercrime": "cyber_fraud",
+            "cyber_fraud": "cyber_fraud",
+            "domestic_violence": "domestic_violence",
+            "theft": "theft",
+            "posh": "posh",
+            "consumer_fraud": "consumer_fraud",
+        }
+        mapped = _type_map.get(incident_type.lower(), incident_type.lower())
+        pre_seeded_types = [mapped]
+
     doc = {
         "session_id": sid,
         "user_id": user_id,
@@ -973,7 +1026,7 @@ async def create_session(
         "current_probe": None,
         "session_location_start": session_location_start,
         "session_location_end": None,
-        "incident_types": [],
+        "incident_types": pre_seeded_types,
         "narrative_turns": [],
         "slots": blank_slots,
         "evidence_files": [],
@@ -982,7 +1035,7 @@ async def create_session(
         "safety_flags": [],
         "parked_questions": [],        # v3.1: off-topic user responses parked here
         "date_conflict_msg": None,     # v3.1: set when contradiction detected
-        "relative_date_display": None, # v3.3: absolute date computed from relative ("yesterday" → "14 June 2026")
+        "relative_date_display": None, # v3.3: absolute date computed from relative
         "phone_retry_done": False,     # v3.1: one phone retry flag
         "probe_history": [],           # v3.3: [{probe, slot, value}] for back navigation
         "draft": None,
@@ -990,14 +1043,31 @@ async def create_session(
         "updated_at": now,
     }
     await db.fir_sessions.insert_one(doc)
-    return {
-        "session_id": sid,
-        "stage": STAGE_SAFETY_GATE,
-        "bot_message": (
+
+    # Build welcome message — module-specific if pre-selected, generic otherwise
+    if pre_seeded_types:
+        module_key = incident_type.lower() if incident_type else ""
+        lang_msg = _MODULE_WELCOME.get(module_key, {}).get(language) or \
+                   _MODULE_WELCOME.get(module_key, {}).get("en", "")
+        if lang_msg:
+            bot_message = f"{lang_msg}\n\n🔒 Before we begin: are you safe right now?"
+        else:
+            bot_message = (
+                "Hello! I'm DHARA, your legal assistant.\n"
+                "I'll help you prepare a formal FIR draft step by step.\n\n"
+                "Before we begin: are you safe right now?"
+            )
+    else:
+        bot_message = (
             "Hello! I'm DHARA, your legal assistant.\n"
             "I'll help you prepare a formal FIR draft step by step.\n\n"
             "Before we begin: are you safe right now?"
-        ),
+        )
+
+    return {
+        "session_id": sid,
+        "stage": STAGE_SAFETY_GATE,
+        "bot_message": bot_message,
         "input_type": INPUT_QUICK_REPLY,
         "quick_replies": ["Yes, I'm safe", "No, I need help"],
         "safety_flags": [],
@@ -1273,13 +1343,13 @@ async def _dispatch(
                 "show_cybercrime_alert": show_cyber_alert,
                 "completed": False,
             }
-        return await _enter_section_suggest(db, corpus_db, sid, slots, new_types, now)
+        return await _enter_section_suggest(db, corpus_db, sid, slots, new_types, now, language)
 
     # ── Probe ─────────────────────────────────────────────────────────────────
     elif stage == STAGE_PROBE:
         cp = current_probe
         if not cp:
-            return await _enter_section_suggest(db, corpus_db, sid, slots, incident_types, now)
+            return await _enter_section_suggest(db, corpus_db, sid, slots, incident_types, now, language)
         pdef = PROBE_Q.get(cp, {})
         slot_key = pdef.get("slot")
 
@@ -1492,7 +1562,7 @@ async def _dispatch(
                     if force and "theft" in incident_types and "robbery" not in incident_types:
                         new_types = list(incident_types) + ["robbery"]
                         # Re-run section retrieval
-                        new_sections, _ = await suggest_sections(corpus_db, new_types, slots)
+                        new_sections, _ = await suggest_sections(corpus_db, new_types, slots, language)
                         # Insert injury + mlc probes if not already in queue
                         extra = []
                         if "probe_injury" not in pending_probes and not slots.get("injury"):
@@ -1688,14 +1758,14 @@ async def _advance_probe(
             "probe_progress_done": done_count,
             "probe_progress_total": total_probes,
         }
-    return await _enter_section_suggest(db, corpus_db, sid, slots, incident_types, now)
+    return await _enter_section_suggest(db, corpus_db, sid, slots, incident_types, now, language)
 
 
 async def _enter_section_suggest(
-    db, corpus_db, sid: str, slots: dict, incident_types: list[str], now: str,
+    db, corpus_db, sid: str, slots: dict, incident_types: list[str], now: str, language: str = "en",
 ) -> dict:
     """Run Citation Guard and enter section_suggest stage."""
-    confirmed, dropped = await suggest_sections(corpus_db, incident_types, slots)
+    confirmed, dropped = await suggest_sections(corpus_db, incident_types, slots, language)
     await db.fir_sessions.update_one(
         {"session_id": sid},
         {"$set": {

@@ -3128,6 +3128,7 @@ class FirSessionIn(BaseModel):
     user_id: str
     language: str = "en"
     session_location_start: Optional[dict] = None   # {"lat": ..., "lng": ..., "address": "..."}
+    incident_type: Optional[str] = None             # pre-selected module: "cybercrime" | "domestic_violence" | "theft" | "posh" | "consumer_fraud" | "other"
 
 
 class FirTurnIn(BaseModel):
@@ -3279,6 +3280,7 @@ async def fir_create_session(body: FirSessionIn):
         user_id=body.user_id,
         language=body.language,
         session_location_start=body.session_location_start,
+        incident_type=body.incident_type,
     )
 
 
