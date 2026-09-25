@@ -10,10 +10,6 @@
  * │  § 4  Our commitments      (static)    │
  * └──────────────────────────────────────┘
  *
- * PLACEHOLDERS — ctrl+F before launch:
- *   {{GRIEVANCE_EMAIL}}        — grievance officer inbox
- *   {{SUPPORT_EMAIL}}          — general support inbox
- *   {{GRIEVANCE_OFFICER_NAME}} — designated grievance officer name
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -32,10 +28,10 @@ import { useRouter } from 'expo-router';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
 
-// ── Placeholder constants — DO NOT hard-code; replace before launch ──────────
-const GRIEVANCE_EMAIL        = '{{GRIEVANCE_EMAIL}}';
-const SUPPORT_EMAIL          = '{{SUPPORT_EMAIL}}';
-const GRIEVANCE_OFFICER_NAME = '{{GRIEVANCE_OFFICER_NAME}}';
+// ── Contact constants ─────────────────────────────────────────────────────────
+const GRIEVANCE_EMAIL        = 'grievance@calviltech.com';
+const SUPPORT_EMAIL          = 'support@calviltech.com';
+const GRIEVANCE_OFFICER_NAME = 'The Grievance Officer, Calvil Technologies';
 
 // ── Accent colours (spec) ─────────────────────────────────────────────────────
 const PRIMARY     = theme.colors.primary;

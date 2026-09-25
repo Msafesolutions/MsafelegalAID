@@ -41,7 +41,7 @@ export default function AdvocateTab() {
 
   if (profile === 'loading') {
     return (
-      <SafeAreaView style={s.safe}>
+      <SafeAreaView style={s.safe} edges={['top']}>
         <View style={s.header}>
           <Text style={s.headerTitle}>Lawyer Mode</Text>
         </View>
@@ -54,7 +54,7 @@ export default function AdvocateTab() {
 
   if (profile === 'none') {
     return (
-      <SafeAreaView style={s.safe}>
+      <SafeAreaView style={s.safe} edges={['top']}>
         <View style={s.header}>
           <Text style={s.headerTitle}>Lawyer Mode</Text>
         </View>
@@ -113,7 +113,7 @@ export default function AdvocateTab() {
   ];
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.header}>
         <View style={{ flex: 1 }}>
           <Text style={s.headerTitle}>Lawyer Mode</Text>
