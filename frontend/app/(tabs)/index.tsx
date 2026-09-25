@@ -11,12 +11,13 @@ import {
   Modal,
   Animated,
   PanResponder,
+  useWindowDimensions,
   type GestureResponderEvent,
   type PanResponderGestureState,
 } from 'react-native';
 import { crossAlert } from '@/src/utils/crossAlert';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import {
@@ -198,6 +199,8 @@ const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicon
 export default function ChatScreen() {
   const { token, user, language, autoSpeak, ttsVolume, ttsVoiceMode, refreshUser, forceLogout } = useAuth();
   const router = useRouter();
+  const { height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Msg[]>([]);
   // Per-message toggle for the "View Legal Details" summary-first disclosure.
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
@@ -210,6 +213,8 @@ export default function ChatScreen() {
   const [proMode, setProMode] = useState(false);
   // v3.3: FIR sessions for "Continue your reports" banner
   const [activeFirSessions, setActiveFirSessions] = useState<any[]>([]);
+  // UI: bottom-sheet to show all saved reports
+  const [reportsSheetOpen, setReportsSheetOpen] = useState(false);
   const [paywall, setPaywall] = useState<null | {
     samples_used: number;
     samples_limit: number;
@@ -1527,6 +1532,12 @@ export default function ChatScreen() {
 
   const activeSuggestions = proMode ? getProSuggestions(language.code) : getBasicSuggestions(language.code);
 
+  /** True whenever the user has sent at least one message — collapses the reports strip */
+  const chatIsActive = messages.length > 0;
+
+  /** Minimum pixel height the chat zone must occupy (40% of screen) */
+  const minChatHeight = screenHeight * 0.4;
+
   /** Keep an answer on this phone so it opens with no network at all. */
   const saveAnswer = useCallback(
     async (m: Msg) => {
@@ -1559,6 +1570,12 @@ export default function ChatScreen() {
           only their background color on native — Platform.OS gating below
           keeps native layout completely untouched. */}
       <View style={styles.webContentWrap}>
+
+      {/* ═══════════════════════════ TOP ZONE ════════════════════════════
+          Fixed area — header, ticker, FIR action card, reports strip.
+          Does NOT scroll with the chat conversation. */}
+      <View style={styles.topZone}>
+
       {/* ── HEADER — title · lang chip · usage pill · New Chat ─────────────── */}
       <View style={styles.header}>
         {/* Left: branding + language chip */}
@@ -1647,43 +1664,81 @@ export default function ChatScreen() {
         <Ionicons name="chevron-forward" size={16} color={theme.colors.brand} />
       </Pressable>
 
-      {/* v3.3: Continue your reports */}
+      {/* v3.3: Continue your reports — collapses to a slim strip when chat is active */}
       {activeFirSessions.length > 0 && (
-        <View style={styles.firResumeSection}>
-          <Text style={styles.firResumeSectionTitle}>Continue your reports</Text>
-          {activeFirSessions.map((sess: any) => {
-            const dateStr = sess.updated_at ? new Date(sess.updated_at).toLocaleDateString('en-IN') : '';
-            const incidentTypes: string[] = sess.incident_types || ['complaint'];
-            const stage = sess.stage ? sess.stage.replace(/_/g, ' ') : 'in progress';
-            return (
-              <Pressable
-                key={sess.session_id}
-                style={styles.firResumeCard}
-                onPress={() => router.push({ pathname: '/fir-draft', params: { resumeId: sess.session_id } } as any)}
-              >
-                <View style={styles.firResumeIconWrap}>
-                  <Ionicons name="document-text-outline" size={18} color={theme.colors.brand} />
-                </View>
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  {/* Crime-type badges — each type displayed as a readable pill */}
-                  <View style={styles.crimeTypeBadgeRow}>
-                    {incidentTypes.slice(0, 3).map((type: string, i: number) => (
-                      <View key={i} style={styles.crimeTypeBadge}>
-                        <Text style={styles.crimeTypeBadgeText} numberOfLines={1}>
-                          {type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ')}
-                        </Text>
-                      </View>
-                    ))}
+        chatIsActive ? (
+          /* ── Slim collapsed strip ── */
+          <Pressable
+            testID="reports-strip"
+            style={styles.reportStrip}
+            onPress={() => setReportsSheetOpen(true)}
+            hitSlop={4}
+          >
+            <Ionicons name="document-text-outline" size={14} color={theme.colors.brand} />
+            <Text style={styles.reportStripText}>
+              {activeFirSessions.length} saved report{activeFirSessions.length > 1 ? 's' : ''} ›
+            </Text>
+          </Pressable>
+        ) : (
+          /* ── Expanded cards (max 2 visible) ── */
+          <View style={styles.firResumeSection}>
+            <Text style={styles.firResumeSectionTitle}>Continue your reports</Text>
+            {activeFirSessions.slice(0, 2).map((sess: any) => {
+              const dateStr = sess.updated_at ? new Date(sess.updated_at).toLocaleDateString('en-IN') : '';
+              const incidentTypes: string[] = sess.incident_types || ['complaint'];
+              const stage = sess.stage ? sess.stage.replace(/_/g, ' ') : 'in progress';
+              return (
+                <Pressable
+                  key={sess.session_id}
+                  style={styles.firResumeCard}
+                  onPress={() => router.push({ pathname: '/fir-draft', params: { resumeId: sess.session_id } } as any)}
+                >
+                  <View style={styles.firResumeIconWrap}>
+                    <Ionicons name="document-text-outline" size={18} color={theme.colors.brand} />
                   </View>
-                  <Text style={styles.firResumeCardSub}>{stage} · {dateStr}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={theme.colors.onSurfaceTertiary} />
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    {/* Crime-type badges — each type displayed as a readable pill */}
+                    <View style={styles.crimeTypeBadgeRow}>
+                      {incidentTypes.slice(0, 3).map((type: string, i: number) => (
+                        <View key={i} style={styles.crimeTypeBadge}>
+                          <Text style={styles.crimeTypeBadgeText} numberOfLines={1}>
+                            {type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ')}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                    <Text style={styles.firResumeCardSub}>{stage} · {dateStr}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={theme.colors.onSurfaceTertiary} />
+                </Pressable>
+              );
+            })}
+            {activeFirSessions.length > 2 && (
+              <Pressable
+                testID="reports-view-all"
+                style={styles.viewAllRow}
+                onPress={() => setReportsSheetOpen(true)}
+              >
+                <Text style={styles.viewAllText}>View all ({activeFirSessions.length}) ›</Text>
               </Pressable>
-            );
-          })}
+            )}
+          </View>
+        )
+      )}
+
+      </View>{/* ── end topZone ── */}
+
+      {/* ─── Chat zone divider ──────────────────────────────────────────────
+          Shown whenever a conversation is active. Provides a clear visual
+          break between the top controls and the conversation area. */}
+      {chatIsActive && (
+        <View style={styles.chatDivider}>
+          <Text style={styles.chatDividerLabel}>CONVERSATION</Text>
         </View>
       )}
 
+      {/* ═══════════════════════════ BOTTOM ZONE ═════════════════════════
+          Fills remaining screen height and scrolls independently. */}
       {/*
         keyboardVerticalOffset MUST be 0 here — it is not "the height of the chrome
         below us". The library computes the lift as
@@ -1698,7 +1753,7 @@ export default function ChatScreen() {
         3-4 lines on narrow phones) needs no hardcoded constant to track.
       */}
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={[styles.chatZone, { minHeight: minChatHeight }]}
         behavior="translate-with-padding"
         keyboardVerticalOffset={0}
       >
@@ -2022,7 +2077,10 @@ export default function ChatScreen() {
             </Pressable>
           </View>
         ) : (
-          <View style={recording ? styles.recordingBar : styles.inputBar} testID={recording ? 'rec-bar' : 'input-bar'}>
+          <View
+            style={[recording ? styles.recordingBar : styles.inputBar, { paddingBottom: Math.max(theme.spacing.md, insets.bottom) }]}
+            testID={recording ? 'rec-bar' : 'input-bar'}
+          >
             {recording ? (
               <>
                 {/* Timer + red dot + live waveform on the left */}
@@ -2174,9 +2232,69 @@ export default function ChatScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
-      </View>
+      </View>{/* ── end webContentWrap ── */}
 
-      {/* Transcript confirmation modal — shown after voice input is transcribed */}
+      {/* ─── Saved reports bottom sheet ──────────────────────────────────── */}
+      <Modal
+        visible={reportsSheetOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReportsSheetOpen(false)}
+      >
+        <Pressable
+          style={styles.sheetOverlay}
+          onPress={() => setReportsSheetOpen(false)}
+        >
+          <View
+            style={[styles.sheetCard, { paddingBottom: insets.bottom + 16 }]}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Continue your reports</Text>
+              <Pressable onPress={() => setReportsSheetOpen(false)} hitSlop={10}>
+                <Ionicons name="close" size={22} color={theme.colors.onSurfaceSecondary} />
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {activeFirSessions.map((sess: any) => {
+                const dateStr = sess.updated_at ? new Date(sess.updated_at).toLocaleDateString('en-IN') : '';
+                const incidentTypes: string[] = sess.incident_types || ['complaint'];
+                const stage = sess.stage ? sess.stage.replace(/_/g, ' ') : 'in progress';
+                return (
+                  <Pressable
+                    key={sess.session_id}
+                    style={[styles.firResumeCard, { marginHorizontal: 0 }]}
+                    onPress={() => {
+                      setReportsSheetOpen(false);
+                      router.push({ pathname: '/fir-draft', params: { resumeId: sess.session_id } } as any);
+                    }}
+                  >
+                    <View style={styles.firResumeIconWrap}>
+                      <Ionicons name="document-text-outline" size={18} color={theme.colors.brand} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <View style={styles.crimeTypeBadgeRow}>
+                        {incidentTypes.slice(0, 3).map((type: string, i: number) => (
+                          <View key={i} style={styles.crimeTypeBadge}>
+                            <Text style={styles.crimeTypeBadgeText} numberOfLines={1}>
+                              {type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ')}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                      <Text style={styles.firResumeCardSub}>{stage} · {dateStr}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={theme.colors.onSurfaceTertiary} />
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* ─── Transcript confirmation modal ───────────────────────────────── */}
       <Modal
         visible={showTranscriptModal}
         transparent
@@ -2494,6 +2612,116 @@ const styles = StyleSheet.create({
   firIntentTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
   firIntentSub: { color: 'rgba(255,255,255,0.85)', fontSize: 11.5, marginTop: 2, lineHeight: 15 },
   scroll: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
+
+  // ── Layout zones ─────────────────────────────────────────────────────────
+  /** Top zone: header, ticker, FIR card, reports — does NOT scroll */
+  topZone: {
+    backgroundColor: theme.colors.surface,
+  },
+
+  /** Chat zone: fills remaining height, scrolls independently */
+  chatZone: {
+    flex: 1,
+    backgroundColor: theme.colors.surfaceSecondary,
+  },
+
+  /** Visible divider between top zone and chat zone */
+  chatDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: 7,
+    backgroundColor: theme.colors.surfaceSecondary,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.divider,
+    // Drop shadow falls DOWN into the chat zone
+    ...(Platform.OS !== 'web' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.07,
+      shadowRadius: 4,
+      elevation: 3,
+    } : { borderBottomWidth: 0 }),
+  },
+  chatDividerLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: theme.colors.onSurfaceTertiary,
+    textTransform: 'uppercase',
+  },
+
+  // ── Collapsed reports strip (when chat is active) ────────────────────────
+  reportStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: theme.spacing.lg,
+    marginTop: 6,
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.navySoft,
+    borderWidth: 1,
+    borderColor: 'rgba(26,63,116,0.15)',
+    minHeight: 36,
+  },
+  reportStripText: {
+    color: theme.colors.brand,
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+
+  // ── "View all" link below max-2 report cards ─────────────────────────────
+  viewAllRow: {
+    alignItems: 'flex-end',
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+  },
+  viewAllText: {
+    color: theme.colors.brand,
+    fontSize: 12.5,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+
+  // ── Reports bottom sheet ──────────────────────────────────────────────────
+  sheetOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  sheetCard: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: 12,
+    maxHeight: '70%',
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.divider,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.borderStrong,
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: theme.colors.brand,
+    letterSpacing: 0.3,
+  },
   empty: { flex: 1, alignItems: 'center', paddingTop: theme.spacing.xxl, paddingHorizontal: theme.spacing.md },
   emblem: {
     width: 88,
@@ -2525,7 +2753,7 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   suggestionText: { color: theme.colors.onSurface, flex: 1, fontSize: 15, flexShrink: 1 },
-  msg: { marginBottom: theme.spacing.lg, borderRadius: theme.radius.lg, padding: theme.spacing.lg },
+  msg: { marginBottom: 12, borderRadius: theme.radius.lg, padding: theme.spacing.lg },
   userMsg: {
     backgroundColor: theme.colors.brand,
     alignSelf: 'flex-end',
@@ -2533,12 +2761,20 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   aiMsg: {
-    backgroundColor: theme.colors.surfaceSecondary,
+    backgroundColor: theme.colors.surface,
     alignSelf: 'flex-start',
     maxWidth: '100%',
     borderBottomLeftRadius: 4,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    // subtle card elevation so it reads distinct from the chat background
+    ...(Platform.OS !== 'web' ? {
+      shadowColor: theme.colors.shadow,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.08,
+      shadowRadius: 3,
+      elevation: 1,
+    } : {}),
   },
   msgHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.xs },
   stateCard: {
