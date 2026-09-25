@@ -1,0 +1,102 @@
+{
+  "id": "missing_rights",
+  "version": "1.0",
+  "card": {
+    "title": {
+      "en": "Your Rights: Missing Person Complaint",
+      "hi": "आपके अधिकार: लापता व्यक्ति की शिकायत",
+      "mr": "तुमचे अधिकार: बेपत्ता व्यक्तीची तक्रार"
+    },
+    "emergency_numbers": [
+      {
+        "number": "112",
+        "label": {
+          "en": "Police / National Emergency",
+          "hi": "पुलिस / राष्ट्रीय आपातकाल",
+          "mr": "पोलीस / राष्ट्रीय आणीबाणी"
+        },
+        "when_to_call": {
+          "en": "Call immediately if someone is missing",
+          "hi": "यदि कोई लापता है तो तुरंत कॉल करें",
+          "mr": "कोणी बेपत्ता असल्यास लगेच कॉल करा"
+        }
+      },
+      {
+        "number": "1098",
+        "label": {
+          "en": "Childline — for missing children",
+          "hi": "चाइल्डलाइन — लापता बच्चों के लिए",
+          "mr": "चाइल्डलाइन — बेपत्ता मुलांसाठी"
+        },
+        "when_to_call": {
+          "en": "Call additionally if the missing person is under 18",
+          "hi": "यदि लापता व्यक्ति 18 वर्ष से कम है तो अतिरिक्त कॉल करें",
+          "mr": "बेपत्ता व्यक्ती 18 वर्षांपेक्षा कमी असल्यास अतिरिक्त कॉल करा"
+        }
+      }
+    ],
+    "rights": [
+      {
+        "id": "R1",
+        "icon": "scale-outline",
+        "heading": {
+          "en": "Right to File at Any Police Station",
+          "hi": "किसी भी थाने में शिकायत दर्ज करने का अधिकार",
+          "mr": "कोणत्याही पोलीस ठाण्यात तक्रार नोंदवण्याचा अधिकार"
+        },
+        "body": {
+          "en": "Under BNSS Section 173, police must register your complaint at ANY police station — regardless of jurisdiction. This is a Zero FIR. The receiving station must transfer it to the correct jurisdiction.",
+          "hi": "BNSS धारा 173 के अंतर्गत पुलिस को किसी भी थाने पर शिकायत दर्ज करनी होगी — चाहे क्षेत्राधिकार कुछ भी हो। इसे जीरो FIR कहते हैं।",
+          "mr": "BNSS कलम 173 अंतर्गत पोलिसांनी कोणत्याही ठाण्यावर तक्रार नोंदवणे आवश्यक आहे — अधिकारक्षेत्र कोणतेही असो. याला झीरो FIR म्हणतात."
+        }
+      },
+      {
+        "id": "R2",
+        "icon": "person-outline",
+        "heading": {
+          "en": "No 24-Hour Wait for a Missing Child",
+          "hi": "लापता बच्चे के लिए 24 घंटे का इंतजार नहीं",
+          "mr": "बेपत्ता मुलासाठी 24 तासांची प्रतीक्षा नाही"
+        },
+        "body": {
+          "en": "If the missing person is under 18, police MUST register the complaint immediately. There is no minimum waiting period. Refusing to register is a violation of the law.",
+          "hi": "यदि लापता व्यक्ति 18 वर्ष से कम है, तो पुलिस को शिकायत तुरंत दर्ज करना अनिवार्य है। कोई प्रतीक्षा अवधि नहीं है।",
+          "mr": "बेपत्ता व्यक्ती 18 वर्षांपेक्षा कमी असल्यास, पोलिसांनी तक्रार लगेच नोंदवणे बंधनकारक आहे. कोणतीही प्रतीक्षा नाही."
+        }
+      },
+      {
+        "id": "R3",
+        "icon": "document-text-outline",
+        "heading": {
+          "en": "Right to Receive a Free Copy of the FIR",
+          "hi": "FIR की मुफ्त प्रति प्राप्त करने का अधिकार",
+          "mr": "FIR ची मोफत प्रत मिळण्याचा अधिकार"
+        },
+        "body": {
+          "en": "Once your complaint is registered, you are entitled to receive a free copy of the FIR. Ask for it at the police station and keep it safely.",
+          "hi": "शिकायत दर्ज होने के बाद, आपको FIR की मुफ्त प्रति प्राप्त करने का अधिकार है। थाने में माँगें और सुरक्षित रखें।",
+          "mr": "तक्रार नोंदल्यानंतर, तुम्हाला FIR ची मोफत प्रत मिळण्याचा अधिकार आहे. पोलीस ठाण्यात मागा आणि सुरक्षित ठेवा."
+        }
+      },
+      {
+        "id": "R4",
+        "icon": "alert-circle-outline",
+        "heading": {
+          "en": "If Police Refuse to Register",
+          "hi": "यदि पुलिस पंजीकरण से मना करे",
+          "mr": "जर पोलीस नोंदणी नाकारत असेल"
+        },
+        "body": {
+          "en": "Step 1: Speak to the Station House Officer (SHO). Step 2: Submit a written complaint to the SHO (keep a copy). Step 3: Write to the Superintendent of Police (SP). Step 4: File a petition before the Judicial Magistrate under BNSS Section 175.",
+          "hi": "चरण 1: SHO से मिलें। चरण 2: SHO को लिखित शिकायत दें (प्रति रखें)। चरण 3: SP को लिखें। चरण 4: BNSS धारा 175 के तहत याचिका दायर करें।",
+          "mr": "चरण 1: SHO शी बोला. चरण 2: SHO ला लेखी तक्रार द्या (प्रत ठेवा). चरण 3: SP यांना लिहा. चरण 4: BNSS कलम 175 अंतर्गत याचिका दाखल करा."
+        }
+      }
+    ],
+    "footer_note": {
+      "en": "DHARA has prepared this Rights Card for information only. It is not legal advice. For urgent legal help, contact your nearest legal aid clinic or call 15100 (NALSA helpline).",
+      "hi": "DHARA ने यह अधिकार कार्ड केवल सूचना के लिए तैयार किया है। यह कानूनी सलाह नहीं है। तत्काल सहायता के लिए 15100 (NALSA) पर कॉल करें।",
+      "mr": "DHARA ने हे अधिकार कार्ड केवळ माहितीसाठी तयार केले आहे. हे कायदेशीर सल्ला नाही. तातडीसाठी 15100 (NALSA) वर कॉल करा."
+    }
+  }
+}

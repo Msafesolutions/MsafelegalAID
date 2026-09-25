@@ -33,6 +33,471 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 logger = logging.getLogger("fir_engine")
 
+# ─── v3.3: Multilingual translation system ────────────────────────────────────
+# All static bot messages, translated into hi / mr / ta (falls back to 'en').
+
+_STATIC_TRANS: dict[str, dict[str, str]] = {
+    "safe_prompt": {
+        "en": "Before we begin: are you safe right now?",
+        "hi": "शुरू करने से पहले: क्या आप अभी सुरक्षित हैं?",
+        "mr": "सुरू करण्यापूर्वी: तुम्ही आत्ता सुरक्षित आहात का?",
+        "ta": "தொடங்குவதற்கு முன்: நீங்கள் இப்போது பாதுகாப்பாக இருக்கிறீர்களா?",
+        "te": "ప్రారంభించే ముందు: మీరు ఇప్పుడు సురక్షితంగా ఉన్నారా?",
+        "kn": "ಪ್ರಾರಂಭಿಸುವ ಮೊದಲು: ನೀವು ಈಗ ಸುರಕ್ಷಿತವಾಗಿದ್ದೀರಾ?",
+    },
+    "safe_yes": {
+        "en": "Yes, I'm safe",
+        "hi": "हाँ, मैं सुरक्षित हूँ",
+        "mr": "होय, मी सुरक्षित आहे",
+        "ta": "ஆம், நான் பாதுகாப்பாக இருக்கிறேன்",
+        "te": "అవును, నేను సురక్షితంగా ఉన్నాను",
+        "kn": "ಹೌದು, ನಾನು ಸುರಕ್ಷಿತ",
+    },
+    "safe_no": {
+        "en": "No, I need help",
+        "hi": "नहीं, मुझे मदद चाहिए",
+        "mr": "नाही, मला मदत हवी आहे",
+        "ta": "இல்லை, எனக்கு உதவி வேண்டும்",
+        "te": "లేదు, నాకు సహాయం కావాలి",
+        "kn": "ಇಲ್ಲ, ನನಗೆ ಸಹಾಯ ಬೇಕು",
+    },
+    "not_safe_msg": {
+        "en": (
+            "\u26a0\ufe0f Please stay safe first.\n\n"
+            "\U0001f4de Emergency: 112\n\U0001f4de Women Helpline: 181\n"
+            "\U0001f4de Ambulance: 108\n\U0001f4de NALSA Legal Aid: 15100 (free)\n\n"
+            "Call for help now if you are in immediate danger.\n\n"
+            "When you are safe, tap the button below to continue filing your complaint."
+        ),
+        "hi": (
+            "\u26a0\ufe0f पहले सुरक्षित रहें।\n\n"
+            "\U0001f4de आपातकाल: 112\n\U0001f4de महिला हेल्पलाइन: 181\n"
+            "\U0001f4de एम्बुलेंस: 108\n\U0001f4de NALSA निःशुल्क सहायता: 15100\n\n"
+            "यदि आप तत्काल खतरे में हैं तो अभी मदद के लिए कॉल करें।\n\n"
+            "जब सुरक्षित हों, शिकायत जारी रखने के लिए नीचे बटन दबाएं।"
+        ),
+        "mr": (
+            "\u26a0\ufe0f प्रथम सुरक्षित राहा.\n\n"
+            "\U0001f4de आणीबाणी: 112\n\U0001f4de महिला हेल्पलाइन: 181\n"
+            "\U0001f4de रुग्णवाहिका: 108\n\U0001f4de NALSA मोफत मदत: 15100\n\n"
+            "तात्काळ धोक्यात असल्यास आत्ता मदतीसाठी कॉल करा.\n\n"
+            "सुरक्षित असाल तेव्हा, तक्रार सुरू ठेवण्यासाठी खाली बटण दाबा."
+        ),
+        "ta": (
+            "\u26a0\ufe0f முதலில் பாதுகாப்பாக இருங்கள்.\n\n"
+            "\U0001f4de அவசரநிலை: 112\n\U0001f4de மகளிர் உதவி: 181\n"
+            "\U0001f4de ஆம்புலன்ஸ்: 108\n\U0001f4de NALSA இலவச உதவி: 15100\n\n"
+            "ஆபத்தில் இருந்தால் உடனே அழையுங்கள்.\n\n"
+            "பாதுகாப்பாக இருக்கும்போது, புகாரை தொடர கீழே உள்ள பொத்தானை அழுத்தவும்."
+        ),
+    },
+    "safe_continue": {
+        "en": "I'm safe now \u2014 continue filing",
+        "hi": "मैं अब सुरक्षित हूँ — शिकायत जारी रखें",
+        "mr": "मी आता सुरक्षित आहे — तक्रार सुरू ठेवा",
+        "ta": "நான் இப்போது பாதுகாப்பாக இருக்கிறேன் — தொடரவும்",
+    },
+    "exit_now": {
+        "en": "Exit for now",
+        "hi": "अभी बाहर जाएं",
+        "mr": "आत्ता बाहेर पडा",
+        "ta": "இப்போது வெளியேறு",
+    },
+    "trust_msg": {
+        "en": "Thank you for trusting DHARA with your complaint.",
+        "hi": "DHARA पर विश्वास करने के लिए धन्यवाद।",
+        "mr": "DHARA वर विश्वास ठेवल्याबद्दल धन्यवाद.",
+        "ta": "DHARA யை நம்பி புகார் தெரிவித்தமைக்கு நன்றி.",
+    },
+    "pocso_alert": {
+        "en": "\n\U0001f198 This may involve a child — Childline: 1098 (24\u00d77 FREE)",
+        "hi": "\n\U0001f198 इसमें एक बच्चे का मामला हो सकता है — Childline: 1098 (24×7 निःशुल्क)",
+        "mr": "\n\U0001f198 यात मुलाचा संबंध असू शकतो — Childline: 1098 (24×7 मोफत)",
+        "ta": "\n\U0001f198 இதில் குழந்தை சம்பந்தப்பட்டிருக்கலாம் — Childline: 1098 (24×7 இலவசம்)",
+    },
+    "dv_alert": {
+        "en": "\n\U0001f198 Women / DV Helpline: 181 (24\u00d77 FREE)",
+        "hi": "\n\U0001f198 महिला / घरेलू हिंसा हेल्पलाइन: 181 (24×7 निःशुल्क)",
+        "mr": "\n\U0001f198 महिला / घरगुती हिंसाचार हेल्पलाइन: 181 (24×7 मोफत)",
+        "ta": "\n\U0001f198 மகளிர் / குடும்ப வன்முறை உதவி: 181 (24×7 இலவசம்)",
+    },
+    "what_happened": {
+        "en": "\nPlease tell me in your own words: what happened?\nTake your time — speak or type freely.",
+        "hi": "\nकृपया अपने शब्दों में बताएं: क्या हुआ?\nजल्दी मत करें — बोलकर या टाइप करके बताएं।",
+        "mr": "\nकृपया तुमच्या शब्दांत सांगा: काय झाले?\nघाई करू नका — बोलून किंवा टाइप करून सांगा.",
+        "ta": "\nதயவுசெய்து உங்கள் வார்த்தைகளில் சொல்லுங்கள்: என்ன நடந்தது?\nதாராளமாக பேசுங்கள் அல்லது தட்டச்சு செய்யுங்கள்.",
+    },
+    "safe_now_continue": {
+        "en": "I'm glad you're safe. Please tell me in your own words: what happened?\nTake your time — speak or type freely.",
+        "hi": "खुशी है कि आप सुरक्षित हैं। कृपया बताएं: क्या हुआ?\nजल्दी मत करें — बोलकर या टाइप करके बताएं।",
+        "mr": "तुम्ही सुरक्षित आहात हे ऐकून बरे वाटले. कृपया सांगा: काय झाले?\nघाई करू नका — बोलून किंवा टाइप करून सांगा.",
+        "ta": "நீங்கள் பாதுகாப்பாக இருக்கிறீர்கள் என்று மகிழ்ச்சி. என்ன நடந்தது?\nதாராளமாக பேசுங்கள் அல்லது தட்டச்சு செய்யுங்கள்.",
+    },
+    "more_detail": {
+        "en": "Could you share a bit more detail about what happened?",
+        "hi": "क्या आप जो हुआ उसके बारे में थोड़ा और विस्तार से बता सकते हैं?",
+        "mr": "जे झाले त्याबद्दल थोडे अधिक सांगू शकता का?",
+        "ta": "என்ன நடந்தது என்பதை இன்னும் கொஞ்சம் விவரமாக சொல்ல முடியுமா?",
+    },
+    "emergency_danger": {
+        "en": (
+            "\u26a0\ufe0f You seem to be describing an ongoing emergency.\n\n"
+            "Please call for help FIRST:\n"
+            "\U0001f4de Emergency: 112\n\U0001f4de Women Helpline: 181\n\U0001f4de Ambulance: 108\n\n"
+            "Your session is saved. Come back to complete your complaint when you are safe."
+        ),
+        "hi": (
+            "\u26a0\ufe0f ऐसा लगता है कि आप एक चल रही आपातस्थिति बता रहे हैं।\n\n"
+            "पहले मदद के लिए कॉल करें:\n"
+            "\U0001f4de आपातकाल: 112\n\U0001f4de महिला हेल्पलाइन: 181\n\U0001f4de एम्बुलेंस: 108\n\n"
+            "आपका सत्र सुरक्षित है। सुरक्षित होने पर वापस आएं।"
+        ),
+        "mr": (
+            "\u26a0\ufe0f असे वाटते की तुम्ही सध्या आणीबाणीची परिस्थिती सांगत आहात.\n\n"
+            "आधी मदतीसाठी कॉल करा:\n"
+            "\U0001f4de आणीबाणी: 112\n\U0001f4de महिला हेल्पलाइन: 181\n\U0001f4de रुग्णवाहिका: 108\n\n"
+            "तुमचे सत्र जतन आहे. सुरक्षित असाल तेव्हा परत या."
+        ),
+        "ta": (
+            "\u26a0\ufe0f நீங்கள் தொடர்ந்து நடக்கும் அவசரநிலையை விவரிப்பது போல் தெரிகிறது.\n\n"
+            "முதலில் உதவிக்கு அழையுங்கள்:\n"
+            "\U0001f4de அவசரநிலை: 112\n\U0001f4de மகளிர் உதவி: 181\n\U0001f4de ஆம்புலன்ஸ்: 108\n\n"
+            "உங்கள் session சேமிக்கப்பட்டுள்ளது. பாதுகாப்பாக இருக்கும்போது திரும்பி வாருங்கள்."
+        ),
+    },
+    "safe_continue_short": {
+        "en": "I'm safe \u2014 continue filing",
+        "hi": "मैं सुरक्षित हूँ — शिकायत जारी रखें",
+        "mr": "मी सुरक्षित आहे — तक्रार सुरू ठेवा",
+        "ta": "நான் பாதுகாப்பாக இருக்கிறேன் — தொடரவும்",
+    },
+    "thanks_sharing": {
+        "en": "Thank you for sharing that. I can see this involves {types_str}.\n\nI have a few clarifying questions to complete your complaint.\n\n{suffix}",
+        "hi": "साझा करने के लिए धन्यवाद। मैं देख सकता हूँ कि यह {types_str} से संबंधित है।\n\nआपकी शिकायत पूरी करने के लिए कुछ सवाल हैं।\n\n{suffix}",
+        "mr": "सांगितल्याबद्दल धन्यवाद. हे {types_str} शी संबंधित आहे.\n\nतक्रार पूर्ण करण्यासाठी काही प्रश्न आहेत.\n\n{suffix}",
+        "ta": "பகிர்ந்துகொண்டதற்கு நன்றி. இது {types_str} தொடர்பானது.\n\nபுகாரை முழுமையாக்க சில கேள்விகள் கேட்கிறேன்.\n\n{suffix}",
+    },
+    "welcome_back": {
+        "en": "Welcome back! Continuing from where you left off.\n\n{suffix}",
+        "hi": "वापस स्वागत है! जहाँ छोड़ा था वहाँ से जारी रखते हैं।\n\n{suffix}",
+        "mr": "परत स्वागत आहे! जिथे सोडले होते तिथून सुरू ठेवूया.\n\n{suffix}",
+        "ta": "மீண்டும் வரவேற்கிறோம்! நீங்கள் நிறுத்திய இடத்தில் இருந்து தொடரலாம்.\n\n{suffix}",
+    },
+    "gps_found": {
+        "en": "I found this address:\n\n\U0001f4cd {addr}\n\nIs this correct?",
+        "hi": "मुझे यह पता मिला:\n\n\U0001f4cd {addr}\n\nक्या यह सही है?",
+        "mr": "मला हा पत्ता सापडला:\n\n\U0001f4cd {addr}\n\nहे बरोबर आहे का?",
+        "ta": "இந்த முகவரி கிடைத்தது:\n\n\U0001f4cd {addr}\n\nசரிதானா?",
+    },
+    "gps_yes": {
+        "en": "Yes, that's correct",
+        "hi": "हाँ, यह सही है",
+        "mr": "होय, हे बरोबर आहे",
+        "ta": "ஆம், சரிதான்",
+    },
+    "gps_no": {
+        "en": "No, use text description",
+        "hi": "नहीं, टेक्स्ट विवरण का उपयोग करें",
+        "mr": "नाही, मजकूर वर्णन वापरा",
+        "ta": "இல்லை, உரை விவரத்தை பயன்படுத்துக",
+    },
+    "place_off_topic": {
+        "en": "I've noted your question and will come back to it.\n\nFor the complaint, I need the **location** of the incident.\n{suffix}",
+        "hi": "मैंने आपका सवाल नोट कर लिया है और बाद में उस पर वापस आऊंगा।\n\nशिकायत के लिए, मुझे घटना की **जगह** चाहिए।\n{suffix}",
+        "mr": "मी तुमचा प्रश्न नोंदला आहे आणि नंतर त्याकडे परत येईन.\n\nतक्रारीसाठी, मला घटनेचे **ठिकाण** हवे आहे.\n{suffix}",
+        "ta": "உங்கள் கேள்வியை குறித்துக்கொண்டேன், பின்னர் திரும்பி வருவேன்.\n\nபுகாருக்காக, சம்பவம் நடந்த **இடம்** தேவை.\n{suffix}",
+    },
+    "section_found": {
+        "en": (
+            "Based on your description, the following BNS sections appear to apply:\n\n{sec_lines}\n\n"
+            "\u26a0\ufe0f These are suggestions only \u2014 the investigating officer determines final sections.\n\n"
+            "Shall I proceed with generating your draft?"
+        ),
+        "hi": (
+            "आपके विवरण के आधार पर, निम्नलिखित BNS धाराएं लागू होती हैं:\n\n{sec_lines}\n\n"
+            "\u26a0\ufe0f ये केवल सुझाव हैं — जांच अधिकारी अंतिम धाराएं तय करेंगे।\n\n"
+            "क्या मैं आपका मसौदा तैयार करूँ?"
+        ),
+        "mr": (
+            "तुमच्या वर्णनावर आधारित, खालील BNS कलम लागू होतात:\n\n{sec_lines}\n\n"
+            "\u26a0\ufe0f हे केवळ सुचवणे आहेत — तपास अधिकारी अंतिम कलम ठरवतात.\n\n"
+            "मसुदा तयार करू का?"
+        ),
+        "ta": (
+            "உங்கள் விவரணையின் அடிப்படையில், பின்வரும் BNS பிரிவுகள் பொருந்தும்:\n\n{sec_lines}\n\n"
+            "\u26a0\ufe0f இவை பரிந்துரைகள் மட்டுமே — விசாரணை அதிகாரி இறுதி பிரிவுகளை தீர்மானிப்பார்.\n\n"
+            "மசோதாவை உருவாக்கட்டுமா?"
+        ),
+    },
+    "section_none": {
+        "en": (
+            "I've gathered all the details for your complaint.\n\n"
+            "The applicable BNS sections will be noted by the investigating officer.\n\n"
+            "Ready to generate your FIR draft?"
+        ),
+        "hi": (
+            "मैंने आपकी शिकायत के लिए सभी विवरण एकत्र कर लिए हैं।\n\n"
+            "लागू BNS धाराएं जांच अधिकारी द्वारा नोट की जाएंगी।\n\n"
+            "क्या आप FIR मसौदा तैयार करने के लिए तैयार हैं?"
+        ),
+        "mr": (
+            "मी तुमच्या तक्रारीसाठी सर्व तपशील गोळा केले आहेत.\n\n"
+            "लागू BNS कलम तपास अधिकाऱ्याकडून नोंदवले जातील.\n\n"
+            "FIR मसुदा तयार करायचा आहे का?"
+        ),
+        "ta": (
+            "உங்கள் புகாருக்கான அனைத்து விவரங்களையும் சேகரித்தேன்.\n\n"
+            "பொருந்தும் BNS பிரிவுகளை விசாரணை அதிகாரி குறிப்பிடுவார்.\n\n"
+            "FIR மசோதாவை உருவாக்க தயாரா?"
+        ),
+    },
+    "yes_proceed": {
+        "en": "Yes, proceed",
+        "hi": "हाँ, आगे बढ़ें",
+        "mr": "होय, पुढे जा",
+        "ta": "ஆம், தொடரவும்",
+    },
+    "go_back": {
+        "en": "Go back",
+        "hi": "वापस जाएं",
+        "mr": "मागे जा",
+        "ta": "திரும்பு",
+    },
+    "summary_correct": {
+        "en": "Here is a summary of your complaint:\n\n{summary}\n\nIs everything correct? Shall I generate your FIR draft?",
+        "hi": "यहाँ आपकी शिकायत का सारांश है:\n\n{summary}\n\nक्या सब कुछ सही है? क्या मैं FIR मसौदा तैयार करूँ?",
+        "mr": "तुमच्या तक्रारीचा सारांश:\n\n{summary}\n\nसर्व काही बरोबर आहे का? FIR मसुदा तयार करू का?",
+        "ta": "உங்கள் புகாரின் சுருக்கம்:\n\n{summary}\n\nஎல்லாம் சரியா? FIR மசோதாவை உருவாக்கட்டுமா?",
+    },
+    "yes_generate": {
+        "en": "Yes, generate my draft",
+        "hi": "हाँ, मसौदा तैयार करें",
+        "mr": "होय, मसुदा तयार करा",
+        "ta": "ஆம், மசோதாவை உருவாக்குக",
+    },
+    "edit_something": {
+        "en": "Edit something",
+        "hi": "कुछ बदलें",
+        "mr": "काहीतरी बदला",
+        "ta": "ஏதாவது திருத்துக",
+    },
+    "what_to_change": {
+        "en": "What would you like to change? Please type the correction and I'll update your complaint.",
+        "hi": "आप क्या बदलना चाहते हैं? कृपया सुधार टाइप करें और मैं आपकी शिकायत अपडेट करूंगा।",
+        "mr": "तुम्हाला काय बदलायचे आहे? कृपया दुरुस्ती टाइप करा आणि मी तुमची तक्रार अपडेट करेन.",
+        "ta": "என்ன மாற்ற விரும்புகிறீர்கள்? திருத்தத்தை தட்டச்சு செய்யுங்கள்.",
+    },
+    "draft_ready": {
+        "en": "\u2705 Your FIR draft is ready!\n\nTap \"View Draft\" to see, save, or export it.",
+        "hi": "\u2705 आपका FIR मसौदा तैयार है!\n\n\"View Draft\" दबाकर देखें, सहेजें या निर्यात करें।",
+        "mr": "\u2705 तुमचा FIR मसुदा तयार आहे!\n\n\"View Draft\" दाबून पहा, जतन करा किंवा निर्यात करा.",
+        "ta": "\u2705 உங்கள் FIR மசோதா தயார்!\n\n\"View Draft\" அழுத்தி காணுங்கள், சேமியுங்கள் அல்லது பகிருங்கள்.",
+    },
+    "draft_already": {
+        "en": "Your draft is ready. Tap \"View Draft\" to see it.",
+        "hi": "आपका मसौदा तैयार है। \"View Draft\" दबाकर देखें।",
+        "mr": "तुमचा मसुदा तयार आहे. \"View Draft\" दाबून पहा.",
+        "ta": "உங்கள் மசோதா தயார். \"View Draft\" அழுத்தி காணுங்கள்.",
+    },
+    "cybercrime_alert": {
+        "en": (
+            "\U0001f6a8 IMPORTANT \u2014 CYBERCRIME GOLDEN HOUR ALERT:\n"
+            "Call 1930 (National Cybercrime Helpline) IMMEDIATELY if you lost money.\n"
+            "The sooner you report, the better your chances of recovering funds.\n"
+            "You can also file at cybercrime.gov.in\n\n"
+        ),
+        "hi": (
+            "\U0001f6a8 महत्वपूर्ण \u2014 साइबर अपराध स्वर्णिम घंटा:\n"
+            "पैसे खोए हैं तो तुरंत 1930 (राष्ट्रीय साइबर अपराध हेल्पलाइन) पर कॉल करें।\n"
+            "जितनी जल्दी रिपोर्ट करें, पैसे वापस मिलने की संभावना उतनी अधिक।\n"
+            "cybercrime.gov.in पर भी दर्ज करें।\n\n"
+        ),
+        "mr": (
+            "\U0001f6a8 महत्वाचे \u2014 सायबर गुन्हा गोल्डन अवर:\n"
+            "पैसे गेले असतील तर 1930 (राष्ट्रीय सायबर गुन्हा हेल्पलाइन) वर ताबडतोब कॉल करा.\n"
+            "cybercrime.gov.in वरही नोंदवा.\n\n"
+        ),
+        "ta": (
+            "\U0001f6a8 முக்கியம் \u2014 சைபர் கிரைம் தங்கநேரம்:\n"
+            "பணம் இழந்திருந்தால் 1930 (தேசிய சைபர் கிரைம் உதவி) உடனே அழையுங்கள்.\n"
+            "cybercrime.gov.in இலும் பதிவு செய்யலாம்.\n\n"
+        ),
+    },
+}
+
+# Probe question translations (hi / mr / ta only; falls back to English PROBE_Q["message"])
+_PROBE_MSG_TRANS: dict[str, dict[str, str]] = {
+    "probe_date": {
+        "hi": "यह कब हुआ? (तिथि और वर्ष यदि संभव हो)",
+        "mr": "हे केव्हा झाले? (तारीख आणि वर्ष शक्य असल्यास)",
+        "ta": "இது எப்போது நடந்தது? (தேதி மற்றும் ஆண்டு சாத்தியமாயின்)",
+    },
+    "probe_time": {
+        "hi": "यह लगभग किस समय हुआ?",
+        "mr": "हे अंदाजे किती वाजता झाले?",
+        "ta": "இது தோராயமாக எத்தனை மணிக்கு நடந்தது?",
+    },
+    "probe_place_text": {
+        "hi": "यह कहाँ हुआ? (क्षेत्र / सड़क / शहर / राज्य)",
+        "mr": "हे कुठे झाले? (परिसर / रस्ता / शहर / राज्य)",
+        "ta": "இது எங்கே நடந்தது? (பகுதி / தெரு / நகரம் / மாநிலம்)",
+    },
+    "probe_place_gps": {
+        "hi": "क्या आप GPS से सटीक घटना स्थान बताना चाहेंगे?\n(पुलिस को सटीक स्थान पहचानने में मदद करता है — वैकल्पिक)",
+        "mr": "तुम्हाला GPS वापरून अचूक घटनेचे ठिकाण दाखवायचे आहे का?\n(पोलिसांना अचूक जागा ओळखण्यास मदत — पर्यायी)",
+        "ta": "GPS மூலம் துல்லியமான சம்பவ இடத்தை குறிக்க விரும்புகிறீர்களா?\n(விருப்பத்தேர்வு)",
+    },
+    "probe_theft_items": {
+        "hi": "वास्तव में क्या चोरी हुआ? प्रत्येक वस्तु और अनुमानित मूल्य बताएं।",
+        "mr": "नक्की काय चोरी झाले? प्रत्येक वस्तू आणि अंदाजे मूल्य सांगा.",
+        "ta": "சரியாக என்ன திருடப்பட்டது? ஒவ்வொரு பொருளையும் அதன் மதிப்பையும் பட்டியலிடுங்கள்.",
+    },
+    "probe_injury": {
+        "hi": "क्या कोई शारीरिक रूप से घायल हुआ? किसी को चिकित्सा सहायता की जरूरत पड़ी?",
+        "mr": "कोणी शारीरिकदृष्ट्या जखमी झाले का? कोणाला वैद्यकीय मदत लागली का?",
+        "ta": "யாரேனும் உடல் ரீதியாக காயமடைந்தார்களா?",
+    },
+    "probe_assault_mlc": {
+        "hi": "क्या आप अस्पताल या डॉक्टर के पास गए? क्या Medico-Legal Certificate (MLC) है?",
+        "mr": "तुम्ही रुग्णालय किंवा डॉक्टरकडे गेलात का? MLC आहे का?",
+        "ta": "மருத்துவமனை சென்றீர்களா? MLC உள்ளதா?",
+    },
+    "probe_cyber_amount": {
+        "hi": "कितना पैसा खोया? (₹ में)\nकौन सा प्लेटफॉर्म? (UPI / बैंक / वेबसाइट / ऐप)",
+        "mr": "किती पैसे गेले? (₹ मध्ये)\nकोणते प्लॅटफॉर्म? (UPI / बँक / वेबसाइट / ऐप)",
+        "ta": "எவ்வளவு பணம் இழந்தீர்கள்? (₹)\nஎந்த தளம்? (UPI / வங்கி / வலைதளம் / ஆப்)",
+    },
+    "probe_harassment_online": {
+        "hi": "क्या यह उत्पीड़न ऑनलाइन हुआ, व्यक्तिगत रूप से, या दोनों?",
+        "mr": "हा छळ ऑनलाइन झाला, प्रत्यक्ष, की दोन्ही?",
+        "ta": "இந்த தொல்லை ஆன்லைனில் நடந்ததா, நேரடியாகவா, இல்லை இரண்டுமா?",
+    },
+    "probe_accused": {
+        "hi": "क्या आप जानते हैं कि यह किसने किया? (नाम, उम्र, पहचान, या संबंध — या 'पता नहीं' लिखें)",
+        "mr": "हे कोणी केले हे तुम्हाला माहीत आहे का? (नाव, वय, वर्णन — किंवा 'माहीत नाही' लिहा)",
+        "ta": "யார் இதை செய்தார்கள் என்று தெரியுமா? (பெயர், வயது — அல்லது 'தெரியாது' சொல்லுங்கள்)",
+    },
+    "probe_witnesses": {
+        "hi": "क्या कोई गवाह थे? (नाम और संपर्क नंबर यदि उपलब्ध हो)",
+        "mr": "काही साक्षीदार होते का? (नाव आणि संपर्क क्रमांक उपलब्ध असल्यास)",
+        "ta": "சாட்சிகள் இருந்தார்களா? (பெயர்கள் மற்றும் தொடர்பு எண்கள் கிடைத்தால்)",
+    },
+    "probe_witnesses_detail": {
+        "hi": "गवाह मौजूद थे — क्या आप उनके नाम या संपर्क नंबर बता सकते हैं?",
+        "mr": "साक्षीदार उपस्थित होते — त्यांची नावे किंवा संपर्क क्रमांक सांगता येईल का?",
+        "ta": "சாட்சிகள் இருந்தார்கள் — அவர்களின் பெயர்கள் அல்லது தொடர்பு எண்கள் சொல்ல முடியுமா?",
+    },
+    "probe_evidence": {
+        "hi": "क्या संलग्न करने के लिए सबूत है? (फ़ोटो, वीडियो, स्क्रीनशॉट, रिपोर्ट — 10 फ़ाइलें तक)",
+        "mr": "संलग्न करण्यासाठी काही पुरावे आहेत का? (फोटो, व्हिडिओ, अहवाल — 10 फाइल्सपर्यंत)",
+        "ta": "இணைக்க சான்றுகள் உள்ளதா? (புகைப்படங்கள், வீடியோக்கள் — 10 கோப்புகள் வரை)",
+    },
+    "probe_informant_name": {
+        "hi": "लगभग हो गया! FIR के लिए आपका पूरा नाम (जैसा शिकायत पर दिखेगा):",
+        "mr": "जवळजवळ झाले! FIR साठी तुमचे पूर्ण नाव (तक्रारीवर जसे दिसेल):",
+        "ta": "கிட்டத்தட்ட முடிந்தது! FIR க்கு உங்கள் முழு பெயர்:",
+    },
+    "probe_informant_address": {
+        "hi": "आपका पूरा पता (घर/फ्लैट नंबर, सड़क, क्षेत्र, शहर, PIN कोड):",
+        "mr": "तुमचा पूर्ण पत्ता (घर/फ्लॅट नंबर, रस्ता, परिसर, शहर, PIN कोड):",
+        "ta": "உங்கள் முழு முகவரி (வீடு/அடுக்குமாடி எண், தெரு, நகரம், PIN குறியீடு):",
+    },
+    "probe_informant_phone": {
+        "hi": "आपका मोबाइल नंबर (पुलिस इस पर संपर्क करेगी):",
+        "mr": "तुमचा मोबाईल नंबर (पोलीस याद्वारे संपर्क साधतील):",
+        "ta": "உங்கள் மொபைல் எண் (காவல்துறை தொடர்பு கொள்ள):",
+    },
+    "probe_informant_phone_retry": {
+        "hi": "वह वैध मोबाइल नंबर नहीं लगता। कृपया 10 अंकों का भारतीय नंबर दर्ज करें:",
+        "mr": "ते वैध मोबाईल नंबर नाही. 10 अंकी भारतीय मोबाईल नंबर टाका:",
+        "ta": "சரியான மொபைல் எண் போல் தெரியவில்லை. 10 இலக்க இந்திய மொபைல் எண் உள்ளிடுங்கள்:",
+    },
+    "probe_force_used": {
+        "hi": "क्या कोई बल, धमकी या हथियार का उपयोग हुआ?",
+        "mr": "काही बळाचा वापर, धमकी किंवा शस्त्र वापरले का?",
+        "ta": "வலிந்து கொடுமைப்படுத்தல், மிரட்டல் அல்லது ஆயுதம் பயன்பாடு இருந்ததா?",
+    },
+    "probe_stolen_phone_imei": {
+        "hi": "क्या फोन चोरी हुआ? IMEI नंबर पता है? (*#06# डायल करें)",
+        "mr": "फोन चोरी झाला का? IMEI नंबर माहीत आहे का? (*#06# डायल करा)",
+        "ta": "தொலைபேசி திருடப்பட்டதா? IMEI எண் தெரியுமா? (*#06# அழையுங்கள்)",
+    },
+    "probe_sim_blocked": {
+        "hi": "क्या SIM ब्लॉक किया? (Airtel 121 / Jio 198 / BSNL 1500 पर कॉल करें)",
+        "mr": "SIM ब्लॉक केले का? (Airtel 121 / Jio 198 / BSNL 1500 वर कॉल करा)",
+        "ta": "SIM தடுத்தீர்களா? (Airtel 121 / Jio 198 / BSNL 1500)",
+    },
+    "probe_incident_place_detail": {
+        "hi": "कोई अतिरिक्त स्थान विवरण? (बस नंबर, ट्रेन डिब्बा, वाहन पंजीकरण आदि)",
+        "mr": "कोणतेही अतिरिक्त ठिकाण तपशील? (बस क्रमांक, ट्रेन डबा, वाहन नोंदणी)",
+        "ta": "கூடுதல் இட விவரங்கள்? (பேருந்து எண், ரயில் பெட்டி, வாகன எண்)",
+    },
+    "probe_transaction_ids": {
+        "hi": "Transaction ID(s) या UTR नंबर बताएं। (SMS, ईमेल या ऐप इतिहास में देखें)",
+        "mr": "Transaction ID(s) किंवा UTR क्रमांक द्या. (SMS, ईमेल किंवा ऐप इतिहासात पहा)",
+        "ta": "Transaction ID(s) அல்லது UTR எண்களைப் பகிர்ந்துகொள்ளுங்கள்.",
+    },
+    "probe_scammer_contact": {
+        "hi": "ठग के संपर्क विवरण हैं? (फोन, ईमेल, UPI ID, वेबसाइट — जो भी हो)",
+        "mr": "फसवणूक करणाऱ्याचे संपर्क तपशील आहेत का? (फोन, ईमेल, UPI ID)",
+        "ta": "மோசடி செய்தவரின் தொடர்பு விவரங்கள் உள்ளதா? (தொலைபேசி, மின்னஞ்சல், UPI ID)",
+    },
+    "probe_dv_duration": {
+        "hi": "यह कब से हो रहा है? (उदा: 3 महीने, 2 साल)",
+        "mr": "हे किती दिवसांपासून होत आहे? (उदा: 3 महिने, 2 वर्षे)",
+        "ta": "இது எவ்வளவு காலமாக நடக்கிறது? (உதாரணம்: 3 மாதங்கள், 2 ஆண்டுகள்)",
+    },
+    "probe_dv_children": {
+        "hi": "क्या घर में 18 वर्ष से कम आयु के प्रभावित बच्चे हैं?",
+        "mr": "घरात 18 वर्षांपेक्षा कमी वयाची प्रभावित मुले आहेत का?",
+        "ta": "வீட்டில் பாதிக்கப்பட்ட 18 வயதுக்குட்பட்ட குழந்தைகள் உள்ளார்களா?",
+    },
+    "probe_posh_employer": {
+        "hi": "नियोक्ता/कंपनी का नाम और कार्यस्थल का पता?",
+        "mr": "नियोक्त्याचे/कंपनीचे नाव आणि कार्यस्थळाचा पत्ता?",
+        "ta": "நிறுவனத்தின் பெயர் மற்றும் பணியிட முகவரி?",
+    },
+    "probe_posh_role": {
+        "hi": "आपकी भूमिका और उत्पीड़क की पदवी?",
+        "mr": "तुमची भूमिका आणि छळ करणाऱ्याचे पद?",
+        "ta": "உங்கள் பதவி மற்றும் தொல்லை செய்தவரின் பதவி?",
+    },
+    "probe_posh_icc": {
+        "hi": "क्या ICC में पहले से रिपोर्ट किया गया है?",
+        "mr": "ICC ला आधी तक्रार केली आहे का?",
+        "ta": "ICC யிடம் ஏற்கனவே புகாரளித்தீர்களா?",
+    },
+    "probe_consumer_company": {
+        "hi": "शामिल कंपनी या प्लेटफॉर्म का नाम?",
+        "mr": "सहभागी कंपनी किंवा प्लॅटफॉर्मचे नाव?",
+        "ta": "சம்பந்தப்பட்ட நிறுவனம் அல்லது தளம்?",
+    },
+    "probe_consumer_order_id": {
+        "hi": "ऑर्डर ID, Transaction संदर्भ, या शिकायत नंबर?",
+        "mr": "ऑर्डर ID, व्यवहार संदर्भ, किंवा तक्रार क्रमांक?",
+        "ta": "ஆர்டர் ID, பரிவர்த்தனை எண், அல்லது புகார் எண் உள்ளதா?",
+    },
+}
+
+
+def _tm(key: str, lang: str, **kwargs) -> str:
+    """Return translated message for `key` in `lang`, falling back to English."""
+    trans = _STATIC_TRANS.get(key, {})
+    msg = trans.get(lang) or trans.get("en", f"[{key}]")
+    if kwargs:
+        try:
+            msg = msg.format(**kwargs)
+        except (KeyError, IndexError):
+            pass
+    return msg
+
+
+def _tp(probe_key: str, lang: str) -> str:
+    """Return translated probe question for `probe_key` in `lang`, falling back to PROBE_Q message."""
+    trans = _PROBE_MSG_TRANS.get(probe_key, {})
+    return trans.get(lang) or PROBE_Q.get(probe_key, {}).get("message", "")
+
+
 # ─── Stage constants ───────────────────────────────────────────────────────────
 STAGE_SAFETY_GATE     = "safety_gate"
 STAGE_FREE_NARRATIVE  = "free_narrative"
@@ -920,8 +1385,10 @@ Subject: Complaint regarding {desc[:80]}
 
 Sir/Madam,
 
-I, {name}, residing at {address},
-contact: {phone}, wish to register the following complaint:
+I, {name}, wish to register the following complaint.
+
+Address: {address}
+Contact: {phone}
 
 On {inc_date} at {inc_time},
 at {loc}, the following occurred:
@@ -1045,23 +1512,24 @@ async def create_session(
     await db.fir_sessions.insert_one(doc)
 
     # Build welcome message — module-specific if pre-selected, generic otherwise
+    safe_q = _tm("safe_prompt", language)
     if pre_seeded_types:
         module_key = incident_type.lower() if incident_type else ""
         lang_msg = _MODULE_WELCOME.get(module_key, {}).get(language) or \
                    _MODULE_WELCOME.get(module_key, {}).get("en", "")
         if lang_msg:
-            bot_message = f"{lang_msg}\n\n🔒 Before we begin: are you safe right now?"
+            bot_message = f"{lang_msg}\n\n🔒 {safe_q}"
         else:
             bot_message = (
                 "Hello! I'm DHARA, your legal assistant.\n"
                 "I'll help you prepare a formal FIR draft step by step.\n\n"
-                "Before we begin: are you safe right now?"
+                f"{safe_q}"
             )
     else:
         bot_message = (
             "Hello! I'm DHARA, your legal assistant.\n"
             "I'll help you prepare a formal FIR draft step by step.\n\n"
-            "Before we begin: are you safe right now?"
+            f"{safe_q}"
         )
 
     return {
@@ -1069,7 +1537,7 @@ async def create_session(
         "stage": STAGE_SAFETY_GATE,
         "bot_message": bot_message,
         "input_type": INPUT_QUICK_REPLY,
-        "quick_replies": ["Yes, I'm safe", "No, I need help"],
+        "quick_replies": [_tm("safe_yes", language), _tm("safe_no", language)],
         "safety_flags": [],
         "completed": False,
     }
@@ -1155,17 +1623,9 @@ async def _dispatch(
             )
             return {
                 "session_id": sid, "stage": STAGE_SAFETY_GATE,
-                "bot_message": (
-                    "\u26a0\ufe0f Please stay safe first.\n\n"
-                    "\U0001f4de Emergency: 112\n"
-                    "\U0001f4de Women Helpline: 181\n"
-                    "\U0001f4de Ambulance: 108\n"
-                    "\U0001f4de NALSA Legal Aid: 15100 (free)\n\n"
-                    "Call for help now if you are in immediate danger.\n\n"
-                    "When you are safe, tap the button below to continue filing your complaint."
-                ),
+                "bot_message": _tm("not_safe_msg", language),
                 "input_type": INPUT_QUICK_REPLY,
-                "quick_replies": ["I'm safe now \u2014 continue filing", "Exit for now"],
+                "quick_replies": [_tm("safe_continue", language), _tm("exit_now", language)],
                 "show_emergency": True,
                 "emergency_numbers": [
                     {"label": "Police / Emergency", "number": "112"},
@@ -1176,12 +1636,12 @@ async def _dispatch(
                 "safety_flags": sf, "completed": False,
             }
 
-        lines = ["Thank you for trusting DHARA with your complaint."]
+        lines = [_tm("trust_msg", language)]
         if "POCSO" in sf:
-            lines.append("\n\U0001f198 This may involve a child — Childline: 1098 (24×7 FREE)")
+            lines.append(_tm("pocso_alert", language))
         elif sf:
-            lines.append("\n\U0001f198 Women / DV Helpline: 181 (24×7 FREE)")
-        lines.append("\nPlease tell me in your own words: what happened?\nTake your time — speak or type freely.")
+            lines.append(_tm("dv_alert", language))
+        lines.append(_tm("what_happened", language))
         await db.fir_sessions.update_one(
             {"session_id": sid},
             {"$set": {"stage": STAGE_FREE_NARRATIVE, "safety_flags": sf, "updated_at": now}},
@@ -1205,14 +1665,14 @@ async def _dispatch(
             )
             return {
                 "session_id": sid, "stage": STAGE_FREE_NARRATIVE,
-                "bot_message": "I'm glad you're safe. Please tell me in your own words: what happened?\nTake your time — speak or type freely.",
+                "bot_message": _tm("safe_now_continue", language),
                 "input_type": INPUT_VOICE_TEXT, "quick_replies": [], "completed": False,
             }
 
         if len(narrative) < 20:
             return {
                 "session_id": sid, "stage": STAGE_FREE_NARRATIVE,
-                "bot_message": "Could you share a bit more detail about what happened?",
+                "bot_message": _tm("more_detail", language),
                 "input_type": INPUT_VOICE_TEXT, "quick_replies": [], "completed": False,
             }
 
@@ -1224,16 +1684,9 @@ async def _dispatch(
             )
             return {
                 "session_id": sid, "stage": STAGE_FREE_NARRATIVE,
-                "bot_message": (
-                    "\u26a0\ufe0f You seem to be describing an ongoing emergency.\n\n"
-                    "Please call for help FIRST:\n"
-                    "\U0001f4de Emergency: 112\n"
-                    "\U0001f4de Women Helpline: 181\n"
-                    "\U0001f4de Ambulance: 108\n\n"
-                    "Your session is saved. Come back to complete your complaint when you are safe."
-                ),
+                "bot_message": _tm("emergency_danger", language),
                 "input_type": INPUT_QUICK_REPLY,
-                "quick_replies": ["I'm safe \u2014 continue filing"],
+                "quick_replies": [_tm("safe_continue_short", language)],
                 "show_emergency": True,
                 "action": "EMERGENCY",
                 "emergency_numbers": [
@@ -1315,24 +1768,12 @@ async def _dispatch(
             elif first_probe == "probe_date" and date_conflict_msg:
                 bot_msg_suffix = date_conflict_msg
             else:
-                bot_msg_suffix = pdef["message"]
+                bot_msg_suffix = _tp(first_probe, language)
 
             # Cybercrime helpline header
-            cyber_header = ""
-            if show_cyber_alert:
-                cyber_header = (
-                    "\U0001f6a8 IMPORTANT — CYBERCRIME GOLDEN HOUR ALERT:\n"
-                    "Call 1930 (National Cybercrime Helpline) IMMEDIATELY if you lost money.\n"
-                    "The sooner you report, the better your chances of recovering funds.\n"
-                    "You can also file at cybercrime.gov.in\n\n"
-                )
+            cyber_header = _tm("cybercrime_alert", language) if show_cyber_alert else ""
 
-            intro = (
-                f"{cyber_header}"
-                f"Thank you for sharing that. I can see this involves {types_str}.\n\n"
-                f"I have a few clarifying questions to complete your complaint.\n\n"
-                f"{bot_msg_suffix}"
-            )
+            intro = _tm("thanks_sharing", language, types_str=types_str, suffix=f"{cyber_header}{bot_msg_suffix}")
             return {
                 "session_id": sid, "stage": STAGE_PROBE, "probe_key": first_probe,
                 "bot_message": intro,
@@ -1358,15 +1799,11 @@ async def _dispatch(
             session_fresh = await db.fir_sessions.find_one({"session_id": sid}, {"relative_date_display": 1})
             rdd = (session_fresh or {}).get("relative_date_display")
             if cp == "probe_date_confirm" and rdd:
-                bot_msg = (
-                    f"Welcome back! Continuing from where you left off.\n\n"
+                bot_msg = _tm("welcome_back", language, suffix=(
                     f"I calculated the incident happened on **{rdd}**.\nIs that correct?"
-                )
+                ))
             else:
-                bot_msg = (
-                    f"Welcome back! Continuing from where you left off.\n\n"
-                    f"{pdef.get('message', 'Please continue.')}"
-                )
+                bot_msg = _tm("welcome_back", language, suffix=_tp(cp, language))
             # v3.4: Probe progress for "Q X/Y" UI counter
             done_count = len(session.get("probe_history", []))
             total_probes = done_count + 1 + len(pending_probes)
@@ -1393,9 +1830,9 @@ async def _dispatch(
                 )
                 return {
                     "session_id": sid, "stage": STAGE_GPS_CONFIRM,
-                    "bot_message": f"I found this address:\n\n\U0001f4cd {addr}\n\nIs this correct?",
+                    "bot_message": _tm("gps_found", language, addr=addr),
                     "input_type": INPUT_QUICK_REPLY,
-                    "quick_replies": ["Yes, that's correct", "No, use text description"],
+                    "quick_replies": [_tm("gps_yes", language), _tm("gps_no", language)],
                     "confirmed_address": addr, "completed": False,
                 }
             else:
@@ -1405,14 +1842,14 @@ async def _dispatch(
                     {"session_id": sid},
                     {"$set": {"slots": slots, "updated_at": now}},
                 )
-            return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now, completed_probe=cp)
+            return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now, completed_probe=cp, language=language)
 
         elif cp == "probe_evidence":
             if action in ("skip", "upload_done"):
-                return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now)
+                return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now, language=language)
             return {
                 "session_id": sid, "stage": STAGE_PROBE, "probe_key": cp,
-                "bot_message": pdef["message"], "input_type": INPUT_EVIDENCE,
+                "bot_message": _tp(cp, language), "input_type": INPUT_EVIDENCE,
                 "skip_label": pdef.get("skip_label"), "quick_replies": [], "completed": False,
             }
 
@@ -1445,11 +1882,7 @@ async def _dispatch(
                         # Return the same probe question again with a note
                         return {
                             "session_id": sid, "stage": STAGE_PROBE, "probe_key": cp,
-                            "bot_message": (
-                                f"I've noted your question and will come back to it.\n\n"
-                                f"For the complaint, I need the **location** of the incident.\n"
-                                f"{pdef['message']}"
-                            ),
+                            "bot_message": _tm("place_off_topic", language, suffix=_tp(cp, language)),
                             "input_type": pdef["input_type"],
                             "quick_replies": pdef.get("quick_replies", []),
                             "skip_label": pdef.get("skip_label"),
@@ -1487,7 +1920,7 @@ async def _dispatch(
                             {"$set": {"pending_probes": new_pending, "updated_at": now}}
                         )
                         return await _advance_probe(
-                            db, corpus_db, sid, slots, new_pending, incident_types, now
+                            db, corpus_db, sid, slots, new_pending, incident_types, now, language=language
                         )
 
                 elif cp == "probe_witnesses_detail":
@@ -1515,7 +1948,7 @@ async def _dispatch(
                             return {
                                 "session_id": sid, "stage": STAGE_PROBE,
                                 "probe_key": "probe_informant_phone_retry",
-                                "bot_message": PROBE_Q["probe_informant_phone_retry"]["message"],
+                                "bot_message": _tp("probe_informant_phone_retry", language),
                                 "input_type": INPUT_TEXT,
                                 "skip_label": PROBE_Q["probe_informant_phone_retry"]["skip_label"],
                                 "quick_replies": [], "completed": False,
@@ -1625,7 +2058,7 @@ async def _dispatch(
                     {"session_id": sid},
                     {"$set": {"slots": slots, "pending_probes": new_pending, "updated_at": now}}
                 )
-                return await _advance_probe(db, corpus_db, sid, slots, new_pending, incident_types, now, completed_probe=cp)
+                return await _advance_probe(db, corpus_db, sid, slots, new_pending, incident_types, now, completed_probe=cp, language=language)
             else:
                 # User confirmed — mark as confirmed
                 slots["date_confirmed"] = True
@@ -1633,7 +2066,7 @@ async def _dispatch(
                     {"session_id": sid}, {"$set": {"slots": slots, "updated_at": now}}
                 )
 
-        return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now, completed_probe=cp)
+        return await _advance_probe(db, corpus_db, sid, slots, pending_probes, incident_types, now, completed_probe=cp, language=language)
 
     # ── GPS Confirm ───────────────────────────────────────────────────────────
     elif stage == STAGE_GPS_CONFIRM:
@@ -1655,7 +2088,7 @@ async def _dispatch(
             {"session_id": sid},
             {"$set": {"stage": STAGE_PROBE, "updated_at": now}},
         )
-        return await _advance_probe(db, corpus_db, sid, slots_fresh, pp, incident_types, now)
+        return await _advance_probe(db, corpus_db, sid, slots_fresh, pp, incident_types, now, language=language)
 
     # ── Section Suggest ───────────────────────────────────────────────────────
     elif stage == STAGE_SECTION_SUGGEST:
@@ -1666,12 +2099,9 @@ async def _dispatch(
         )
         return {
             "session_id": sid, "stage": STAGE_READ_BACK,
-            "bot_message": (
-                f"Here is a summary of your complaint:\n\n{summary}\n\n"
-                "Is everything correct? Shall I generate your FIR draft?"
-            ),
+            "bot_message": _tm("summary_correct", language, summary=summary),
             "input_type": INPUT_CONFIRM,
-            "quick_replies": ["Yes, generate my draft", "Edit something"],
+            "quick_replies": [_tm("yes_generate", language), _tm("edit_something", language)],
             "slots_preview": slots, "suggested_sections": sections, "completed": False,
         }
 
@@ -1681,7 +2111,7 @@ async def _dispatch(
         if "edit" in msg_lower or ("no" in msg_lower and "no, i" not in msg_lower):
             return {
                 "session_id": sid, "stage": STAGE_READ_BACK,
-                "bot_message": "What would you like to change? Please type the correction and I'll update your complaint.",
+                "bot_message": _tm("what_to_change", language),
                 "input_type": INPUT_TEXT, "quick_replies": [], "completed": False,
             }
         # Generate draft
@@ -1699,7 +2129,7 @@ async def _dispatch(
         )
         return {
             "session_id": sid, "stage": STAGE_COMPLETED,
-            "bot_message": "\u2705 Your FIR draft is ready!\n\nTap \"View Draft\" to see, save, or export it.",
+            "bot_message": _tm("draft_ready", language),
             "input_type": INPUT_DONE, "quick_replies": [],
             "draft": draft_text, "completed": True,
         }
@@ -1707,7 +2137,7 @@ async def _dispatch(
     elif stage == STAGE_COMPLETED:
         return {
             "session_id": sid, "stage": STAGE_COMPLETED,
-            "bot_message": "Your draft is ready. Tap \"View Draft\" to see it.",
+            "bot_message": _tm("draft_already", language),
             "input_type": INPUT_DONE, "draft": session.get("draft", ""),
             "quick_replies": [], "completed": True,
         }
@@ -1719,6 +2149,7 @@ async def _advance_probe(
     db, corpus_db, sid: str, slots: dict,
     pending_probes: list[str], incident_types: list[str], now: str,
     completed_probe: Optional[str] = None,
+    language: str = "en",
 ) -> dict:
     """Advance to next probe in queue, or enter section_suggest if none left."""
     # ── v3.3: Track answered probe for back navigation ──────────────────────
@@ -1745,7 +2176,7 @@ async def _advance_probe(
         if next_probe == "probe_date_confirm" and rdd:
             bot_msg = f"I calculated the incident happened on **{rdd}**.\nIs that correct?"
         else:
-            bot_msg = pdef["message"]
+            bot_msg = _tp(next_probe, language)
         # v3.4: Compute probe progress for "Q X/Y" frontend counter
         done_count = len((session_fresh or {}).get("probe_history", []))
         total_probes = done_count + 1 + len(remaining)
@@ -1779,22 +2210,13 @@ async def _enter_section_suggest(
         sec_lines = "\n".join(
             f"• BNS {s['section_number']} \u2014 {s['section_heading']}" for s in confirmed[:6]
         )
-        msg = (
-            f"Based on your description, the following BNS sections appear to apply:\n\n"
-            f"{sec_lines}\n\n"
-            "\u26a0\ufe0f These are suggestions only \u2014 the investigating officer determines final sections.\n\n"
-            "Shall I proceed with generating your draft?"
-        )
+        msg = _tm("section_found", language, sec_lines=sec_lines)
     else:
-        msg = (
-            "I've gathered all the details for your complaint.\n\n"
-            "The applicable BNS sections will be noted by the investigating officer.\n\n"
-            "Ready to generate your FIR draft?"
-        )
+        msg = _tm("section_none", language)
     return {
         "session_id": sid, "stage": STAGE_SECTION_SUGGEST,
         "bot_message": msg, "input_type": INPUT_CONFIRM,
-        "quick_replies": ["Yes, proceed", "Go back"],
+        "quick_replies": [_tm("yes_proceed", language), _tm("go_back", language)],
         "suggested_sections": confirmed,
         "dropped_sections": dropped,  # Issue 9: expose dropped sections for drawer
         "completed": False,

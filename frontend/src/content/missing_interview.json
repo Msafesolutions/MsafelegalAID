@@ -1,0 +1,384 @@
+{
+  "id": "missing_interview",
+  "version": "1.0",
+  "entry_screens": {
+    "first_screen": {
+      "title": {
+        "en": "Someone is Missing",
+        "hi": "कोई लापता है",
+        "mr": "कोणी बेपत्ता आहे"
+      },
+      "urgent_note": {
+        "en": "If there is immediate danger, call the police now. Do not wait.",
+        "hi": "यदि तत्काल खतरा है, तो अभी पुलिस को कॉल करें। प्रतीक्षा न करें।",
+        "mr": "जर तात्काळ धोका असेल, तर आत्ताच पोलिसांना कॉल करा. थांबू नका."
+      },
+      "body": {
+        "en": "DHARA will help you prepare a written complaint for the police. First, please call emergency services if you haven't already.",
+        "hi": "DHARA पुलिस के लिए लिखित शिकायत तैयार करने में मदद करेगा। पहले, यदि आपने अभी तक नहीं किया है तो कृपया आपातकालीन सेवाओं को कॉल करें।",
+        "mr": "DHARA पोलिसांसाठी लेखी तक्रार तयार करण्यात मदत करेल. प्रथम, तुम्ही अद्याप केले नसल्यास आपत्कालीन सेवांना कॉल करा."
+      },
+      "emergency_numbers": [
+        {
+          "number": "112",
+          "label": {
+            "en": "Police / Emergency",
+            "hi": "पुलिस / आपातकाल",
+            "mr": "पोलीस / आणीबाणी"
+          }
+        },
+        {
+          "number": "1098",
+          "label": {
+            "en": "Childline (for missing children)",
+            "hi": "चाइल्डलाइन (लापता बच्चों के लिए)",
+            "mr": "चाइल्डलाइन (बेपत्ता मुलांसाठी)"
+          }
+        }
+      ],
+      "continue_label": {
+        "en": "Prepare Written Complaint",
+        "hi": "लिखित शिकायत तैयार करें",
+        "mr": "लेखी तक्रार तयार करा"
+      }
+    }
+  },
+  "questions": [
+    {
+      "id": "MP1",
+      "order": 1,
+      "category": "missing_person",
+      "type": "text",
+      "field": "missing_name",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "What is the full name of the missing person?",
+        "hi": "लापता व्यक्ति का पूरा नाम क्या है?",
+        "mr": "बेपत्ता व्यक्तीचे पूर्ण नाव काय आहे?"
+      },
+      "placeholder": {
+        "en": "e.g. Ramesh Kumar",
+        "hi": "उदा. रमेश कुमार",
+        "mr": "उदा. रमेश कुमार"
+      }
+    },
+    {
+      "id": "MP2",
+      "order": 2,
+      "category": "missing_person",
+      "type": "text",
+      "field": "age",
+      "data_handling": "device_only_encrypted",
+      "is_minor_check": true,
+      "label": {
+        "en": "How old are they? (approximate age is fine)",
+        "hi": "उनकी आयु कितनी है? (अनुमानित आयु ठीक है)",
+        "mr": "त्यांचे वय किती आहे? (अंदाजे वय चालेल)"
+      },
+      "placeholder": {
+        "en": "e.g. 14 or 35",
+        "hi": "उदा. 14 या 35",
+        "mr": "उदा. 14 किंवा 35"
+      }
+    },
+    {
+      "id": "MP3",
+      "order": 3,
+      "category": "missing_person",
+      "type": "text",
+      "field": "relationship",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "What is your relationship to the missing person?",
+        "hi": "आपका लापता व्यक्ति से क्या संबंध है?",
+        "mr": "बेपत्ता व्यक्तीशी तुमचे काय नाते आहे?"
+      },
+      "placeholder": {
+        "en": "e.g. Father, Mother, Spouse, Friend",
+        "hi": "उदा. पिता, माँ, पति/पत्नी, मित्र",
+        "mr": "उदा. वडील, आई, जोडीदार, मित्र"
+      }
+    },
+    {
+      "id": "MP4",
+      "order": 4,
+      "category": "missing_person",
+      "type": "text",
+      "field": "last_seen_date",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "When did you last see them? (date and approximate time)",
+        "hi": "आपने उन्हें अंतिम बार कब देखा? (तिथि और अनुमानित समय)",
+        "mr": "तुम्ही त्यांना शेवटचे केव्हा पाहिले? (तारीख आणि अंदाजे वेळ)"
+      },
+      "placeholder": {
+        "en": "e.g. 24 September 2026, around 8 PM",
+        "hi": "उदा. 24 सितंबर 2026, शाम लगभग 8 बजे",
+        "mr": "उदा. 24 सप्टेंबर 2026, सायंकाळी सुमारे 8 वाजता"
+      }
+    },
+    {
+      "id": "MP5",
+      "order": 5,
+      "category": "missing_person",
+      "type": "text",
+      "field": "last_seen_place",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Where were they last seen? (address or landmark)",
+        "hi": "उन्हें अंतिम बार कहाँ देखा गया? (पता या स्थान)",
+        "mr": "त्यांना शेवटचे कुठे पाहिले गेले? (पत्ता किंवा खूण)"
+      },
+      "placeholder": {
+        "en": "e.g. Near Dadar station, Mumbai",
+        "hi": "उदा. दादर स्टेशन के पास, मुंबई",
+        "mr": "उदा. दादर स्टेशनजवळ, मुंबई"
+      }
+    },
+    {
+      "id": "MP6",
+      "order": 6,
+      "category": "missing_person",
+      "type": "text",
+      "field": "physical_description",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Describe their appearance (height, build, skin tone, hair, what they were wearing)",
+        "hi": "उनकी शारीरिक विशेषताएं बताएं (ऊंचाई, काया, रंग, बाल, पहने हुए कपड़े)",
+        "mr": "त्यांचे वर्णन करा (उंची, बांधा, रंग, केस, ते काय घालत होते)"
+      },
+      "placeholder": {
+        "en": "e.g. Tall, slim, fair skin, black hair, wearing blue jeans and white shirt",
+        "hi": "उदा. लंबे, पतले, गोरे, काले बाल, नीली जींस और सफेद शर्ट",
+        "mr": "उदा. उंच, किरकोळ, गोरे, काळे केस, निळी जीन्स आणि पांढरा शर्ट"
+      }
+    },
+    {
+      "id": "MP7",
+      "order": 7,
+      "category": "missing_person",
+      "type": "text",
+      "field": "distinguishing_marks",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Any identifying marks? (birthmarks, tattoos, scars, disability — if known)",
+        "hi": "कोई पहचान चिह्न? (जन्म चिह्न, टैटू, निशान, विकलांगता — यदि ज्ञात हो)",
+        "mr": "ओळखण्याची कोणती खूण आहे का? (जन्मखूण, टॅटू, व्रण — माहीत असल्यास)"
+      },
+      "placeholder": {
+        "en": "e.g. Small scar on left cheek, or type 'none'",
+        "hi": "उदा. बाएं गाल पर छोटा निशान, या 'none' लिखें",
+        "mr": "उदा. डाव्या गालावर लहान व्रण, किंवा 'none' टाईप करा"
+      }
+    },
+    {
+      "id": "MP8",
+      "order": 8,
+      "category": "missing_person",
+      "type": "text",
+      "field": "last_known_contact",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Who was the last person to see or speak with them?",
+        "hi": "उन्हें अंतिम बार किसने देखा या बात की?",
+        "mr": "त्यांना शेवटचे कोणी पाहिले किंवा कोणाशी बोलले?"
+      },
+      "placeholder": {
+        "en": "e.g. Their friend Suresh, or 'unknown'",
+        "hi": "उदा. उनके मित्र सुरेश, या 'unknown'",
+        "mr": "उदा. त्यांचा मित्र सुरेश, किंवा 'unknown'"
+      }
+    },
+    {
+      "id": "MP9",
+      "order": 9,
+      "category": "missing_person",
+      "type": "single_choice",
+      "field": "is_minor",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Is the missing person under 18 years of age?",
+        "hi": "क्या लापता व्यक्ति 18 वर्ष से कम आयु का/की है?",
+        "mr": "बेपत्ता व्यक्ती 18 वर्षांपेक्षा कमी वयाची आहे का?"
+      },
+      "options": [
+        { "id": "YES", "text": { "en": "Yes, under 18", "hi": "हाँ, 18 से कम", "mr": "होय, 18 पेक्षा कमी" } },
+        { "id": "NO",  "text": { "en": "No, 18 or older", "hi": "नहीं, 18 या उससे अधिक", "mr": "नाही, 18 किंवा त्यापेक्षा जास्त" } }
+      ],
+      "if_yes_show": {
+        "en": "Since the missing person is a minor, police are LEGALLY REQUIRED to register the complaint IMMEDIATELY — no 24-hour wait applies. Also call Childline: 1098.",
+        "hi": "चूंकि लापता व्यक्ति नाबालिग है, पुलिस को तुरंत शिकायत दर्ज करना कानूनी रूप से अनिवार्य है — 24 घंटे की प्रतीक्षा अवधि लागू नहीं होती। चाइल्डलाइन: 1098 पर भी कॉल करें।",
+        "mr": "बेपत्ता व्यक्ती अल्पवयीन असल्याने, पोलिसांनी तक्रार लगेच नोंदवणे कायदेशीरदृष्ट्या बंधनकारक आहे — 24 तासांची प्रतीक्षा लागू नाही. चाइल्डलाइन: 1098 ला देखील कॉल करा."
+      }
+    },
+    {
+      "id": "MP10",
+      "order": 10,
+      "category": "missing_person",
+      "type": "text",
+      "field": "possible_destination",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Do you have any idea where they might have gone? (friends, relatives, places they visit)",
+        "hi": "क्या आपको पता है कि वे कहाँ गए होंगे? (दोस्त, रिश्तेदार, जगहें)",
+        "mr": "त्यांनी कुठे जाऊ शकते याची तुम्हाला काही कल्पना आहे का? (मित्र, नातेवाईक, जागा)"
+      },
+      "placeholder": {
+        "en": "e.g. May have gone to aunt's house in Pune, or 'unknown'",
+        "hi": "उदा. पुणे में मौसी के घर गए होंगे, या 'unknown'",
+        "mr": "उदा. पुण्यात मावशीच्या घरी गेले असतील, किंवा 'unknown'"
+      }
+    },
+    {
+      "id": "MP11",
+      "order": 11,
+      "category": "missing_person",
+      "type": "text",
+      "field": "reason_if_known",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Do you know any reason why they may have gone missing?",
+        "hi": "क्या आपको पता है कि वे क्यों लापता हुए होंगे?",
+        "mr": "ते का बेपत्ता झाले असतील याचे काही कारण तुम्हाला माहीत आहे का?"
+      },
+      "placeholder": {
+        "en": "e.g. Family dispute, mental health issue, or 'unknown'",
+        "hi": "उदा. पारिवारिक विवाद, मानसिक स्वास्थ्य समस्या, या 'unknown'",
+        "mr": "उदा. कौटुंबिक वाद, मानसिक आरोग्य समस्या, किंवा 'unknown'"
+      }
+    },
+    {
+      "id": "MP12",
+      "order": 12,
+      "category": "missing_person",
+      "type": "text",
+      "field": "previous_missing",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Has this person gone missing before?",
+        "hi": "क्या यह व्यक्ति पहले भी लापता हुआ/हुई है?",
+        "mr": "ही व्यक्ती यापूर्वीही बेपत्ता झाली आहे का?"
+      },
+      "placeholder": {
+        "en": "Yes / No — and if yes, any details",
+        "hi": "हाँ / नहीं — और यदि हाँ, तो विवरण",
+        "mr": "होय / नाही — आणि होय असल्यास, तपशील"
+      }
+    },
+    {
+      "id": "MP13",
+      "order": 13,
+      "category": "missing_person",
+      "type": "text",
+      "field": "mobile_or_vehicle",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Did they have a mobile phone or vehicle with them?",
+        "hi": "क्या उनके पास मोबाइल फोन या वाहन था?",
+        "mr": "त्यांच्याकडे मोबाईल फोन किंवा वाहन होते का?"
+      },
+      "placeholder": {
+        "en": "e.g. Mobile 9876543210 last active at 7 PM / Red Honda Activa MH-12-AB-1234",
+        "hi": "उदा. मोबाइल 9876543210 शाम 7 बजे अंतिम सक्रिय / लाल होंडा एक्टिवा",
+        "mr": "उदा. मोबाईल 9876543210 संध्या 7 वाजता शेवटचा सक्रिय / लाल होंडा ऍक्टिव्हा"
+      }
+    },
+    {
+      "id": "MP14",
+      "order": 14,
+      "category": "missing_person",
+      "type": "text",
+      "field": "police_station",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Which police station will you submit this complaint to?",
+        "hi": "आप यह शिकायत किस पुलिस थाने में जमा करेंगे?",
+        "mr": "तुम्ही ही तक्रार कोणत्या पोलीस ठाण्यात सादर कराल?"
+      },
+      "placeholder": {
+        "en": "e.g. Dadar Police Station, Mumbai",
+        "hi": "उदा. दादर पुलिस थाना, मुंबई",
+        "mr": "उदा. दादर पोलीस ठाणे, मुंबई"
+      }
+    },
+    {
+      "id": "RP1",
+      "order": 15,
+      "category": "reporter",
+      "type": "text",
+      "field": "reporter_name",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Your full name (the person filing this complaint)",
+        "hi": "आपका पूरा नाम (शिकायत दर्ज करने वाले)",
+        "mr": "तुमचे पूर्ण नाव (तक्रार नोंदवणारे)"
+      },
+      "placeholder": {
+        "en": "e.g. Sunita Devi",
+        "hi": "उदा. सुनीता देवी",
+        "mr": "उदा. सुनीता देवी"
+      }
+    },
+    {
+      "id": "RP2",
+      "order": 16,
+      "category": "reporter",
+      "type": "text",
+      "field": "reporter_address",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Your address",
+        "hi": "आपका पता",
+        "mr": "तुमचा पत्ता"
+      },
+      "placeholder": {
+        "en": "Full residential address",
+        "hi": "पूरा आवासीय पता",
+        "mr": "पूर्ण राहण्याचा पत्ता"
+      }
+    },
+    {
+      "id": "RP3",
+      "order": 17,
+      "category": "reporter",
+      "type": "text",
+      "field": "reporter_mobile",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Your mobile number (for police to contact you)",
+        "hi": "आपका मोबाइल नंबर (पुलिस के संपर्क के लिए)",
+        "mr": "तुमचा मोबाईल नंबर (पोलिसांनी संपर्क करण्यासाठी)"
+      },
+      "placeholder": {
+        "en": "e.g. 9876543210",
+        "hi": "उदा. 9876543210",
+        "mr": "उदा. 9876543210"
+      }
+    },
+    {
+      "id": "RP4",
+      "order": 18,
+      "category": "reporter",
+      "type": "declaration",
+      "field": "declaration",
+      "data_handling": "device_only_encrypted",
+      "label": {
+        "en": "Declaration",
+        "hi": "घोषणा",
+        "mr": "घोषणा"
+      },
+      "text": {
+        "en": "I declare that the information provided above is true and correct to the best of my knowledge. I understand that providing false information to the police is a criminal offence.",
+        "hi": "मैं घोषणा करता/करती हूँ कि उपर्युक्त जानकारी मेरी सर्वोत्तम जानकारी के अनुसार सत्य और सही है। मैं समझता/समझती हूँ कि पुलिस को झूठी जानकारी देना आपराधिक अपराध है।",
+        "mr": "मी घोषित करतो/करते की वरील माहिती माझ्या माहितीनुसार सत्य आणि योग्य आहे. पोलिसांना खोटी माहिती देणे हा गुन्हा आहे हे मला माहीत आहे."
+      }
+    }
+  ],
+  "output": {
+    "server_storage": "none",
+    "local_storage": "encrypted",
+    "analytics_event": "missing_completed",
+    "analytics_payload": "event_name_only",
+    "include_rights_card": true
+  }
+}

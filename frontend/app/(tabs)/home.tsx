@@ -46,6 +46,35 @@ export default function Home() {
           <View style={[styles.helpIcon, i === 1 ? styles.goldIcon : i === 2 ? styles.greenIcon : null]}><Ionicons name={item.icon} size={22} color={i === 1 ? colors.brandSecondary : i === 2 ? colors.success : colors.primary} /></View>
           <Text style={styles.helpLabel}>{item.label}</Text>
         </Pressable>)}</View>
+
+        {/* ── Someone is Missing — Emergency Card ───────────────────────── */}
+        <Pressable
+          testID="home-missing-person"
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.missingCard, pressed && styles.pressed]}
+          onPress={() => router.push('/missing')}
+        >
+          <View style={styles.missingLeft}>
+            <Ionicons name="alert-circle" size={28} color="#CC0000" />
+            <View>
+              <Text style={styles.missingTitle}>
+                {language.code === 'hi'
+                  ? 'कोई लापता है'
+                  : language.code === 'mr'
+                  ? 'कोणी बेपत्ता आहे'
+                  : 'Someone is missing'}
+              </Text>
+              <Text style={styles.missingSub}>
+                {language.code === 'hi'
+                  ? 'शिकायत तैयार करें'
+                  : language.code === 'mr'
+                  ? 'तक्रार तयार करा'
+                  : 'Prepare written complaint'}
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#CC0000" />
+        </Pressable>
         <View style={styles.sectionRow}><Text testID="home-complaints-heading" style={styles.sectionTitle}>YOUR COMPLAINTS</Text>
           <View style={styles.complaintActions}><Pressable testID="home-new-complaint" accessibilityRole="button" accessibilityLabel="Start a new complaint" style={styles.seeAll} onPress={() => router.push('/fir-draft')}><Ionicons name="add-circle-outline" size={22} color={colors.primary} /></Pressable><Pressable testID="home-see-all" accessibilityRole="button" style={styles.seeAll} onPress={() => router.push('/complaints')}><Text style={styles.link}>See all</Text></Pressable></View>
         </View>
@@ -81,6 +110,14 @@ const styles = StyleSheet.create({
   goldIcon: { backgroundColor: colors.goldMuted },
   greenIcon: { backgroundColor: colors.successSoft },
   helpLabel: { color: colors.onSurface, fontSize: 11, lineHeight: 16, fontWeight: '600', textAlign: 'center' },
+  missingCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#FFF0F0', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+    marginBottom: 14, borderWidth: 1.5, borderColor: '#FFCCCC',
+  },
+  missingLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  missingTitle: { fontSize: 16, fontWeight: '700', color: '#CC0000' },
+  missingSub:   { fontSize: 12, color: '#AA3333', marginTop: 2 },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, marginBottom: 4 },
   seeAll: { minHeight: 44, minWidth: 44, alignItems: 'flex-end', justifyContent: 'center' },
   link: { color: colors.primary, fontSize: 12, fontWeight: '700' },
