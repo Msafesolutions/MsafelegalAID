@@ -89,6 +89,16 @@ export default function TabsLayout() {
             }}
           />
           <Tabs.Screen
+            name="voter-roll"
+            options={{
+              title: t('tab.vote', language.code),
+              tabBarIcon: ({ color, size }) => (
+                <Ionicons name="checkbox-outline" size={size} color={color} />
+              ),
+              tabBarButtonTestID: 'tab-vote',
+            }}
+          />
+          <Tabs.Screen
             name="saved"
             options={{
               title: t('tab.saved', language.code),

@@ -10,6 +10,7 @@
 
 export type I18nKey =
   | 'tab.ask'
+  | 'tab.vote'
   | 'tab.rights'
   | 'tab.saved'
   | 'tab.lookup'
@@ -57,6 +58,7 @@ type LangMap = Partial<Record<string, string>>;
 
 const TR: Record<I18nKey, LangMap> = {
   'tab.ask':       { en:'Ask',       hi:'पूछें',      mr:'विचारा',    ta:'கேள்',       bn:'জিজ্ঞেস',  te:'అడగండి',   gu:'પૂછો',   kn:'ಕೇಳಿ',   pa:'ਪੁੱਛੋ',   ml:'ചോദിക്കൂ' },
+  'tab.vote':      { en:'Vote',      hi:'मत',         mr:'मत',        ta:'வாக்கு',     bn:'ভোট',      te:'ఓటు',      gu:'મત',     kn:'ಮತ',     pa:'ਵੋਟ',     ml:'വോട്ട്' },
   'tab.rights':    { en:'Rights',    hi:'अधिकार',     mr:'हक्क',      ta:'உரிமை',      bn:'অধিকার',  te:'హక్కులు',  gu:'અધિકાર', kn:'ಹಕ್ಕು',  pa:'ਅਧਿਕਾਰ',  ml:'അവകാശം' },
   'tab.saved':     { en:'Saved',     hi:'सहेजे',      mr:'जतन',       ta:'சேமித்த',    bn:'সংরক্ষিত', te:'సేవ్',     gu:'સાચવ્યા', kn:'ಉಳಿಸಿದ', pa:'ਸੁਰੱਖਿਅਤ', ml:'സേവ്' },
   'tab.lookup':    { en:'Lookup',    hi:'खोज',        mr:'शोध',       ta:'தேடல்',      bn:'খোঁজ',    te:'వెతుకు',   gu:'શોધ',    kn:'ಹುಡುಕು', pa:'ਖੋਜ',     ml:'തിരയൂ' },

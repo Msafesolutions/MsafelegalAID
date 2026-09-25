@@ -1,0 +1,230 @@
+{
+  "form6": {
+    "id": "form6",
+    "title": {
+      "en": "Form 6 — Application for Inclusion of Name in Electoral Roll",
+      "hi": "फॉर्म 6 — मतदाता सूची में नाम जोड़ने का आवेदन",
+      "mr": "फॉर्म 6 — मतदार यादीत नाव समाविष्ट करण्याचा अर्ज"
+    },
+    "questions": [
+      {
+        "id": "F6Q1",
+        "order": 1,
+        "type": "text",
+        "field": "applicant_name_en",
+        "label": { "en": "Full Name (as in official ID)", "hi": "पूरा नाम (सरकारी ID अनुसार)", "mr": "पूर्ण नाव (अधिकृत ID नुसार)" },
+        "placeholder": { "en": "e.g. Ramesh Kumar Sharma", "hi": "उदा. रमेश कुमार शर्मा", "mr": "उदा. रमेश कुमार शर्मा" }
+      },
+      {
+        "id": "F6Q2",
+        "order": 2,
+        "type": "text",
+        "field": "father_husband_name",
+        "label": { "en": "Father's / Husband's Name", "hi": "पिता / पति का नाम", "mr": "वडिलांचे / पतीचे नाव" },
+        "placeholder": { "en": "e.g. Suresh Kumar Sharma", "hi": "उदा. सुरेश कुमार शर्मा", "mr": "उदा. सुरेश कुमार शर्मा" }
+      },
+      {
+        "id": "F6Q3",
+        "order": 3,
+        "type": "text",
+        "field": "date_of_birth",
+        "label": { "en": "Date of Birth (DD/MM/YYYY)", "hi": "जन्म तिथि (DD/MM/YYYY)", "mr": "जन्म तारीख (DD/MM/YYYY)" },
+        "placeholder": { "en": "e.g. 15/08/1995", "hi": "उदा. 15/08/1995", "mr": "उदा. 15/08/1995" }
+      },
+      {
+        "id": "F6Q4",
+        "order": 4,
+        "type": "single_choice",
+        "field": "gender",
+        "label": { "en": "Gender", "hi": "लिंग", "mr": "लिंग" },
+        "options": [
+          { "id": "MALE", "text": { "en": "Male", "hi": "पुरुष", "mr": "पुरुष" } },
+          { "id": "FEMALE", "text": { "en": "Female", "hi": "महिला", "mr": "महिला" } },
+          { "id": "OTHER", "text": { "en": "Other", "hi": "अन्य", "mr": "इतर" } }
+        ]
+      },
+      {
+        "id": "F6Q5",
+        "order": 5,
+        "type": "text",
+        "field": "house_number",
+        "label": { "en": "House / Flat Number", "hi": "मकान / फ्लैट नंबर", "mr": "घर / फ्लॅट नंबर" },
+        "placeholder": { "en": "e.g. 12B", "hi": "उदा. 12B", "mr": "उदा. 12B" }
+      },
+      {
+        "id": "F6Q6",
+        "order": 6,
+        "type": "text",
+        "field": "street_area",
+        "label": { "en": "Street / Area / Village", "hi": "गली / क्षेत्र / गाँव", "mr": "रस्ता / परिसर / गाव" },
+        "placeholder": { "en": "e.g. MG Road, Koramangala", "hi": "उदा. एमजी रोड, कोरमंगला", "mr": "उदा. एमजी रोड" }
+      },
+      {
+        "id": "F6Q7",
+        "order": 7,
+        "type": "text",
+        "field": "district_state",
+        "label": { "en": "District and State", "hi": "जिला और राज्य", "mr": "जिल्हा आणि राज्य" },
+        "placeholder": { "en": "e.g. Bengaluru, Karnataka", "hi": "उदा. बेंगलुरु, कर्नाटक", "mr": "उदा. बेंगळुरू, कर्नाटक" }
+      },
+      {
+        "id": "F6Q8",
+        "order": 8,
+        "type": "text",
+        "field": "pin_code",
+        "label": { "en": "PIN Code", "hi": "पिन कोड", "mr": "पिन कोड" },
+        "placeholder": { "en": "e.g. 560095", "hi": "उदा. 560095", "mr": "उदा. 560095" }
+      },
+      {
+        "id": "F6Q9",
+        "order": 9,
+        "type": "text",
+        "field": "mobile_number",
+        "label": { "en": "Mobile Number (optional)", "hi": "मोबाइल नंबर (वैकल्पिक)", "mr": "मोबाईल नंबर (ऐच्छिक)" },
+        "placeholder": { "en": "e.g. 9876543210", "hi": "उदा. 9876543210", "mr": "उदा. 9876543210" }
+      },
+      {
+        "id": "F6Q10",
+        "order": 10,
+        "type": "declaration",
+        "field": "declaration",
+        "label": {
+          "en": "Declaration",
+          "hi": "घोषणा",
+          "mr": "घोषणा"
+        },
+        "text": {
+          "en": "I declare that I am an Indian citizen, that I have attained the age of 18 years as of the qualifying date, and that the particulars given above are true to the best of my knowledge and belief.",
+          "hi": "मैं घोषणा करता/करती हूँ कि मैं भारतीय नागरिक हूँ, निर्धारित तिथि तक 18 वर्ष की आयु पूरी कर चुका/चुकी हूँ, और उपर्युक्त विवरण मेरी जानकारी और विश्वास के अनुसार सत्य है।",
+          "mr": "मी घोषित करतो/करते की मी भारतीय नागरिक आहे, पात्रता तारखेपर्यंत 18 वर्षे पूर्ण केली आहेत, आणि वरील माहिती माझ्या माहिती व विश्वासानुसार सत्य आहे."
+        }
+      }
+    ],
+    "output": {
+      "filename_prefix": "DHARA_Form6",
+      "checklist_items": {
+        "en": [
+          "Proof of age (Aadhaar / birth certificate / school leaving certificate)",
+          "Proof of residence (Aadhaar / utility bill / bank passbook)",
+          "Recent passport-size photograph",
+          "Completed Form 6 (this document)"
+        ],
+        "hi": [
+          "आयु प्रमाण (आधार / जन्म प्रमाण पत्र / स्कूल छोड़ने का प्रमाण पत्र)",
+          "निवास प्रमाण (आधार / बिजली बिल / बैंक पासबुक)",
+          "हालिया पासपोर्ट आकार की फोटो",
+          "भरा हुआ फॉर्म 6 (यह दस्तावेज़)"
+        ],
+        "mr": [
+          "वयाचा पुरावा (आधार / जन्म दाखला / शाळा सोडल्याचा दाखला)",
+          "निवासाचा पुरावा (आधार / वीज बिल / बँक पासबुक)",
+          "अलीकडील पासपोर्ट आकाराचा फोटो",
+          "भरलेला फॉर्म 6 (हा दस्तऐवज)"
+        ]
+      },
+      "submission_note": {
+        "en": "Submit this form along with the above documents to your local Electoral Registration Officer (ERO) or upload at voters.eci.gov.in",
+        "hi": "यह फॉर्म उपरोक्त दस्तावेजों के साथ स्थानीय ERO को जमा करें या voters.eci.gov.in पर अपलोड करें।",
+        "mr": "हा फॉर्म वरील दस्तऐवजांसह स्थानिक ERO कडे जमा करा किंवा voters.eci.gov.in वर अपलोड करा."
+      }
+    }
+  },
+  "form8": {
+    "id": "form8",
+    "title": {
+      "en": "Form 8 — Application for Correction / Shifting of Voter Registration",
+      "hi": "फॉर्म 8 — मतदाता पंजीकरण सुधार / स्थानांतरण आवेदन",
+      "mr": "फॉर्म 8 — मतदार नोंदणी दुरुस्ती / बदली अर्ज"
+    },
+    "questions": [
+      {
+        "id": "F8Q1",
+        "order": 1,
+        "type": "text",
+        "field": "applicant_name_en",
+        "label": { "en": "Full Name (as in electoral roll)", "hi": "पूरा नाम (मतदाता सूची अनुसार)", "mr": "पूर्ण नाव (मतदार यादीनुसार)" },
+        "placeholder": { "en": "e.g. Priya Suresh Nair", "hi": "उदा. प्रिया सुरेश नायर", "mr": "उदा. प्रिया सुरेश नायर" }
+      },
+      {
+        "id": "F8Q2",
+        "order": 2,
+        "type": "single_choice",
+        "field": "change_type",
+        "label": { "en": "What would you like to change?", "hi": "आप क्या बदलना चाहते हैं?", "mr": "तुम्हाला काय बदलायचे आहे?" },
+        "options": [
+          { "id": "F8Q2_A", "text": { "en": "Shift registration to new address (same or different constituency)", "hi": "नए पते पर पंजीकरण स्थानांतरित", "mr": "नवीन पत्त्यावर नोंदणी बदली" } },
+          { "id": "F8Q2_B", "text": { "en": "Correct name or date of birth", "hi": "नाम या जन्म तिथि सुधार", "mr": "नाव किंवा जन्म तारीख दुरुस्त करा" } },
+          { "id": "F8Q2_C", "text": { "en": "Add / correct EPIC number", "hi": "EPIC नंबर जोड़ें / सुधारें", "mr": "EPIC नंबर जोडा / दुरुस्त करा" } }
+        ]
+      },
+      {
+        "id": "F8Q3",
+        "order": 3,
+        "type": "text",
+        "field": "current_epic",
+        "label": { "en": "Current EPIC / Voter ID Number (if available)", "hi": "वर्तमान EPIC / वोटर ID नंबर (यदि उपलब्ध)", "mr": "सध्याचा EPIC / मतदार ID नंबर (उपलब्ध असल्यास)" },
+        "placeholder": { "en": "e.g. MH/07/123/456789", "hi": "उदा. MH/07/123/456789", "mr": "उदा. MH/07/123/456789" }
+      },
+      {
+        "id": "F8Q4",
+        "order": 4,
+        "type": "text",
+        "field": "new_address",
+        "label": { "en": "New Address (house number, street, area, district, state, PIN)", "hi": "नया पता (मकान नंबर, गली, क्षेत्र, जिला, राज्य, PIN)", "mr": "नवीन पत्ता (घर नंबर, रस्ता, परिसर, जिल्हा, राज्य, PIN)" },
+        "placeholder": { "en": "Full new address", "hi": "पूरा नया पता", "mr": "पूर्ण नवीन पत्ता" },
+        "conditional": { "show_if_field": "change_type", "show_if_value": "F8Q2_A" }
+      },
+      {
+        "id": "F8Q5",
+        "order": 5,
+        "type": "text",
+        "field": "correction_details",
+        "label": { "en": "What needs to be corrected? (describe the error)", "hi": "क्या सुधार करना है? (त्रुटि बताएं)", "mr": "काय दुरुस्त करायचे आहे? (चूक सांगा)" },
+        "placeholder": { "en": "e.g. My name is misspelled as 'Prya' — correct is 'Priya'", "hi": "उदा. नाम में गलती है", "mr": "उदा. नावात चूक आहे" }
+      },
+      {
+        "id": "F8Q6",
+        "order": 6,
+        "type": "declaration",
+        "field": "declaration",
+        "label": { "en": "Declaration", "hi": "घोषणा", "mr": "घोषणा" },
+        "text": {
+          "en": "I declare that the particulars given above are true to the best of my knowledge and belief, and that I am eligible to be registered as a voter in the constituency mentioned.",
+          "hi": "मैं घोषणा करता/करती हूँ कि उपर्युक्त विवरण मेरी जानकारी के अनुसार सत्य है और मैं उल्लिखित निर्वाचन क्षेत्र में मतदाता के रूप में पंजीकृत होने के योग्य हूँ।",
+          "mr": "मी घोषित करतो/करते की वरील माहिती माझ्या माहितीनुसार सत्य आहे आणि मी उल्लेखित मतदारसंघात मतदार म्हणून नोंदणीसाठी पात्र आहे."
+        }
+      }
+    ],
+    "output": {
+      "filename_prefix": "DHARA_Form8",
+      "checklist_items": {
+        "en": [
+          "Current Voter ID card / EPIC (copy)",
+          "Proof of new address for shifting (Aadhaar / utility bill)",
+          "Supporting document for correction (Aadhaar / PAN / birth certificate)",
+          "Recent passport-size photograph",
+          "Completed Form 8 (this document)"
+        ],
+        "hi": [
+          "वर्तमान वोटर ID / EPIC (प्रति)",
+          "नए पते का प्रमाण (आधार / बिजली बिल)",
+          "सुधार के लिए समर्थन दस्तावेज़",
+          "हालिया पासपोर्ट आकार की फोटो",
+          "भरा हुआ फॉर्म 8 (यह दस्तावेज़)"
+        ],
+        "mr": [
+          "सध्याचे मतदार ID / EPIC (प्रत)",
+          "नवीन पत्त्याचा पुरावा (आधार / वीज बिल)",
+          "दुरुस्तीसाठी सहाय्यक दस्तऐवज",
+          "अलीकडील पासपोर्ट आकाराचा फोटो",
+          "भरलेला फॉर्म 8 (हा दस्तऐवज)"
+        ]
+      },
+      "submission_note": {
+        "en": "Submit this form with the above documents to your Electoral Registration Officer (ERO) or upload at voters.eci.gov.in",
+        "hi": "यह फॉर्म दस्तावेजों के साथ ERO को जमा करें या voters.eci.gov.in पर अपलोड करें।",
+        "mr": "हा फॉर्म दस्तऐवजांसह ERO कडे जमा करा किंवा voters.eci.gov.in वर अपलोड करा."
+      }
+    }
+  }
+}

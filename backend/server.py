@@ -3617,6 +3617,288 @@ async def fir_get_pdf(session_id: str):
     )
 
 
+# ── Voter Roll PDF ─────────────────────────────────────────────────────────────
+class VoterPdfRequest(BaseModel):
+    form_type: str          # 'form6' or 'form8'
+    answers: dict           # field_name -> value
+    language: str = "en"   # 'en' | 'hi' | 'mr'
+
+
+@api.post("/voter/pdf")
+async def voter_generate_pdf(body: VoterPdfRequest):
+    """Generate a Form 6 or Form 8 voter roll application PDF using the existing reportlab engine."""
+    import io
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.units import cm
+    from reportlab.lib.colors import HexColor
+    from fastapi.responses import Response as _Resp
+    import datetime
+
+    if body.form_type not in ("form6", "form8"):
+        raise HTTPException(400, "form_type must be 'form6' or 'form8'")
+
+    lang = body.language if body.language in ("en", "hi", "mr") else "en"
+    answers = body.answers
+
+    # ── Labels by language ────────────────────────────────────────────────────
+    form_titles = {
+        "form6": {
+            "en": "Form 6 — Application for Inclusion of Name in Electoral Roll",
+            "hi": "फॉर्म 6 — मतदाता सूची में नाम जोड़ने का आवेदन",
+            "mr": "फॉर्म 6 — मतदार यादीत नाव समाविष्ट करण्याचा अर्ज",
+        },
+        "form8": {
+            "en": "Form 8 — Application for Correction / Shifting of Voter Registration",
+            "hi": "फॉर्म 8 — मतदाता पंजीकरण सुधार / स्थानांतरण आवेदन",
+            "mr": "फॉर्म 8 — मतदार नोंदणी दुरुस्ती / बदली अर्ज",
+        },
+    }
+
+    checklist_label = {"en": "Documents to Attach", "hi": "संलग्न दस्तावेज़", "mr": "जोडावयाचे दस्तऐवज"}
+    sub_note_label  = {"en": "Submission Note", "hi": "जमा करने की जानकारी", "mr": "सादरीकरण नोट"}
+    field_labels_f6 = {
+        "en": {
+            "applicant_name_en": "Full Name",
+            "father_husband_name": "Father's / Husband's Name",
+            "date_of_birth": "Date of Birth",
+            "gender": "Gender",
+            "house_number": "House / Flat Number",
+            "street_area": "Street / Area / Village",
+            "district_state": "District and State",
+            "pin_code": "PIN Code",
+            "mobile_number": "Mobile Number",
+            "declaration": "Declaration",
+        },
+        "hi": {
+            "applicant_name_en": "पूरा नाम",
+            "father_husband_name": "पिता / पति का नाम",
+            "date_of_birth": "जन्म तिथि",
+            "gender": "लिंग",
+            "house_number": "मकान / फ्लैट नंबर",
+            "street_area": "गली / क्षेत्र / गाँव",
+            "district_state": "जिला और राज्य",
+            "pin_code": "पिन कोड",
+            "mobile_number": "मोबाइल नंबर",
+            "declaration": "घोषणा",
+        },
+        "mr": {
+            "applicant_name_en": "पूर्ण नाव",
+            "father_husband_name": "वडिलांचे / पतीचे नाव",
+            "date_of_birth": "जन्म तारीख",
+            "gender": "लिंग",
+            "house_number": "घर / फ्लॅट नंबर",
+            "street_area": "रस्ता / परिसर / गाव",
+            "district_state": "जिल्हा आणि राज्य",
+            "pin_code": "पिन कोड",
+            "mobile_number": "मोबाईल नंबर",
+            "declaration": "घोषणा",
+        },
+    }
+    field_labels_f8 = {
+        "en": {
+            "applicant_name_en": "Full Name",
+            "change_type": "Change Type",
+            "current_epic": "Current EPIC / Voter ID",
+            "new_address": "New Address",
+            "correction_details": "Correction Details",
+            "declaration": "Declaration",
+        },
+        "hi": {
+            "applicant_name_en": "पूरा नाम",
+            "change_type": "परिवर्तन का प्रकार",
+            "current_epic": "वर्तमान EPIC / वोटर ID",
+            "new_address": "नया पता",
+            "correction_details": "सुधार विवरण",
+            "declaration": "घोषणा",
+        },
+        "mr": {
+            "applicant_name_en": "पूर्ण नाव",
+            "change_type": "बदलाचा प्रकार",
+            "current_epic": "सध्याचा EPIC / मतदार ID",
+            "new_address": "नवीन पत्ता",
+            "correction_details": "दुरुस्ती तपशील",
+            "declaration": "घोषणा",
+        },
+    }
+    field_labels = field_labels_f6[lang] if body.form_type == "form6" else field_labels_f8[lang]
+
+    checklists = {
+        "form6": {
+            "en": [
+                "Proof of age (Aadhaar / birth certificate / school leaving certificate)",
+                "Proof of residence (Aadhaar / utility bill / bank passbook)",
+                "Recent passport-size photograph",
+                "Completed Form 6 (this document)",
+            ],
+            "hi": [
+                "आयु प्रमाण (आधार / जन्म प्रमाण पत्र / विद्यालय छोड़ने का प्रमाण पत्र)",
+                "निवास प्रमाण (आधार / बिजली बिल / बैंक पासबुक)",
+                "हालिया पासपोर्ट आकार की फोटो",
+                "भरा हुआ फॉर्म 6 (यह दस्तावेज़)",
+            ],
+            "mr": [
+                "वयाचा पुरावा (आधार / जन्म दाखला / शाळा सोडल्याचा दाखला)",
+                "निवासाचा पुरावा (आधार / वीज बिल / बँक पासबुक)",
+                "अलीकडील पासपोर्ट आकाराचा फोटो",
+                "भरलेला फॉर्म 6 (हा दस्तऐवज)",
+            ],
+        },
+        "form8": {
+            "en": [
+                "Current Voter ID card / EPIC (copy)",
+                "Proof of new address (Aadhaar / utility bill)",
+                "Supporting document for correction (Aadhaar / PAN / birth certificate)",
+                "Recent passport-size photograph",
+                "Completed Form 8 (this document)",
+            ],
+            "hi": [
+                "वर्तमान वोटर ID / EPIC (प्रति)",
+                "नए पते का प्रमाण (आधार / बिजली बिल)",
+                "सुधार के लिए समर्थन दस्तावेज़",
+                "हालिया पासपोर्ट आकार की फोटो",
+                "भरा हुआ फॉर्म 8 (यह दस्तावेज़)",
+            ],
+            "mr": [
+                "सध्याचे मतदार ID / EPIC (प्रत)",
+                "नवीन पत्त्याचा पुरावा (आधार / वीज बिल)",
+                "दुरुस्तीसाठी सहाय्यक दस्तऐवज",
+                "अलीकडील पासपोर्ट आकाराचा फोटो",
+                "भरलेला फॉर्म 8 (हा दस्तऐवज)",
+            ],
+        },
+    }
+    submission_notes = {
+        "form6": {
+            "en": "Submit this form with the above documents to your local Electoral Registration Officer (ERO) or upload at voters.eci.gov.in",
+            "hi": "यह फॉर्म दस्तावेजों के साथ स्थानीय ERO को जमा करें या voters.eci.gov.in पर अपलोड करें।",
+            "mr": "हा फॉर्म दस्तऐवजांसह स्थानिक ERO कडे जमा करा किंवा voters.eci.gov.in वर अपलोड करा.",
+        },
+        "form8": {
+            "en": "Submit this form with the above documents to your Electoral Registration Officer (ERO) or upload at voters.eci.gov.in",
+            "hi": "यह फॉर्म दस्तावेजों के साथ ERO को जमा करें या voters.eci.gov.in पर अपलोड करें।",
+            "mr": "हा फॉर्म दस्तऐवजांसह ERO कडे जमा करा किंवा voters.eci.gov.in वर अपलोड करा.",
+        },
+    }
+
+    # ── Build PDF ─────────────────────────────────────────────────────────────
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        rightMargin=2.2 * cm, leftMargin=2.2 * cm,
+        topMargin=2 * cm, bottomMargin=2 * cm,
+    )
+    styles = getSampleStyleSheet()
+    navy = HexColor("#1B2B5B")
+    gold = HexColor("#C9973A")
+
+    title_style = ParagraphStyle(
+        "VTitle", parent=styles["Heading1"],
+        fontSize=14, spaceAfter=6, leading=20, textColor=navy,
+    )
+    warn_style = ParagraphStyle(
+        "VWarn", parent=styles["Normal"],
+        fontSize=9, leading=14, textColor=HexColor("#8B0000"), spaceAfter=8,
+        borderPad=4,
+    )
+    field_key_style = ParagraphStyle(
+        "VKey", parent=styles["Normal"],
+        fontSize=9, leading=13, textColor=HexColor("#666666"), spaceAfter=1,
+    )
+    field_val_style = ParagraphStyle(
+        "VVal", parent=styles["Normal"],
+        fontSize=11, leading=16, spaceAfter=8, textColor=HexColor("#111111"),
+    )
+    section_style = ParagraphStyle(
+        "VSection", parent=styles["Heading2"],
+        fontSize=10, leading=16, spaceBefore=10, spaceAfter=4, textColor=navy,
+    )
+    checklist_style = ParagraphStyle(
+        "VCheck", parent=styles["Normal"],
+        fontSize=10, leading=16, spaceAfter=4, leftIndent=12,
+    )
+    note_style = ParagraphStyle(
+        "VNote", parent=styles["Normal"],
+        fontSize=9.5, leading=15, spaceAfter=4, textColor=HexColor("#444444"),
+    )
+    footer_style = ParagraphStyle(
+        "VFooter", parent=styles["Normal"],
+        fontSize=8, leading=12, textColor=HexColor("#888888"),
+    )
+
+    ts = datetime.datetime.utcnow().strftime("%d %b %Y, %H:%M UTC")
+    applicant_name = str(answers.get("applicant_name_en", "Applicant")).replace("&", "&amp;")
+
+    story = [
+        # MANDATORY DISCLAIMER — page 1
+        Paragraph(
+            "⚠ <b>IMPORTANT NOTICE:</b> DHARA has prepared this draft to help you. "
+            "This document has not been submitted to the Election Commission of India. "
+            "You must submit it yourself at voters.eci.gov.in or at your local ERO office.",
+            warn_style,
+        ),
+        HRFlowable(width="100%", thickness=1, color=gold, spaceAfter=10),
+        Paragraph(form_titles[body.form_type][lang].replace("&", "&amp;"), title_style),
+        Paragraph(f"Prepared by DHARA · {ts} · For: {applicant_name}", footer_style),
+        Spacer(1, 0.4 * cm),
+        HRFlowable(width="100%", thickness=0.5, color=HexColor("#DDDDDD"), spaceAfter=10),
+    ]
+
+    # ── Field values ──────────────────────────────────────────────────────────
+    for field, label in field_labels.items():
+        val = answers.get(field)
+        if val and str(val).strip():
+            safe_label = label.replace("&", "&amp;")
+            safe_val = str(val).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            story.append(Paragraph(safe_label.upper(), field_key_style))
+            story.append(Paragraph(safe_val, field_val_style))
+
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor("#DDDDDD"), spaceAfter=8))
+
+    # ── Checklist ─────────────────────────────────────────────────────────────
+    story.append(Paragraph(checklist_label[lang].upper(), section_style))
+    for item in checklists[body.form_type][lang]:
+        safe_item = item.replace("&", "&amp;")
+        story.append(Paragraph(f"☐  {safe_item}", checklist_style))
+
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor("#DDDDDD"), spaceAfter=8))
+
+    # ── Submission note ───────────────────────────────────────────────────────
+    story.append(Paragraph(sub_note_label[lang].upper(), section_style))
+    story.append(Paragraph(
+        submission_notes[body.form_type][lang].replace("&", "&amp;"),
+        note_style,
+    ))
+
+    story.append(Spacer(1, 0.8 * cm))
+    story.append(Paragraph(
+        "© DHARA · Prepared by Calvil Technologies · This is a citizen assistance draft, "
+        "not an official government document.",
+        footer_style,
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+
+    name_slug = "".join(c for c in applicant_name if c.isalnum() or c in " _-")[:30].strip().replace(" ", "_")
+    ts_slug = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M")
+    filename_prefix = "DHARA_Form6" if body.form_type == "form6" else "DHARA_Form8"
+    filename = f"{filename_prefix}_{name_slug}_{ts_slug}.pdf"
+
+    return _Resp(
+        content=buf.read(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
 app.include_router(api)
 
 app.add_middleware(

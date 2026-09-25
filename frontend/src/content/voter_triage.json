@@ -1,0 +1,148 @@
+{
+  "id": "voter_triage",
+  "version": "1.0",
+  "questions": [
+    {
+      "id": "VT1",
+      "order": 1,
+      "type": "single_choice",
+      "text": {
+        "en": "Why do you need help with your voter registration?",
+        "hi": "आपको अपने मतदाता पंजीकरण में किस कारण सहायता चाहिए?",
+        "mr": "तुम्हाला मतदार नोंदणीमध्ये कोणत्या कारणासाठी मदत हवी आहे?"
+      },
+      "options": [
+        {
+          "id": "VT1_A",
+          "text": {
+            "en": "My name was deleted / I want to register for the first time",
+            "hi": "मेरा नाम हटाया गया / पहली बार नामांकन करना है",
+            "mr": "माझे नाव काढले गेले / पहिल्यांदा नोंदणी करायची आहे"
+          },
+          "next": "VT2"
+        },
+        {
+          "id": "VT1_B",
+          "text": {
+            "en": "I want to correct my details or shift registration (address, name, EPIC)",
+            "hi": "विवरण सुधारना या पंजीकरण स्थानांतरित करना है",
+            "mr": "तपशील दुरुस्त करायचे किंवा नोंदणी बदलायची आहे"
+          },
+          "next": "FORM8"
+        },
+        {
+          "id": "VT1_C",
+          "text": {
+            "en": "My application was rejected after a formal hearing",
+            "hi": "सुनवाई के बाद मेरा आवेदन अस्वीकार कर दिया गया",
+            "mr": "सुनावणीनंतर माझा अर्ज नाकारला गेला"
+          },
+          "next": "LEGAL_HELP"
+        }
+      ]
+    },
+    {
+      "id": "VT2",
+      "order": 2,
+      "type": "single_choice",
+      "text": {
+        "en": "What is the main reason your name was removed?",
+        "hi": "आपका नाम किस कारण से हटाया गया?",
+        "mr": "तुमचे नाव कोणत्या कारणाने काढले गेले?"
+      },
+      "options": [
+        {
+          "id": "VT2_A",
+          "text": {
+            "en": "I moved to a new address or constituency",
+            "hi": "मैं नए पते या निर्वाचन क्षेत्र में चला/चली गया/गई",
+            "mr": "मी नवीन पत्त्यावर किंवा मतदारसंघात गेलो/गेले"
+          },
+          "next": "FORM8"
+        },
+        {
+          "id": "VT2_B",
+          "text": {
+            "en": "Name wrongly deleted / enrolling for the first time",
+            "hi": "गलत तरीके से हटाया / पहली बार नामांकन",
+            "mr": "चुकीने काढले / पहिल्यांदा नोंदणी"
+          },
+          "next": "VT3"
+        },
+        {
+          "id": "VT2_C",
+          "text": {
+            "en": "Not sure / other reason",
+            "hi": "पता नहीं / कोई और कारण",
+            "mr": "माहीत नाही / इतर कारण"
+          },
+          "next": "VT3"
+        }
+      ]
+    },
+    {
+      "id": "VT3",
+      "order": 3,
+      "type": "single_choice",
+      "text": {
+        "en": "Have you already submitted an application to the Election Commission?",
+        "hi": "क्या आपने चुनाव आयोग को आवेदन जमा कर दिया है?",
+        "mr": "तुम्ही आधीच निवडणूक आयोगाकडे अर्ज सादर केला आहे का?"
+      },
+      "options": [
+        {
+          "id": "VT3_A",
+          "text": {
+            "en": "Yes — I want to check its status",
+            "hi": "हाँ — स्थिति जाँचनी है",
+            "mr": "होय — स्थिती तपासायची आहे"
+          },
+          "next": "STATUS_CHECK"
+        },
+        {
+          "id": "VT3_B",
+          "text": {
+            "en": "No — I want to prepare a new Form 6 application",
+            "hi": "नहीं — नया फॉर्म 6 तैयार करना है",
+            "mr": "नाही — नवीन फॉर्म 6 तयार करायचा आहे"
+          },
+          "next": "FORM6"
+        }
+      ]
+    }
+  ],
+  "outcomes": {
+    "FORM6": {
+      "label": { "en": "Form 6 — Voter Enrollment", "hi": "फॉर्म 6 — मतदाता नामांकन", "mr": "फॉर्म 6 — मतदार नामांकन" },
+      "action": "start_form6_interview"
+    },
+    "FORM8": {
+      "label": { "en": "Form 8 — Correction / Shifting", "hi": "फॉर्म 8 — सुधार / स्थानांतरण", "mr": "फॉर्म 8 — दुरुस्ती / बदली" },
+      "action": "start_form8_interview"
+    },
+    "STATUS_CHECK": {
+      "label": { "en": "Check Application Status", "hi": "आवेदन स्थिति जाँचें", "mr": "अर्जाची स्थिती तपासा" },
+      "action": "open_external",
+      "url": "https://voters.eci.gov.in",
+      "note": {
+        "en": "This will open the Election Commission voter portal in your browser.",
+        "hi": "यह चुनाव आयोग की मतदाता वेबसाइट ब्राउज़र में खोलेगा।",
+        "mr": "हे निवडणूक आयोगाची मतदार वेबसाइट ब्राउझरमध्ये उघडेल."
+      }
+    },
+    "LEGAL_HELP": {
+      "label": { "en": "Legal Help Required", "hi": "कानूनी सहायता आवश्यक", "mr": "कायदेशीर मदत आवश्यक" },
+      "action": "show_legal_card",
+      "message": {
+        "en": "If your application was rejected after a formal hearing, you have the right to appeal to the District Election Officer or the Election Commission of India. DHARA cannot draft this appeal — please consult a legal aid clinic or advocate.",
+        "hi": "यदि आपका आवेदन सुनवाई के बाद अस्वीकार हुआ है, तो आप जिला निर्वाचन अधिकारी या भारत निर्वाचन आयोग में अपील कर सकते हैं। DHARA यह अपील तैयार नहीं कर सकता।",
+        "mr": "जर तुमचा अर्ज सुनावणीनंतर नाकारला गेला असेल, तर तुम्हाला जिल्हा निवडणूक अधिकारी किंवा भारत निवडणूक आयोगाकडे अपील करण्याचा अधिकार आहे. DHARA ही अपील तयार करू शकत नाही."
+      }
+    }
+  },
+  "disclaimer": {
+    "en": "DHARA helps you prepare a draft. The Election Commission of India processes all applications. DHARA is not affiliated with the ECI and does not display any government or ECI logos.",
+    "hi": "DHARA मसौदा तैयार करने में मदद करता है। ECI से संबद्ध नहीं है और सरकारी लोगो का उपयोग नहीं करता।",
+    "mr": "DHARA मसुदा तयार करण्यात मदत करते. ECI शी संलग्न नाही आणि ECI लोगो वापरत नाही."
+  }
+}
