@@ -11,7 +11,6 @@ import {
   Modal,
   Animated,
   PanResponder,
-  useWindowDimensions,
   type GestureResponderEvent,
   type PanResponderGestureState,
 } from 'react-native';
@@ -19,7 +18,7 @@ import { crossAlert } from '@/src/utils/crossAlert';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   AudioModule,
   RecordingPresets,
@@ -199,7 +198,8 @@ const PRO_SUGGESTIONS: { text: string; icon: React.ComponentProps<typeof Ionicon
 export default function ChatScreen() {
   const { token, user, language, autoSpeak, ttsVolume, ttsVoiceMode, refreshUser, forceLogout } = useAuth();
   const router = useRouter();
-  const { height: screenHeight } = useWindowDimensions();
+  const entryParams = useLocalSearchParams<{ draft?: string; entry?: string; voiceHint?: string }>();
+  const lastEntry = useRef<string | undefined>(undefined);
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Msg[]>([]);
   // Per-message toggle for the "View Legal Details" summary-first disclosure.
@@ -211,10 +211,6 @@ export default function ChatScreen() {
   const [transcribing, setTranscribing] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [proMode, setProMode] = useState(false);
-  // v3.3: FIR sessions for "Continue your reports" banner
-  const [activeFirSessions, setActiveFirSessions] = useState<any[]>([]);
-  // UI: bottom-sheet to show all saved reports
-  const [reportsSheetOpen, setReportsSheetOpen] = useState(false);
   const [paywall, setPaywall] = useState<null | {
     samples_used: number;
     samples_limit: number;
@@ -329,19 +325,13 @@ export default function ChatScreen() {
   // without a circular dependency (speak is defined AFTER send in this file).
   const speakRef = useRef<((msgId: string, text: string) => void) | null>(null);
 
-  // v3.3: Fetch active FIR sessions for "Continue your reports" section
+  // Home hands the question over without sending it before the user confirms.
   useEffect(() => {
-    if (!user?.id) return;
-    fetch(`${API_BASE}/api/fir/sessions/${user.id}`)
-      .then(r => r.ok ? r.json() : [])
-      .then((sessions: any[]) => {
-        const active = sessions.filter(
-          s => s.status !== 'completed' && s.status !== 'cancelled' && s.stage !== 'completed'
-        ).slice(0, 3);
-        setActiveFirSessions(active);
-      })
-      .catch(() => {});
-  }, [user?.id]);
+    if (!entryParams.entry || lastEntry.current === entryParams.entry) return;
+    lastEntry.current = entryParams.entry;
+    setInput(entryParams.draft || '');
+    if (entryParams.voiceHint === '1') notify('Ask by voice', 'Hold the gold microphone below to speak. Release to review your question.');
+  }, [entryParams.entry, entryParams.draft, entryParams.voiceHint, notify]);
 
   // Global unmount cleanup — critical for preventing app crashes when the user
   // navigates away while the mic is still recording. Without this, the STT
@@ -1536,7 +1526,6 @@ export default function ChatScreen() {
   const chatIsActive = messages.length > 0;
 
   /** Minimum pixel height the chat zone must occupy (40% of screen) */
-  const minChatHeight = screenHeight * 0.4;
 
   /** Keep an answer on this phone so it opens with no network at all. */
   const saveAnswer = useCallback(
@@ -1646,86 +1635,6 @@ export default function ChatScreen() {
           onDismiss={stopCloudTTS} />
       )}
 
-      {/* Persistent entry point — the flagship Voice FIR Drafting Assistant
-          must be discoverable at all times, not just from an empty-state
-          suggestion chip that disappears once the user starts chatting. */}
-      <Pressable
-        testID="fir-quick-action"
-        style={styles.firQuickAction}
-        onPress={() => router.push('/fir-draft' as any)}
-      >
-        <View style={styles.firQuickActionIconWrap}>
-          <Ionicons name="document-text" size={16} color="#fff" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.firQuickActionTitle}>{t('home.fileComplaint', language.code)}</Text>
-          <Text style={styles.firQuickActionSub}>{t('home.fileComplaintSub', language.code)}</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={16} color={theme.colors.brand} />
-      </Pressable>
-
-      {/* v3.3: Continue your reports — collapses to a slim strip when chat is active */}
-      {activeFirSessions.length > 0 && (
-        chatIsActive ? (
-          /* ── Slim collapsed strip ── */
-          <Pressable
-            testID="reports-strip"
-            style={styles.reportStrip}
-            onPress={() => setReportsSheetOpen(true)}
-            hitSlop={4}
-          >
-            <Ionicons name="document-text-outline" size={14} color={theme.colors.brand} />
-            <Text style={styles.reportStripText}>
-              {activeFirSessions.length} saved report{activeFirSessions.length > 1 ? 's' : ''} ›
-            </Text>
-          </Pressable>
-        ) : (
-          /* ── Expanded cards (max 2 visible) ── */
-          <View style={styles.firResumeSection}>
-            <Text style={styles.firResumeSectionTitle}>Continue your reports</Text>
-            {activeFirSessions.slice(0, 2).map((sess: any) => {
-              const dateStr = sess.updated_at ? new Date(sess.updated_at).toLocaleDateString('en-IN') : '';
-              const incidentTypes: string[] = sess.incident_types || ['complaint'];
-              const stage = sess.stage ? sess.stage.replace(/_/g, ' ') : 'in progress';
-              return (
-                <Pressable
-                  key={sess.session_id}
-                  style={styles.firResumeCard}
-                  onPress={() => router.push({ pathname: '/fir-draft', params: { resumeId: sess.session_id } } as any)}
-                >
-                  <View style={styles.firResumeIconWrap}>
-                    <Ionicons name="document-text-outline" size={18} color={theme.colors.brand} />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    {/* Crime-type badges — each type displayed as a readable pill */}
-                    <View style={styles.crimeTypeBadgeRow}>
-                      {incidentTypes.slice(0, 3).map((type: string, i: number) => (
-                        <View key={i} style={styles.crimeTypeBadge}>
-                          <Text style={styles.crimeTypeBadgeText} numberOfLines={1}>
-                            {type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ')}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                    <Text style={styles.firResumeCardSub}>{stage} · {dateStr}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color={theme.colors.onSurfaceTertiary} />
-                </Pressable>
-              );
-            })}
-            {activeFirSessions.length > 2 && (
-              <Pressable
-                testID="reports-view-all"
-                style={styles.viewAllRow}
-                onPress={() => setReportsSheetOpen(true)}
-              >
-                <Text style={styles.viewAllText}>View all ({activeFirSessions.length}) ›</Text>
-              </Pressable>
-            )}
-          </View>
-        )
-      )}
-
       </View>{/* ── end topZone ── */}
 
       {/* ─── Chat zone divider ──────────────────────────────────────────────
@@ -1753,12 +1662,14 @@ export default function ChatScreen() {
         3-4 lines on narrow phones) needs no hardcoded constant to track.
       */}
       <KeyboardAvoidingView
-        style={[styles.chatZone, { minHeight: minChatHeight }]}
+        style={styles.chatZone}
         behavior="translate-with-padding"
         keyboardVerticalOffset={0}
       >
         <ScrollView
+          testID="chat-reading-area"
           ref={scrollRef}
+          style={styles.chatScroll}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
         >
@@ -2234,66 +2145,6 @@ export default function ChatScreen() {
       </KeyboardAvoidingView>
       </View>{/* ── end webContentWrap ── */}
 
-      {/* ─── Saved reports bottom sheet ──────────────────────────────────── */}
-      <Modal
-        visible={reportsSheetOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setReportsSheetOpen(false)}
-      >
-        <Pressable
-          style={styles.sheetOverlay}
-          onPress={() => setReportsSheetOpen(false)}
-        >
-          <View
-            style={[styles.sheetCard, { paddingBottom: insets.bottom + 16 }]}
-            onStartShouldSetResponder={() => true}
-          >
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Continue your reports</Text>
-              <Pressable onPress={() => setReportsSheetOpen(false)} hitSlop={10}>
-                <Ionicons name="close" size={22} color={theme.colors.onSurfaceSecondary} />
-              </Pressable>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              {activeFirSessions.map((sess: any) => {
-                const dateStr = sess.updated_at ? new Date(sess.updated_at).toLocaleDateString('en-IN') : '';
-                const incidentTypes: string[] = sess.incident_types || ['complaint'];
-                const stage = sess.stage ? sess.stage.replace(/_/g, ' ') : 'in progress';
-                return (
-                  <Pressable
-                    key={sess.session_id}
-                    style={[styles.firResumeCard, { marginHorizontal: 0 }]}
-                    onPress={() => {
-                      setReportsSheetOpen(false);
-                      router.push({ pathname: '/fir-draft', params: { resumeId: sess.session_id } } as any);
-                    }}
-                  >
-                    <View style={styles.firResumeIconWrap}>
-                      <Ionicons name="document-text-outline" size={18} color={theme.colors.brand} />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <View style={styles.crimeTypeBadgeRow}>
-                        {incidentTypes.slice(0, 3).map((type: string, i: number) => (
-                          <View key={i} style={styles.crimeTypeBadge}>
-                            <Text style={styles.crimeTypeBadgeText} numberOfLines={1}>
-                              {type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ')}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                      <Text style={styles.firResumeCardSub}>{stage} · {dateStr}</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={theme.colors.onSurfaceTertiary} />
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
-
       {/* ─── Transcript confirmation modal ───────────────────────────────── */}
       <Modal
         visible={showTranscriptModal}
@@ -2622,8 +2473,10 @@ const styles = StyleSheet.create({
   /** Chat zone: fills remaining height, scrolls independently */
   chatZone: {
     flex: 1,
+    minHeight: 0,
     backgroundColor: theme.colors.surfaceSecondary,
   },
+  chatScroll: { flex: 1, minHeight: 0 },
 
   /** Visible divider between top zone and chat zone */
   chatDivider: {

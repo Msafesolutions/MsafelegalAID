@@ -8,10 +8,9 @@ const colors = theme.colors;
 const TABS = [
   { name: 'home',        label: 'Home',     icon: 'home-outline',         activeIcon: 'home',          testID: 'tab-home' },
   { name: 'rights',      label: 'Rights',   icon: 'shield-outline',       activeIcon: 'shield',        testID: 'tab-rights' },
-  { name: 'voter-roll',  label: 'Vote',     icon: 'checkbox-outline',     activeIcon: 'checkbox',      testID: 'tab-vote' },
   { name: 'index',       label: 'Ask AI',   icon: 'chatbubble-outline',   activeIcon: 'chatbubble-outline', testID: 'tab-chat' },
-  { name: 'advocate',    label: 'Advocate', icon: 'briefcase-outline',    activeIcon: 'briefcase',     testID: 'tab-advocate' },
-  { name: 'settings',    label: 'Profile',  icon: 'person-outline',       activeIcon: 'person',        testID: 'tab-settings' },
+  { name: 'complaints',  label: 'Complaints', icon: 'document-text-outline', activeIcon: 'document-text', testID: 'tab-complaints' },
+  { name: 'discover',    label: 'Lookup',   icon: 'search-outline',       activeIcon: 'search',        testID: 'tab-lookup' },
 ] as const;
 
 export function AppTabBar({ state, navigation }: BottomTabBarProps) {

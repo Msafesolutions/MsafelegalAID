@@ -9,14 +9,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/auth';
+import { theme } from '@/src/theme';
 import triageData from '@/src/content/voter_triage.json';
 
 type Lang = 'en' | 'hi' | 'mr';
 type OutcomeId = 'FORM6' | 'FORM8' | 'STATUS_CHECK' | 'LEGAL_HELP';
 
-const NAVY = '#1B2B5B';
-const GOLD = '#C9973A';
-const BG   = '#FAFAF8';
+const NAVY = theme.colors.primary;
+const GOLD = theme.colors.gold;
+const BG = theme.colors.background;
 
 function t(obj: Record<string, string>, lang: Lang): string {
   return obj[lang] || obj['en'] || '';
@@ -24,7 +25,7 @@ function t(obj: Record<string, string>, lang: Lang): string {
 
 export default function VoterRollTab() {
   const { language: rawLang } = useAuth();
-  const lang: Lang = (['en', 'hi', 'mr'].includes(rawLang) ? rawLang : 'en') as Lang;
+  const lang: Lang = (['en', 'hi', 'mr'].includes(rawLang.code) ? rawLang.code : 'en') as Lang;
   const router = useRouter();
 
   const [currentQId, setCurrentQId] = useState<string | null>(null);  // null = welcome
@@ -50,13 +51,12 @@ export default function VoterRollTab() {
   const reset = () => {
     setCurrentQId(null);
     setOutcome(null);
-    setAnswers({});
   };
 
   // ── Welcome / intro screen ─────────────────────────────────────────────────
   if (currentQId === null && outcome === null) {
     return (
-      <SafeAreaView style={s.safe} edges={['top']}>
+      <SafeAreaView testID="voter-roll-screen" style={s.safe} edges={['top']}>
         <ScrollView contentContainerStyle={s.scrollContent}>
           {/* Header */}
           <View style={s.header}>
@@ -81,6 +81,7 @@ export default function VoterRollTab() {
 
           {/* Start button */}
           <Pressable
+            testID="voter-begin"
             style={s.primaryBtn}
             onPress={() => setCurrentQId(questions[0]?.id ?? null)}
           >
@@ -91,6 +92,7 @@ export default function VoterRollTab() {
 
           {/* ECI Status check shortcut */}
           <Pressable
+            testID="voter-status-shortcut"
             style={s.secondaryBtn}
             onPress={() => Linking.openURL('https://voters.eci.gov.in')}
           >
@@ -115,12 +117,12 @@ export default function VoterRollTab() {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
         <ScrollView contentContainerStyle={s.scrollContent}>
-          <Pressable onPress={reset} style={s.backBtn}>
+          <Pressable testID="voter-outcome-back" onPress={reset} style={s.backBtn}>
             <Text style={s.backText}>← {lang === 'hi' ? 'वापस' : lang === 'mr' ? 'मागे' : 'Back'}</Text>
           </Pressable>
 
           <View style={s.outcomeCard}>
-            <Text style={s.outcomeLabel}>{label}</Text>
+            <Text testID="voter-outcome" style={s.outcomeLabel}>{label}</Text>
 
             {/* FORM6 / FORM8 → start interview */}
             {(outcome === 'FORM6' || outcome === 'FORM8') && (
@@ -133,6 +135,7 @@ export default function VoterRollTab() {
                     : 'DHARA will guide you through filling this form. Continue when ready.'}
                 </Text>
                 <Pressable
+                  testID="voter-start-form"
                   style={s.primaryBtn}
                   onPress={() =>
                     router.push({
@@ -177,7 +180,7 @@ export default function VoterRollTab() {
             )}
           </View>
 
-          <Pressable onPress={reset} style={s.secondaryBtn}>
+          <Pressable testID="voter-reset" onPress={reset} style={s.secondaryBtn}>
             <Text style={s.secondaryBtnText}>
               {lang === 'hi' ? '↺ फिर से शुरू करें' : lang === 'mr' ? '↺ पुन्हा सुरू करा' : '↺ Start over'}
             </Text>
@@ -204,12 +207,13 @@ export default function VoterRollTab() {
         </View>
 
         <View style={s.questionCard}>
-          <Text style={s.questionText}>{t(currentQ.text as Record<string, string>, lang)}</Text>
+          <Text testID="voter-question" style={s.questionText}>{t(currentQ.text as Record<string, string>, lang)}</Text>
         </View>
 
         {currentQ.options?.map(opt => (
           <Pressable
             key={opt.id}
+            testID={`voter-option-${opt.id}`}
             style={s.optionBtn}
             onPress={() => pickOption(currentQ.id, opt.id, opt.next)}
           >

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { setStatusBarStyle } from 'expo-status-bar';
@@ -17,6 +17,11 @@ export default function Home() {
   const { user, language } = useAuth();
   const router = useRouter();
   const [emergency, setEmergency] = useState(false);
+  const [question, setQuestion] = useState('');
+  const openChat = (voice = false) => {
+    router.push({ pathname: '/(tabs)', params: { draft: question, entry: String(Date.now()), voiceHint: voice ? '1' : '' } });
+    setQuestion('');
+  };
   const entrance = useRef(new Animated.Value(0)).current;
   useEffect(() => { Animated.timing(entrance, { toValue: 1, duration: 280, useNativeDriver: true }).start(); }, [entrance]);
   useFocusEffect(useCallback(() => { setStatusBarStyle('light'); return () => setStatusBarStyle('dark'); }, []));
@@ -32,13 +37,15 @@ export default function Home() {
     <View testID="home-header" style={styles.header}>
       <Image source={require('../../assets/images/dhara_icon.png')} style={styles.logo} resizeMode="contain" />
       <View testID="home-brand-wrap" style={styles.brandWrap}><Text testID="home-brand" style={styles.brand} numberOfLines={1} adjustsFontSizeToFit>Dhara</Text><Text testID="home-tagline" style={styles.tagline}>YOUR LEGAL RIGHTS</Text></View>
+      <Pressable testID="home-pro-chip" accessibilityRole="button" accessibilityLabel={user?.is_pro ? 'Manage Dhara Pro' : 'View Dhara Pro'} style={styles.proChip} onPress={() => router.push('/upgrade')}><View style={styles.proChipBadge}><Ionicons name="star" size={12} color={colors.onGold} /><Text testID="home-pro-label" style={styles.proChipText}>Pro</Text></View></Pressable>
       <Pressable testID="home-language" accessibilityRole="button" accessibilityLabel="Change language" style={styles.language} onPress={() => router.push({ pathname: '/language', params: { from: 'home' } })}>
-        <Ionicons name="globe-outline" size={15} color={colors.onBrandPrimary} /><Text style={styles.languageText} numberOfLines={1}>{language.native}</Text><Ionicons name="chevron-down" size={12} color={colors.onBrandPrimary} />
+        <Ionicons name="globe-outline" size={15} color={colors.onBrandPrimary} /><Text testID="home-language-label" style={styles.languageText} numberOfLines={1}>{language.code.toUpperCase()}</Text>
       </Pressable>
       <Pressable testID="home-profile" accessibilityRole="button" accessibilityLabel="Your profile" style={styles.profile} onPress={() => router.push('/(tabs)/settings')}><Ionicons name="person-outline" size={20} color={colors.onBrandPrimary} /></Pressable>
     </View>
     <MarqueeBanner variant="dark" />
-    <ScrollView testID="home-scroll" style={styles.scroll} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={styles.scroll} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScrollView testID="home-scroll" style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Animated.View testID="home-content" style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }}>
         <View testID="home-greeting-panel" style={styles.greeting}><Text testID="home-greeting" style={styles.greetingText}>{greeting}, {firstName}</Text></View>
         <Text testID="home-quick-help-heading" style={styles.sectionTitle}>QUICK HELP</Text>
@@ -55,7 +62,7 @@ export default function Home() {
           onPress={() => router.push('/missing')}
         >
           <View style={styles.missingLeft}>
-            <Ionicons name="alert-circle" size={28} color="#CC0000" />
+            <Ionicons name="alert-circle" size={23} color={colors.error} />
             <View>
               <Text style={styles.missingTitle}>
                 {language.code === 'hi'
@@ -73,51 +80,56 @@ export default function Home() {
               </Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#CC0000" />
+          <Ionicons name="chevron-forward" size={18} color={colors.error} />
         </Pressable>
         <View style={styles.sectionRow}><Text testID="home-complaints-heading" style={styles.sectionTitle}>YOUR COMPLAINTS</Text>
-          <View style={styles.complaintActions}><Pressable testID="home-new-complaint" accessibilityRole="button" accessibilityLabel="Start a new complaint" style={styles.seeAll} onPress={() => router.push('/fir-draft')}><Ionicons name="add-circle-outline" size={22} color={colors.primary} /></Pressable><Pressable testID="home-see-all" accessibilityRole="button" style={styles.seeAll} onPress={() => router.push('/complaints')}><Text style={styles.link}>See all</Text></Pressable></View>
+          <Pressable testID="home-see-all" accessibilityRole="button" style={styles.seeAll} onPress={() => router.push('/(tabs)/complaints')}><Text style={styles.link}>See all →</Text></Pressable>
         </View>
         <ComplaintsList />
-        <Pressable testID="home-pro-card" accessibilityRole="button" style={({ pressed }) => [styles.pro, pressed && styles.pressed]} onPress={() => router.push('/upgrade')}>
-          <View style={styles.proTextWrap}><Text testID="home-pro-title" style={styles.proTitle}>{user?.is_pro ? 'Your Dhara Pro' : 'Unlock Dhara Pro'}</Text><Text testID="home-pro-description" style={styles.proSub}>Detailed legal information{ '\n' }Drafts & action plans</Text></View>
-          <View style={styles.proBadge}><Ionicons name="star" size={18} color={colors.onGold} /><Text style={styles.proBadgeTitle}>Pro</Text><Text style={styles.proBadgeCaption}>{user?.is_pro ? 'Manage' : 'View plans'}</Text></View>
-        </Pressable>
+        <Text testID="home-ask-heading" style={[styles.sectionTitle, styles.askHeading]}>ASK YOUR LEGAL QUESTION</Text>
+        <View testID="home-ask-row" style={styles.askRow}>
+          <TextInput testID="home-question-input" accessibilityLabel={`Ask in ${language.native}`} style={styles.askInput} placeholder={`Ask in ${language.native}…`} placeholderTextColor={colors.onSurfaceTertiary} value={question} onChangeText={setQuestion} returnKeyType="go" onSubmitEditing={() => openChat()} />
+          <Pressable testID="home-ask-action" accessibilityRole="button" accessibilityLabel={question.trim() ? 'Open question in Ask AI' : 'Open voice chat'} style={styles.askButton} onPress={() => openChat(!question.trim())}><Ionicons name={question.trim() ? 'arrow-forward' : 'mic'} size={22} color={colors.onGold} /></Pressable>
+        </View>
         <View style={styles.disclaimer}><DisclaimerBanner testID="home-legal-disclaimer" /></View>
       </Animated.View>
     </ScrollView>
+    </KeyboardAvoidingView>
     <ConsentPublicHelp mode={emergency ? 'emergency' : null} onClose={() => setEmergency(false)} copy={{ ...consentCopy.en, back: 'Back to Home' }} />
   </SafeAreaView>;
 }
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.primary },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 18 },
-  logo: { width: 44, height: 44 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 12 },
+  logo: { width: 34, height: 34 },
   brandWrap: { flex: 1, minWidth: 0, flexShrink: 1 },
   brand: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 22, letterSpacing: 0.2 },
-  tagline: { color: colors.onNavyMuted, fontSize: 8, lineHeight: 14, letterSpacing: 0.9 },
+  tagline: { color: colors.onNavyMuted, fontSize: 7, lineHeight: 12, letterSpacing: 0.3 },
+  proChip: { minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  proChipBadge: { flexDirection: 'row', gap: 3, alignItems: 'center', backgroundColor: colors.gold, borderRadius: 16, paddingHorizontal: 9, paddingVertical: 6 },
+  proChipText: { fontSize: 12, color: colors.onGold, fontWeight: '800' },
   language: { flexDirection: 'row', gap: 5, alignItems: 'center', backgroundColor: colors.navyOverlay, paddingHorizontal: 10, minHeight: 44, borderRadius: 24, maxWidth: 118 },
   languageText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '600', flexShrink: 1 },
   profile: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.navyOverlay, borderRadius: 22 },
   scroll: { flex: 1, backgroundColor: colors.background },
   content: { padding: 18, paddingBottom: 28, width: '100%', maxWidth: 640, alignSelf: 'center' },
-  greeting: { backgroundColor: colors.primaryMid, borderRadius: 22, paddingHorizontal: 22, paddingVertical: 15, marginBottom: 18 },
+  greeting: { backgroundColor: colors.primaryMid, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 14, marginBottom: 14 },
   greetingText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' },
   sectionTitle: { fontSize: 11, lineHeight: 16, fontWeight: '600', letterSpacing: 1, color: colors.onSurfaceTertiary },
   helpRow: { flexDirection: 'row', gap: 10, marginTop: 10, marginBottom: 10 },
-  helpCard: { flex: 1, alignItems: 'center', backgroundColor: colors.surface, paddingVertical: 16, paddingHorizontal: 5, gap: 9, minHeight: 106, borderRadius: 16, borderWidth: 1, borderColor: colors.divider },
-  helpIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.navySoft, alignItems: 'center', justifyContent: 'center' },
+  helpCard: { flex: 1, alignItems: 'center', backgroundColor: colors.surface, paddingVertical: 10, paddingHorizontal: 4, gap: 5, minHeight: 84, borderRadius: 12, borderWidth: 1, borderColor: colors.divider },
+  helpIcon: { width: 28, height: 28, borderRadius: 9, backgroundColor: colors.navySoft, alignItems: 'center', justifyContent: 'center' },
   goldIcon: { backgroundColor: colors.goldMuted },
   greenIcon: { backgroundColor: colors.successSoft },
   helpLabel: { color: colors.onSurface, fontSize: 11, lineHeight: 16, fontWeight: '600', textAlign: 'center' },
   missingCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#FFF0F0', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
-    marginBottom: 14, borderWidth: 1.5, borderColor: '#FFCCCC',
+    backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    marginBottom: 4, borderWidth: 1, borderColor: colors.divider,
   },
   missingLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  missingTitle: { fontSize: 16, fontWeight: '700', color: '#CC0000' },
-  missingSub:   { fontSize: 12, color: '#AA3333', marginTop: 2 },
+  missingTitle: { fontSize: 14, fontWeight: '700', color: colors.error },
+  missingSub:   { fontSize: 11, color: colors.onSurfaceTertiary, marginTop: 2 },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, marginBottom: 4 },
   seeAll: { minHeight: 44, minWidth: 44, alignItems: 'flex-end', justifyContent: 'center' },
   link: { color: colors.primary, fontSize: 12, fontWeight: '700' },
@@ -131,5 +143,9 @@ const styles = StyleSheet.create({
   proBadgeTitle: { color: colors.onGold, fontWeight: '800', fontSize: 13 },
   proBadgeCaption: { color: colors.onGold, fontSize: 10, marginTop: 2 },
   pressed: { opacity: 0.75 },
+  askHeading: { marginTop: 18, marginBottom: 10 },
+  askRow: { backgroundColor: colors.surface, borderRadius: 14, padding: 10, paddingLeft: 14, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: colors.divider },
+  askInput: { flex: 1, minWidth: 0, minHeight: 44, fontSize: 15, color: colors.onSurface },
+  askButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center' },
   disclaimer: { marginTop: 16, borderRadius: 10, overflow: 'hidden' },
 });

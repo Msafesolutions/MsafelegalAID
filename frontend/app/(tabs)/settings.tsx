@@ -318,7 +318,12 @@ export default function Settings() {
           <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Saved answers</Text><Text style={styles.rowSub}>Read your bookmarked legal information</Text></View>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.onSurfaceSecondary} />
         </Pressable>
-        <Pressable testID="profile-legal-lookup" style={styles.row} onPress={() => router.push('/(tabs)/lookup')}>
+        <Pressable testID="profile-complaints" style={styles.row} onPress={() => router.push('/(tabs)/complaints')}>
+          <Ionicons name="document-text-outline" size={22} color={theme.colors.brand} />
+          <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Your complaints</Text><Text style={styles.rowSub}>Continue reports and view completed drafts</Text></View>
+          <Ionicons name="chevron-forward" size={18} color={theme.colors.onSurfaceSecondary} />
+        </Pressable>
+        <Pressable testID="profile-legal-lookup" style={styles.row} onPress={() => router.push('/(tabs)/discover')}>
           <Ionicons name="search-outline" size={22} color={theme.colors.brand} />
           <View style={{ flex: 1 }}><Text style={styles.rowTitle}>Legal lookup</Text><Text style={styles.rowSub}>Search sections and verified sources</Text></View>
           <Ionicons name="chevron-forward" size={18} color={theme.colors.onSurfaceSecondary} />

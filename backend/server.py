@@ -3899,6 +3899,8 @@ async def voter_generate_pdf(body: VoterPdfRequest):
     )
 
 
+from missing_media import create_missing_media_router
+app.include_router(create_missing_media_router(db, current_user))
 app.include_router(api)
 
 app.add_middleware(

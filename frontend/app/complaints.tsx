@@ -4,17 +4,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { ComplaintsList } from '@/src/home/ComplaintsList';
 import { theme } from '@/src/theme';
+import { MissingDraftShortcut } from '@/src/missing/MissingDraftShortcut';
 
 const colors = theme.colors;
 export default function Complaints() {
   const router = useRouter();
-  return <SafeAreaView style={styles.safe} testID="complaints-screen">
+  return <SafeAreaView style={styles.safe} edges={['top']} testID="complaints-screen">
     <View style={styles.header}>
       <Pressable testID="complaints-back" accessibilityRole="button" accessibilityLabel="Back to Home" style={styles.icon} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/home')}><Ionicons name="arrow-back" size={24} color={colors.primary} /></Pressable>
       <Text testID="complaints-title" style={styles.title}>Your complaints</Text>
       <Pressable testID="complaints-create" accessibilityRole="button" accessibilityLabel="Start a complaint" style={styles.icon} onPress={() => router.push('/fir-draft')}><Ionicons name="add" size={26} color={colors.primary} /></Pressable>
     </View>
-    <ScrollView contentContainerStyle={styles.content}><ComplaintsList all /></ScrollView>
+    <ScrollView testID="complaints-scroll" contentContainerStyle={styles.content}><MissingDraftShortcut /><ComplaintsList all /></ScrollView>
   </SafeAreaView>;
 }
 const styles = StyleSheet.create({

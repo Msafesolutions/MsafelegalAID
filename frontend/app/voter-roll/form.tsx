@@ -55,7 +55,7 @@ export default function VoterFormScreen() {
   const params         = useLocalSearchParams<{ form_type: string; language: string }>();
   const formType       = (params.form_type === 'form8' ? 'form8' : 'form6') as 'form6' | 'form8';
   const { token, language: rawLang } = useAuth();
-  const lang: Lang     = (['en', 'hi', 'mr'].includes(params.language ?? '') ? params.language : rawLang) as Lang;
+  const lang: Lang     = (['en', 'hi', 'mr'].includes(params.language ?? '') ? params.language : ['en', 'hi', 'mr'].includes(rawLang.code) ? rawLang.code : 'en') as Lang;
   const router         = useRouter();
 
   const formData = formType === 'form6' ? voterForms.form6 : voterForms.form8;
@@ -102,7 +102,7 @@ export default function VoterFormScreen() {
       const applicant = finalAnswers['applicant_name_en'] || 'Applicant';
       const body = { form_type: formType, answers: finalAnswers, language: lang };
 
-      const resp = await fetch(`${API_BASE}/voter/pdf`, {
+      const resp = await fetch(`${API_BASE}/api/voter/pdf`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -138,7 +138,7 @@ export default function VoterFormScreen() {
         } catch { /* fallback: show download button */ }
       } else {
         // Native: save to cache dir then share
-        const FileSystem = await import('expo-file-system');
+        const FileSystem = await import('expo-file-system/legacy');
         const buf    = await resp.arrayBuffer();
         const bytes  = new Uint8Array(buf);
         let binary   = '';

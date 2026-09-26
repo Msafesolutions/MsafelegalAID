@@ -7,26 +7,26 @@
  *
  * Route: /missing/result
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View, Text, Pressable, ScrollView, StyleSheet, Platform,
   ActivityIndicator, Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/src/auth';
-import interviewData from '@/src/content/missing_interview.json';
+import { Ionicons } from '@expo/vector-icons';
+import { theme } from '@/src/theme';
+import { answersKey, clearSupport, loadSupport, mapUrl, MissingPhoto, MissingSupport, photoForPdf, photoRequest } from '@/src/missing/support';
 import rightsData    from '@/src/content/missing_rights.json';
 
 type Lang = 'en' | 'hi' | 'mr';
 
-const NAVY = '#1B2B5B';
-const GOLD = '#C9973A';
-const RED  = '#CC0000';
-const BG   = '#FAFAF8';
-
-const STORAGE_KEY = 'missing_draft_answers_v1';
+const NAVY = theme.colors.primary;
+const GOLD = theme.colors.gold;
+const RED = theme.colors.error;
+const BG = theme.colors.background;
 
 function t(obj: Record<string, string> | undefined, lang: Lang): string {
   if (!obj) return '';
@@ -34,7 +34,7 @@ function t(obj: Record<string, string> | undefined, lang: Lang): string {
 }
 
 // ── Build the HTML for the complaint draft ────────────────────────────────────
-function buildDraftHtml(answers: Record<string, string>, lang: Lang): string {
+function buildDraftHtml(answers: Record<string, string>, lang: Lang, support: MissingSupport | null, photos: string[]): string {
   const missingName = answers['missing_name'] || 'Unknown';
   const ts = new Date().toLocaleString();
 
@@ -70,6 +70,9 @@ function buildDraftHtml(answers: Record<string, string>, lang: Lang): string {
       </tr>
     `).join('');
 
+  const location = support?.location;
+  const annex = `${location ? `<h2>Confirmed last-seen location</h2><p>${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}${location.accuracy ? ` (GPS accuracy ±${Math.round(location.accuracy)} m)` : ''}</p><p><a href="${mapUrl(location)}">View on map</a></p><p>Confirmed by the complainant. Not live tracking.</p>` : ''}
+    ${photos.length ? `<h2>Attached photographs</h2>${photos.map((src, i) => `<figure style="break-inside:avoid"><img src="${src}" style="max-width:100%;max-height:360px;object-fit:contain"/><figcaption>Photo ${i + 1}</figcaption></figure>`).join('')}` : ''}`;
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -100,9 +103,10 @@ function buildDraftHtml(answers: Record<string, string>, lang: Lang): string {
   <table>
     ${fieldRows}
   </table>
+  ${annex}
 
   <div class="footer">
-    DHARA_MissingPerson_${missingName.replace(/\s+/g, '_').slice(0, 20)}_${Date.now()}.pdf<br/>
+    DHARA_MissingPerson_${missingName.replace(/[^\p{L}\p{N}_-]/gu, '_').slice(0, 20)}_${Date.now()}.pdf<br/>
     © DHARA · Calvil Technologies · For citizen assistance only
   </div>
 </body>
@@ -154,8 +158,9 @@ function RightsCard({ lang, onShare }: { lang: Lang; onShare: () => void }) {
 
 // ── Main Result Screen ────────────────────────────────────────────────────────
 export default function MissingResultScreen() {
-  const { language: rawLang } = useAuth();
-  const lang: Lang = (['en', 'hi', 'mr'].includes(rawLang) ? rawLang : 'en') as Lang;
+  const { language: rawLang, user, token } = useAuth();
+  const userId = user?.id;
+  const lang: Lang = (['en', 'hi', 'mr'].includes(rawLang.code) ? rawLang.code : 'en') as Lang;
   const router = useRouter();
 
   const [answers,   setAnswers]   = useState<Record<string, string>>({});
@@ -164,16 +169,22 @@ export default function MissingResultScreen() {
   const [pdfName,   setPdfName]   = useState('');
   const [genError,  setGenError]  = useState('');
   const [generating, setGenerating] = useState(false);
+  const [support, setSupport] = useState<MissingSupport | null>(null);
+  const [photos, setPhotos] = useState<MissingPhoto[]>([]);
 
   // Load answers from device storage
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then(raw => {
-        if (raw) setAnswers(JSON.parse(raw));
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setLoading(true); setPdfUri(null); setGenError('');
+    (async () => {
+      if (!userId || !token) throw new Error('Please sign in to view your complaint.');
+      const raw = await AsyncStorage.getItem(answersKey(userId));
+      const stored = await loadSupport(userId);
+      const files = stored.photosAttached ? await (await photoRequest(stored.draftId, token)).json() : [];
+      if (active) { setAnswers(raw ? JSON.parse(raw) : {}); setSupport(stored); setPhotos(files); }
+    })().catch(e => { if (active) setGenError(e.message || 'Could not load your complaint.'); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [userId, token]));
 
   const missingName = answers['missing_name'] || 'Unknown';
   const ts = new Date().toISOString().replace(/[:.]/g, '').slice(0, 15);
@@ -184,7 +195,11 @@ export default function MissingResultScreen() {
     setGenerating(true);
     setGenError('');
     try {
-      const html = buildDraftHtml(answers, lang);
+      if (!userId || !token || !answers.missing_name) throw new Error('Complete the interview before generating your complaint.');
+      const current = await loadSupport(userId);
+      const files: MissingPhoto[] = current.photosAttached ? await (await photoRequest(current.draftId, token)).json() : [];
+      const images = await Promise.all(files.map(photo => photoForPdf(current.draftId, photo, token)));
+      const html = buildDraftHtml(answers, lang, current, images);
 
       if (Platform.OS === 'web') {
         // Web: open a new tab with the HTML content — user can Ctrl+P → Save as PDF
@@ -204,7 +219,7 @@ export default function MissingResultScreen() {
     } finally {
       setGenerating(false);
     }
-  }, [answers, lang, filename]);
+  }, [answers, lang, filename, userId, token]);
 
   // ── Share PDF ──────────────────────────────────────────────────────────
   const sharePdf = async () => {
@@ -272,16 +287,16 @@ ${card.rights.map(r => `<div class="panel"><div class="phead">${t(r.heading, lan
   }
 
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
+    <SafeAreaView testID="missing-result-screen" style={s.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={s.scroll}>
         {/* Header */}
-        <Pressable onPress={() => router.back()} style={s.backBtn}>
+        <Pressable testID="missing-result-back" onPress={() => router.back()} style={s.backBtn}>
           <Text style={s.backText}>←</Text>
         </Pressable>
 
         <View style={s.banner}>
           <Text style={s.bannerEmoji}>📋</Text>
-          <Text style={s.bannerTitle}>
+          <Text testID="missing-result-title" style={s.bannerTitle}>
             {lang === 'hi' ? 'मसौदा तैयार' : lang === 'mr' ? 'मसुदा तयार' : 'Draft Ready'}
           </Text>
           <Text style={s.bannerSub}>
@@ -292,10 +307,15 @@ ${card.rights.map(r => `<div class="panel"><div class="phead">${t(r.heading, lan
               : 'Your complaint draft is ready. Submit it at the police station.'}
           </Text>
         </View>
+        <View style={s.attachments}>
+          <Text testID="missing-result-attachments" style={s.attachmentText}>{photos.length} photo{photos.length === 1 ? '' : 's'} attached{support?.location ? ' · Last-seen GPS confirmed' : ' · No GPS added'}</Text>
+          {support?.location && <Text testID="missing-result-coordinates" style={s.attachmentText}>{support.location.latitude.toFixed(6)}, {support.location.longitude.toFixed(6)}</Text>}
+          <Pressable testID="missing-result-edit-attachments" style={s.attachmentBtn} onPress={() => router.push('/missing/attachments')}><Ionicons name="attach" size={20} color={NAVY} /><Text style={s.attachmentText}>Add / edit photos & location</Text></Pressable>
+        </View>
 
         {/* PDF generation */}
         {!pdfUri && !generating && (
-          <Pressable style={s.primaryBtn} onPress={generatePdf}>
+          <Pressable testID="missing-generate-pdf" style={s.primaryBtn} onPress={generatePdf}>
             <Text style={s.primaryBtnText}>
               {lang === 'hi' ? '📄 PDF तैयार करें' : lang === 'mr' ? '📄 PDF तयार करा' : '📄 Generate PDF'}
             </Text>
@@ -313,12 +333,12 @@ ${card.rights.map(r => `<div class="panel"><div class="phead">${t(r.heading, lan
 
         {genError ? (
           <View style={s.errorCard}>
-            <Text style={s.errorText}>⚠ {genError}</Text>
+            <Text testID="missing-pdf-error" accessibilityRole="alert" style={s.errorText}>{genError}</Text>
           </View>
         ) : null}
 
         {pdfUri && (
-          <Pressable style={s.primaryBtn} onPress={sharePdf}>
+          <Pressable testID="missing-share-pdf" style={s.primaryBtn} onPress={sharePdf}>
             <Text style={s.primaryBtnText}>
               {lang === 'hi' ? '⬇ PDF डाउनलोड / शेयर करें' : lang === 'mr' ? '⬇ PDF डाउनलोड / शेअर करा' : '⬇ Download / Share PDF'}
             </Text>
@@ -327,13 +347,12 @@ ${card.rights.map(r => `<div class="panel"><div class="phead">${t(r.heading, lan
 
         {/* Device-only notice */}
         <View style={s.privacyCard}>
-          <Text style={s.privacyText}>
-            🔒{' '}
+          <Text testID="missing-result-privacy" style={s.privacyText}>
             {lang === 'hi'
-              ? 'यह मसौदा केवल आपके डिवाइस पर सहेजा गया है। कोई जानकारी सर्वर पर नहीं भेजी गई।'
+              ? 'उत्तर और GPS इस डिवाइस पर रहते हैं। वैकल्पिक फोटो आपकी सहमति से निजी स्टोरेज में अपलोड होते हैं।'
               : lang === 'mr'
-              ? 'हा मसुदा फक्त तुमच्या डिव्हाइसवर जतन केला आहे. कोणतीही माहिती सर्व्हरवर पाठवली नाही.'
-              : 'This draft is saved on your device only. No data was sent to any server.'}
+              ? 'उत्तरे आणि GPS या डिव्हाइसवर राहतात. पर्यायी फोटो तुमच्या संमतीने खाजगी स्टोरेजमध्ये अपलोड होतात.'
+              : 'Answers and GPS remain on this device. Optional photos are uploaded privately with your agreement. The PDF includes your attached photos and confirmed location.'}
           </Text>
         </View>
 
@@ -346,10 +365,14 @@ ${card.rights.map(r => `<div class="panel"><div class="phead">${t(r.heading, lan
 
         {/* Start over */}
         <Pressable
+          testID="missing-start-new"
           style={s.secondaryBtn}
           onPress={async () => {
-            await AsyncStorage.removeItem(STORAGE_KEY);
-            router.replace('/missing');
+            try {
+              if (support && token) for (const photo of photos) await photoRequest(support.draftId, token, photo.file_id, { method: 'DELETE' });
+              if (user) await clearSupport(user.id);
+              router.replace('/missing');
+            } catch { setGenError('Could not clear this draft. Please retry.'); }
           }}
         >
           <Text style={s.secondaryBtnText}>
@@ -363,10 +386,13 @@ ${card.rights.map(r => `<div class="panel"><div class="phead">${t(r.heading, lan
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
+  attachments: { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.divider, padding: 14, borderRadius: 12, marginBottom: 20, gap: 8 },
+  attachmentText: { fontSize: 14, color: NAVY, lineHeight: 21 },
+  attachmentBtn: { minHeight: 44, flexDirection: 'row', gap: 8, alignItems: 'center' },
   safe:           { flex: 1, backgroundColor: BG },
   scroll:         { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 60 },
   centred:        { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  backBtn:        { marginBottom: 12 },
+  backBtn:        { marginBottom: 12, minHeight: 44, minWidth: 44, justifyContent: 'center' },
   backText:       { color: NAVY, fontSize: 14, fontWeight: '600' },
   banner:         {
     backgroundColor: NAVY, borderRadius: 16, padding: 24, alignItems: 'center', marginBottom: 20,

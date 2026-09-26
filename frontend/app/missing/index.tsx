@@ -12,14 +12,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/auth';
+import { Ionicons } from '@expo/vector-icons';
+import { theme } from '@/src/theme';
 import interviewData from '@/src/content/missing_interview.json';
 
 type Lang = 'en' | 'hi' | 'mr';
 
-const NAVY  = '#1B2B5B';
-const RED   = '#CC0000';
-const GOLD  = '#C9973A';
-const BG    = '#FAFAF8';
+const NAVY = theme.colors.primary;
+const RED = theme.colors.error;
+const BG = theme.colors.background;
 
 function t(obj: Record<string, string> | undefined, lang: Lang): string {
   if (!obj) return '';
@@ -28,7 +29,7 @@ function t(obj: Record<string, string> | undefined, lang: Lang): string {
 
 export default function MissingEntryScreen() {
   const { language: rawLang } = useAuth();
-  const lang: Lang = (['en', 'hi', 'mr'].includes(rawLang) ? rawLang : 'en') as Lang;
+  const lang: Lang = (['en', 'hi', 'mr'].includes(rawLang.code) ? rawLang.code : 'en') as Lang;
   const router = useRouter();
 
   const first = interviewData.entry_screens.first_screen;
@@ -40,8 +41,9 @@ export default function MissingEntryScreen() {
   };
 
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
+    <SafeAreaView testID="missing-entry-screen" style={s.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={s.scroll}>
+        <Pressable testID="missing-entry-back" accessibilityRole="button" accessibilityLabel="Back" style={s.back} onPress={() => router.back()}><Ionicons name="arrow-back" size={24} color={NAVY} /></Pressable>
         {/* Header */}
         <View style={s.header}>
           <Text style={s.title}>{t(first.title, lang)}</Text>
@@ -58,6 +60,7 @@ export default function MissingEntryScreen() {
           {first.emergency_numbers.map(num => (
             <Pressable
               key={num.number}
+              testID={`missing-call-${num.number}`}
               style={[s.callBtn, num.number === '1098' && s.callBtnSecondary]}
               onPress={() => makeCall(num.number)}
             >
@@ -75,10 +78,16 @@ export default function MissingEntryScreen() {
 
         {/* Continue to interview */}
         <Pressable
+          testID="missing-start-interview"
           style={s.continueBtn}
           onPress={() => router.push('/missing/interview')}
         >
           <Text style={s.continueBtnText}>{t(first.continue_label, lang)}</Text>
+        </Pressable>
+        <Pressable testID="missing-add-details" accessibilityRole="button" style={s.attachmentBtn} onPress={() => router.push('/missing/attachments')}>
+          <Ionicons name="images-outline" size={22} color={NAVY} />
+          <View style={s.callInfo}><Text testID="missing-add-details-title" style={s.attachmentTitle}>Add photos & GPS location</Text><Text testID="missing-add-details-subtitle" style={s.attachmentSub}>Optional · include in your complaint PDF</Text></View>
+          <Ionicons name="chevron-forward" size={18} color={NAVY} />
         </Pressable>
 
         <Text style={s.note}>
@@ -86,7 +95,7 @@ export default function MissingEntryScreen() {
             ? 'आपके उत्तर केवल इस डिवाइस पर सुरक्षित रहेंगे।'
             : lang === 'mr'
             ? 'तुमची उत्तरे फक्त या डिव्हाइसवर सुरक्षित राहतील.'
-            : 'Your answers are stored on this device only — never uploaded.'}
+            : 'Your answers and GPS stay on this device. Optional photos are uploaded privately only with your agreement.'}
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -94,6 +103,10 @@ export default function MissingEntryScreen() {
 }
 
 const s = StyleSheet.create({
+  back: { width: 44, height: 44, justifyContent: 'center', marginBottom: 8 },
+  attachmentBtn: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, marginBottom: 16, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  attachmentTitle: { color: NAVY, fontSize: 15, fontWeight: '700' },
+  attachmentSub: { fontSize: 12, color: theme.colors.onSurfaceTertiary, marginTop: 4 },
   safe:          { flex: 1, backgroundColor: BG },
   scroll:        { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
 

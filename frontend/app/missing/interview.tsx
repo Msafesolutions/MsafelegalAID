@@ -8,7 +8,7 @@
  *
  * Route: /missing/interview
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, Pressable, TextInput, ScrollView, StyleSheet,
   ActivityIndicator, KeyboardAvoidingView, Platform,
@@ -17,16 +17,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/src/auth';
+import { Ionicons } from '@expo/vector-icons';
+import { theme } from '@/src/theme';
+import { answersKey } from '@/src/missing/support';
 import interviewData from '@/src/content/missing_interview.json';
 
 type Lang = 'en' | 'hi' | 'mr';
 
-const NAVY = '#1B2B5B';
-const GOLD = '#C9973A';
-const RED  = '#CC0000';
-const BG   = '#FAFAF8';
-
-const STORAGE_KEY = 'missing_draft_answers_v1';
+const NAVY = theme.colors.primary;
+const GOLD = theme.colors.gold;
+const RED = theme.colors.error;
+const BG = theme.colors.background;
 
 function t(obj: Record<string, string> | undefined, lang: Lang): string {
   if (!obj) return '';
@@ -51,14 +52,15 @@ type Question = {
   label: Record<string, string>;
   placeholder?: Record<string, string>;
   text?: Record<string, string>;
-  options?: Array<{ id: string; text: Record<string, string> }>;
+  options?: { id: string; text: Record<string, string> }[];
   is_minor_check?: boolean;
   if_yes_show?: Record<string, string>;
 };
 
 export default function MissingInterviewScreen() {
-  const { language: rawLang, token } = useAuth();
-  const lang: Lang = (['en', 'hi', 'mr'].includes(rawLang) ? rawLang : 'en') as Lang;
+  const { language: rawLang, token, user } = useAuth();
+  const userId = user?.id;
+  const lang: Lang = (['en', 'hi', 'mr'].includes(rawLang.code) ? rawLang.code : 'en') as Lang;
   const router = useRouter();
 
   const questions = interviewData.questions as unknown as Question[];
@@ -68,26 +70,37 @@ export default function MissingInterviewScreen() {
   const [inputVal,   setInputVal]    = useState('');
   const [saving,     setSaving]      = useState(false);
   const [minorAlert, setMinorAlert]  = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [initializing, setInitializing] = useState(true);
+  const submitting = useRef(false);
+  useEffect(() => {
+    if (!userId) { setInitializing(false); return; }
+    AsyncStorage.getItem(answersKey(userId)).then(raw => {
+      if (!raw) return;
+      const saved = JSON.parse(raw); setAnswers(saved);
+      const next = questions.findIndex(q => !saved[q.field]);
+      setQIdx(next < 0 ? questions.length - 1 : next);
+    }).catch(() => setLoadError('Could not read your saved answers. Please return and retry.')).finally(() => setInitializing(false));
+  }, [userId, questions]);
 
   const currentQ  = questions[qIdx] ?? null;
   const progress  = questions.length > 0 ? ((qIdx) / questions.length) * 100 : 0;
 
   // ── Save answer to AsyncStorage (device only) — must be before any return ─
   const saveToDevice = useCallback(async (updatedAnswers: Record<string, string>) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedAnswers));
-    } catch { /* silent — device storage failure */ }
-  }, []);
+    if (!userId) throw new Error('Please sign in again.');
+    await AsyncStorage.setItem(answersKey(userId), JSON.stringify(updatedAnswers));
+  }, [userId]);
 
   // ── Submit an answer ──────────────────────────────────────────────────────
   const submitAnswer = useCallback(async (field: string, value: string) => {
-    if (!value.trim()) return;
+    if (!value.trim() || submitting.current) return;
+    submitting.current = true;
+    setLoadError('');
     const updated = { ...answers, [field]: value.trim() };
-    setAnswers(updated);
-    setInputVal('');
-
-    // Save to device only — never to server
-    await saveToDevice(updated);
+    try { await saveToDevice(updated); }
+    catch { setLoadError('Your answer was not saved. Please try again.'); submitting.current = false; return; }
+    setAnswers(updated); setInputVal('');
 
     // Minor alert check (after MP9)
     if (field === 'is_minor' && value === 'YES') {
@@ -103,6 +116,7 @@ export default function MissingInterviewScreen() {
     } else {
       setQIdx(i => i + 1);
     }
+    submitting.current = false;
   }, [answers, qIdx, questions.length, saveToDevice, router]);
 
   // Registration gate — show prompt if not logged in (after all hooks)
@@ -133,7 +147,7 @@ export default function MissingInterviewScreen() {
     );
   }
 
-  if (saving) {
+  if (saving || initializing) {
     return (
       <SafeAreaView style={st.safe} edges={['top']}>
         <View style={st.centred}>
@@ -154,7 +168,7 @@ export default function MissingInterviewScreen() {
     : (lang === 'hi' ? 'लापता व्यक्ति की जानकारी' : lang === 'mr' ? 'बेपत्ता व्यक्तीची माहिती' : 'About the Missing Person');
 
   return (
-    <SafeAreaView style={st.safe} edges={['top']}>
+    <SafeAreaView testID="missing-interview-screen" style={st.safe} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -162,7 +176,7 @@ export default function MissingInterviewScreen() {
       >
         <ScrollView contentContainerStyle={st.scroll} keyboardShouldPersistTaps="handled">
           {/* Header */}
-          <Pressable onPress={() => router.back()} style={st.back}>
+          <Pressable testID="missing-interview-back" onPress={() => router.back()} style={st.back}>
             <Text style={st.backText}>←</Text>
           </Pressable>
 
@@ -175,7 +189,9 @@ export default function MissingInterviewScreen() {
           </View>
 
           {/* Section label */}
-          <Text style={st.sectionLabel}>{section}</Text>
+          <Text testID="missing-interview-section" style={st.sectionLabel}>{section}</Text>
+          {loadError ? <Text testID="missing-interview-error" accessibilityRole="alert" style={st.error}>{loadError}</Text> : null}
+          <Pressable testID="missing-interview-attachments" style={st.attachmentBtn} onPress={() => router.push('/missing/attachments')}><Ionicons name="attach" size={20} color={NAVY} /><Text style={st.attachmentText}>Photos & last-seen GPS (optional)</Text></Pressable>
 
           {/* Minor alert banner */}
           {minorAlert && (
@@ -191,14 +207,14 @@ export default function MissingInterviewScreen() {
 
           {/* Question bubble */}
           <View style={st.qBubble}>
-            <Text style={st.qText}>{t(currentQ.label, lang)}</Text>
+            <Text testID="missing-question" style={st.qText}>{t(currentQ.label, lang)}</Text>
           </View>
 
           {/* Declaration */}
           {currentQ.type === 'declaration' && currentQ.text && (
             <>
               <Text style={st.declarationText}>{t(currentQ.text, lang)}</Text>
-              <Pressable style={st.primaryBtn} onPress={() => submitAnswer(currentQ.field, 'confirmed')}>
+              <Pressable testID="missing-confirm-declaration" style={st.primaryBtn} onPress={() => submitAnswer(currentQ.field, 'confirmed')}>
                 <Text style={st.primaryBtnText}>
                   {lang === 'hi' ? '✓ मैं सहमत हूँ' : lang === 'mr' ? '✓ मी सहमत आहे' : '✓ I Agree & Confirm'}
                 </Text>
@@ -212,6 +228,7 @@ export default function MissingInterviewScreen() {
               {currentQ.options.map(opt => (
                 <Pressable
                   key={opt.id}
+                  testID={`missing-option-${opt.id}`}
                   style={st.optionBtn}
                   onPress={() => submitAnswer(currentQ.field, opt.id)}
                 >
@@ -225,6 +242,7 @@ export default function MissingInterviewScreen() {
           {currentQ.type === 'text' && (
             <View style={st.inputRow}>
               <TextInput
+                testID="missing-answer-input"
                 style={st.textInput}
                 placeholder={t(currentQ.placeholder, lang) || '…'}
                 placeholderTextColor="#AAA"
@@ -236,6 +254,7 @@ export default function MissingInterviewScreen() {
                 onSubmitEditing={() => submitAnswer(currentQ.field, inputVal)}
               />
               <Pressable
+                testID="missing-next-question"
                 style={[st.nextBtn, !inputVal.trim() && st.nextBtnDisabled]}
                 onPress={() => submitAnswer(currentQ.field, inputVal)}
                 disabled={!inputVal.trim()}
@@ -263,11 +282,14 @@ export default function MissingInterviewScreen() {
 }
 
 const st = StyleSheet.create({
+  attachmentBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, minHeight: 44, borderRadius: 12, backgroundColor: theme.colors.navySoft, marginBottom: 16 },
+  attachmentText: { color: NAVY, fontSize: 13, fontWeight: '600', flexShrink: 1 },
+  error: { color: RED, fontSize: 14, lineHeight: 21, marginBottom: 14 },
   safe:           { flex: 1, backgroundColor: BG },
   scroll:         { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 60 },
   centred:        { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
 
-  back:           { marginBottom: 8 },
+  back:           { marginBottom: 8, minWidth: 44, minHeight: 44, justifyContent: 'center' },
   backText:       { color: NAVY, fontSize: 14, fontWeight: '600' },
 
   progressRow:    { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },

@@ -15,48 +15,38 @@ export function ComplaintCard({ item, scope = 'home' }: { item: Complaint; scope
     ? { pathname: '/fir-draft/result', params: { sessionId: item.session_id } }
     : { pathname: '/fir-draft', params: { resumeId: item.session_id } });
   return (
-    <View testID={`${scope}-complaint-${item.session_id}`} style={styles.card}>
-      <View style={styles.heading}>
+    <Pressable testID={`${scope}-complaint-open-${item.session_id}`} accessibilityRole="button" accessibilityLabel={`${ready ? 'View' : 'Continue'} ${complaintTitle(item)}`} onPress={open} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
+      <View testID={`${scope}-complaint-${item.session_id}`} style={styles.heading}>
         <View style={[styles.icon, ready && styles.readyIcon]}><Ionicons name={ready ? 'document-text-outline' : 'folder-open-outline'} size={23} color={ready ? colors.success : colors.brandSecondary} /></View>
         <View style={styles.titleWrap}>
           <Text testID={`${scope}-complaint-title-${item.session_id}`} style={styles.title}>{complaintTitle(item)}</Text>
-          <Text testID={`${scope}-complaint-stage-${item.session_id}`} style={styles.subtitle}>{progress.label}</Text>
+          <Text testID={`${scope}-complaint-stage-${item.session_id}`} style={styles.subtitle}>{progress.label}{!ready ? ` · Step ${progress.step} of ${progress.total}` : ''}</Text>
+          {dateLabel && <Text testID={`${scope}-complaint-date-${item.session_id}`} style={styles.date}>{dateLabel}</Text>}
+          {!ready && <View testID={`${scope}-complaint-progress-${item.session_id}`} accessibilityRole="progressbar" accessibilityValue={{ min: 1, max: progress.total, now: progress.step }} style={styles.track}><View style={[styles.fill, { width: `${progress.step / progress.total * 100}%` }]} /></View>}
         </View>
         <View style={[styles.badge, ready && styles.readyBadge]}>
           <Text testID={`${scope}-complaint-status-${item.session_id}`} style={[styles.badgeText, ready && styles.readyText]}>{ready ? 'Draft ready' : item.status === 'paused' ? 'Paused' : 'In progress'}</Text>
         </View>
+        <Ionicons name="chevron-forward" size={14} color={colors.onSurfaceTertiary} />
       </View>
-      {!ready && <View style={styles.progressWrap}>
-        <Text testID={`${scope}-complaint-progress-label-${item.session_id}`} style={styles.step}>Interview · Step {progress.step} of {progress.total}</Text>
-        <View testID={`${scope}-complaint-progress-${item.session_id}`} accessibilityRole="progressbar" accessibilityValue={{ min: 1, max: progress.total, now: progress.step }} style={styles.track}>
-          <View style={[styles.fill, { width: `${progress.step / progress.total * 100}%` }]} />
-        </View>
-      </View>}
-      <View style={styles.footer}>
-        <Text testID={`${scope}-complaint-date-${item.session_id}`} style={styles.date}>{dateLabel ? `${ready ? 'Completed' : 'Updated'}: ${dateLabel}` : 'Saved complaint'}</Text>
-        <Pressable testID={`${scope}-complaint-open-${item.session_id}`} accessibilityRole="button" onPress={open} style={({ pressed }) => [styles.button, ready && styles.secondaryButton, pressed && styles.pressed]}>
-          <Text style={[styles.buttonText, ready && styles.secondaryText]}>{ready ? 'View draft' : 'Continue'}</Text>
-          <Ionicons name={ready ? 'document-outline' : 'arrow-forward'} size={15} color={ready ? colors.primary : colors.onBrandPrimary} />
-        </Pressable>
-      </View>
-    </View>
+    </Pressable>
   );
 }
 const styles = StyleSheet.create({
   card: { padding: 12, backgroundColor: colors.surface, borderRadius: 18, borderWidth: 1, borderColor: colors.divider, gap: 8 },
-  heading: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' },
+  heading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   icon: { width: 38, height: 42, borderRadius: 10, backgroundColor: colors.goldMuted, alignItems: 'center', justifyContent: 'center' },
   readyIcon: { backgroundColor: colors.successSoft },
   titleWrap: { flex: 1, minWidth: 90 },
   title: { color: colors.onSurface, fontSize: 15, fontWeight: '700', lineHeight: 21 },
   subtitle: { color: colors.onSurfaceTertiary, fontSize: 12, lineHeight: 18, marginTop: 3 },
-  badge: { backgroundColor: colors.goldMuted, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 6, borderWidth: 1, borderColor: colors.goldSoft },
+  badge: { backgroundColor: colors.goldMuted, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 5, maxWidth: 80 },
   badgeText: { fontSize: 10, fontWeight: '600', color: colors.brandSecondary },
   readyBadge: { backgroundColor: colors.successSoft, borderColor: colors.successSoft },
   readyText: { color: colors.success },
   progressWrap: { paddingLeft: 48, gap: 6 },
   step: { fontSize: 11, lineHeight: 16, color: colors.onSurfaceTertiary },
-  track: { height: 5, borderRadius: 8, backgroundColor: colors.surfaceSecondary, overflow: 'hidden' },
+  track: { height: 3, borderRadius: 8, marginTop: 6, backgroundColor: colors.surfaceSecondary, overflow: 'hidden' },
   fill: { height: '100%', backgroundColor: colors.gold, borderRadius: 8 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
   date: { fontSize: 11, lineHeight: 17, color: colors.onSurfaceTertiary, flexShrink: 1 },

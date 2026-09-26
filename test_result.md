@@ -151,6 +151,20 @@ backend:
           comment: "⚠️ NOT TESTED: Endpoint requires actual audio file upload. Cannot test without audio sample. Endpoint is available and configured correctly based on code review."
 
 frontend:
+  - task: "26 September mockup: five tabs, compact Home, full-height chat, missing photos/GPS"
+    implemented: true
+    working: true
+    file: "frontend/app/(tabs)/home.tsx; frontend/app/(tabs)/discover.tsx; frontend/src/components/AppTabBar.tsx; frontend/app/missing; backend/missing_media.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Latest user mockup supersedes prior Profile placement: five tabs Home/Rights/Ask AI/Complaints/Lookup, compact Pro header, only one active home complaint, Home question handoff, reports removed from chat. Lookup links Vote/sections/cases/advocates. Added optional private object-storage photos (3x5MB, owner-only reads/detach), opt-in GPS/manual coordinates with last-seen confirmation and map link, PDF images/coordinates, account-local draft persistence. No release/export. Initial screenshot loads; old Metro cached manifest lacked current config.extra; generated Metro cache rebuilt. Use existing voicetest credentials. Need targeted nav, small-phone, photo/GPS/PDF and ownership verification. No paid LLM, voice or payment calls needed. Existing unrelated TS errors remain. Existing eCourts provider/search bugs out of scope."
+      - working: true
+        agent: "main"
+        comment: "Iteration22 found cross-owner DELETE falsely returning success though no data was removed; now missing owner/file returns404. Existing regression rerun:12 passed, test_reports/pytest/iteration_22_retest.xml. Testing agent could not complete frontend gates; manual real UI flow afterwards passed sign-in/consent, five tabs and Home question handoff, 390/320 width no overflow; reading/composer boxes disjoint. Real photo chooser upload + simulated browser GPS19.076,72.8777 required explicit confirmation;18-question interview completed; printable PDF HTML has embedded image + confirmed coordinates/maps URL; reopened attachments restore both. Screenshots automation_output/20260926_142659. No production/API mocks or paid AI calls. Native device camera/GPS/PDF share not certified. User requested no further test runs due credit spend; stop testing here."
   - task: "Screenshot-matched Home and app-wide navy, white and gold palette"
     implemented: true
     working: true

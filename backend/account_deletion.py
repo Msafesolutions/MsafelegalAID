@@ -29,6 +29,7 @@ _SIMPLE_USER_ID_COLLECTIONS = [
     "terms_acknowledgements",
     "client_error_logs",
     "billing_intents",
+    "missing_media",
 ]
 
 

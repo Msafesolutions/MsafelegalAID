@@ -3,32 +3,12 @@ import { Platform } from 'react-native';
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import { API_BASE as API } from './apiBase';
 
 // Required for iOS to properly complete the auth session
 WebBrowser.maybeCompleteAuthSession();
 
-// ─── Backend URL resolution ─────────────────────────────────────────────────
-// Rules:
-//   • Native (iOS/Android): always use EXPO_PUBLIC_BACKEND_URL (absolute).
-//   • Web on same-origin host (e.g. bns-know-your-rights.emergent.host):
-//     use '' (relative /api/...) — the nginx proxy handles it.
-//   • Web on a DIFFERENT host (e.g. app.dhara.msafesolutions.com):
-//     use the configured production URL so requests cross to the real backend.
-// This means the .env value should always be the PRODUCTION backend URL.
-// Never hard-code a preview URL in EXPO_PUBLIC_BACKEND_URL.
-const _CONFIGURED_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? '';
-const API: string = (() => {
-  if (Platform.OS !== 'web') return _CONFIGURED_URL;
-  if (typeof window === 'undefined') return _CONFIGURED_URL;
-  try {
-    const configuredHost = _CONFIGURED_URL ? new URL(_CONFIGURED_URL).hostname : '';
-    const currentHost = window.location.hostname;
-    // Same host → relative URLs; different host → need absolute cross-origin URL
-    return configuredHost === currentHost ? '' : _CONFIGURED_URL;
-  } catch {
-    return _CONFIGURED_URL;
-  }
-})();
+// Routing is shared; all credential and session handling below stays unchanged.
 const TOKEN_KEY = 'gk_token';
 const USER_KEY = 'gk_user';
 const LANG_KEY = 'gk_lang';
