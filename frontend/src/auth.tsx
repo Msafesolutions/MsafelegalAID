@@ -7,7 +7,17 @@ import * as Linking from 'expo-linking';
 // Required for iOS to properly complete the auth session
 WebBrowser.maybeCompleteAuthSession();
 
-const API = process.env.EXPO_PUBLIC_BACKEND_URL;
+// On web, use relative URLs ("/api/...") so the app works correctly on any
+// domain — both the Emergent preview and any production host (e.g. Scala
+// Hosting). Hardcoding the preview URL breaks production because the browser
+// sends every API call to the wrong origin and gets an HTML error page back,
+// causing the "Unexpected token < at position 4" JSON parse crash.
+// On native (iOS / Android), we still need the absolute URL from the env var
+// because there is no "same origin" concept.
+const API: string =
+  Platform.OS === 'web'
+    ? ''
+    : (process.env.EXPO_PUBLIC_BACKEND_URL ?? '');
 const TOKEN_KEY = 'gk_token';
 const USER_KEY = 'gk_user';
 const LANG_KEY = 'gk_lang';
