@@ -23,6 +23,7 @@ import { whisperTranscribeFile } from '@/src/voice/stt';
 import { ChunkedSpeaker } from '@/src/voice/tts';
 import { createBrowserTtsPlayer } from '@/src/voice/browserPlayer';
 import { VoiceNotice } from '@/src/components/VoiceNotice';
+import { trackEvent } from '@/src/analytics';
 import { theme } from '@/src/theme';
 import FirSectionDrawer, { SectionItem, DroppedSection } from '@/src/components/FirSectionDrawer';
 import { MarqueeBanner } from '@/src/components/MarqueeBanner';
@@ -362,6 +363,7 @@ export default function FirDraftScreen() {
       if (!res.ok) throw new Error('Session creation failed');
       const data: TurnResponse = await res.json();
       setSessionId(data.session_id);
+      trackEvent('complaint_started', { complaint_type: selectedModule ?? 'other' });
       // v3.3: Persist session for silent resume
       await AsyncStorage.setItem(FIR_SESSION_KEY, data.session_id);
       applyTurn(data);

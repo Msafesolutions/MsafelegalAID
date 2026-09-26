@@ -5,6 +5,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth, Language } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { trackEvent } from '@/src/analytics';
 
 // Mirrors backend /api/reference/languages — hardcoded so the screen works
 // before login and without a network round-trip.
@@ -41,6 +42,9 @@ export default function LanguageSelect() {
   const [selected, setSelected] = useState<Language>(language);
 
   const onContinue = async () => {
+    if (selected.code !== language.code) {
+      trackEvent('language_changed', { from_lang: language.code, to_lang: selected.code });
+    }
     await setLanguage(selected);
     if (from === 'home') {
       if (router.canGoBack()) router.back();

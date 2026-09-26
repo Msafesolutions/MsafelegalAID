@@ -958,70 +958,97 @@ async def meter_llm_use(user: dict, kind: str) -> None:
 async def translate_for_retrieval(text: str) -> str:
     """One-shot, non-streaming translation of a non-English question into English,
     used ONLY so the deterministic corpus retrieval (English keywords) can find
-    the right verified law. Never shown to the user and never treated as a legal
-    source itself — the verified corpus text remains the only source of truth for
-    the answer; this call only helps the search understand what was asked. Falls
-    back to the original text on any failure so a translation hiccup can never
-    turn into a broken chat.
+    the right verified law. Never shown to the user.
 
-    Bug-fix: added asyncio.wait_for(timeout=7 s) so a cold-start or slow LLM
-    response never blocks the retrieval pipeline indefinitely, which was causing
-    intermittent "no verified source" fallbacks for valid Hindi queries.
+    v2 fixes (2026-09):
+    - Uses claude-haiku (fast/cheap) instead of Sonnet — keyword extraction does
+      not need a large reasoning model.
+    - Prompt now demands LEGAL-DOMAIN keywords first, not a literal translation.
+      Literal translations (e.g. 'enter mosque') were matching unrelated Acts
+      (e.g. Cigarettes Act §12 "Power of entry and search") due to generic verbs.
+    - Timeout raised 7 s → 12 s to survive cold starts.
+    - One retry before giving up.
+    - CRITICAL fallback change: returns "" (empty) instead of original Devanagari
+      text. Empty string → zero corpus matches → honest REFUSAL_NO_CORPUS message.
+      Previous behaviour (return raw Hindi) was causing confidently WRONG citations.
     """
     import asyncio as _aio
 
     def _is_mostly_english(s: str) -> bool:
-        """True when the string is predominantly ASCII text (i.e. English-script)."""
         if not s:
             return False
         non_ascii = sum(1 for c in s if ord(c) >= 128)
-        return non_ascii / max(len(s), 1) < 0.25  # <25% non-ASCII → likely English
+        return non_ascii / max(len(s), 1) < 0.25
 
-    try:
-        translator = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"retrieval-translate-{uuid.uuid4()}",
-            system_message=(
-                "You are a legal keyword extractor for an Indian law search engine. "
-                "Given a question in any Indian language, output ONLY 4-6 space-separated "
-                "English keywords that best represent the legal topic. Include: the act name "
-                "(abbreviated if known), section number if mentioned, and the key legal nouns. "
-                "NEVER output a full sentence. NEVER output punctuation. "
-                "Examples:\n"
-                "Input: 'बिना हेलमेट के जुर्माना' → Output: helmet fine penalty Motor Vehicles Act\n"
-                "Input: 'दहेज के लिए उत्पीड़न' → Output: dowry harassment Dowry Prohibition Act IPC 498A\n"
-                "Input: 'UPI धोखाधड़ी शिकायत' → Output: UPI fraud cyber crime IT Act cheating\n"
-                "Input: 'किरायेदार बेदखली' → Output: tenant eviction rent landlord Transfer Property Act\n"
-                "Output ONLY the keywords — no explanation, no notes."
-            ),
-        ).with_model(SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL)
-        result = await _aio.wait_for(
-            translator.send_message(UserMessage(text=text)),
-            timeout=7.0,   # never block retrieval > 7 s
-        )
-        out = str(result or "").strip().strip('"').strip()
-        if out and _is_mostly_english(out) and out != text:
-            logger.info("retrieval-translate | ok | q=%r | → %r", text[:80], out[:80])
-            print(f"[RTRANSLATE] OK q={text[:40]!r} → {out[:60]!r}", flush=True)
-            return out
-        else:
-            logger.warning(
-                "retrieval-translate | BAD_OUTPUT | q=%r | got=%r",
-                text[:80], out[:80],
+    _TRANSLATE_SYSTEM = (
+        "You are a legal-domain keyword extractor for an Indian law retrieval engine. "
+        "Given a question in ANY Indian language, output 5-8 space-separated English keywords "
+        "that identify the LEGAL DOMAIN and SPECIFIC ACT — NOT a literal word-for-word translation.\n\n"
+        "CRITICAL RULES:\n"
+        "1. First 1-2 keywords MUST name the legal domain: religious | criminal | property | "
+        "family | employment | contract | traffic | data | civil\n"
+        "2. Avoid generic action verbs (enter, go, come, visit, give, take) — they cause wrong matches.\n"
+        "3. Use ACT NAMES when the query implies one (BNS, BNSS, Constitution, Hindu Marriage Act, etc.).\n"
+        "4. NEVER output a sentence. NEVER output punctuation. Output keywords only.\n\n"
+        "EXAMPLES (learn the pattern):\n"
+        "'मस्जिद में हिंदू जाए तो क्या होगा?' → religious Hindu Muslim place worship visitor rights trespass\n"
+        "'मस्जिद को मंदिर में बदला जा सकता है?' → religious conversion mosque temple Places Worship Act 1991\n"
+        "'मुझे पुलिस ने बिना वारंट के पकड़ा' → criminal arrest warrant police custody rights Constitution BNS\n"
+        "'मला पोलिसांनी अटक केली, माझे अधिकार काय?' → criminal arrest police custody rights Constitution Article 22\n"
+        "'दहेज के लिए उत्पीड़न क्या कानून है?' → family dowry harassment cruelty BNS Dowry Prohibition Act\n"
+        "'किरायेदार को बेदखल कर सकते हैं?' → property tenant eviction rent landlord Transfer Property Act\n"
+        "'बिना हेलमेट जुर्माना' → traffic helmet fine penalty Motor Vehicles Act\n"
+        "'UPI धोखाधड़ी की शिकायत कहाँ करें?' → contract fraud UPI cheating cyber IT Act complaint\n"
+        "'घरेलू हिंसा से बचाव' → family domestic violence Protection Women Act\n"
+        "'बच्चे की कस्टडी कोर्ट में कैसे?' → family child custody guardian welfare Hindu Minority Act\n"
+    )
+
+    async def _attempt(attempt_num: int) -> str | None:
+        try:
+            translator = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"rtranslate-{uuid.uuid4()}",
+                system_message=_TRANSLATE_SYSTEM,
+            ).with_model("anthropic", "claude-haiku-4-5")
+            result = await _aio.wait_for(
+                translator.send_message(UserMessage(text=text)),
+                timeout=12.0,
             )
-            print(f"[RTRANSLATE] BAD_OUTPUT got={out[:60]!r}", flush=True)
-            return text
-    except _aio.TimeoutError:
-        logger.warning(
-            "retrieval-translate | TIMEOUT (7 s) | q=%r | falling back to original",
-            text[:80],
-        )
-        print(f"[RTRANSLATE] TIMEOUT q={text[:60]!r}", flush=True)
-        return text
-    except Exception as exc:
-        logger.warning("retrieval translation failed; falling back to original text", exc_info=True)
-        print(f"[RTRANSLATE] EXCEPTION {type(exc).__name__}: {exc!s:.100}", flush=True)
-        return text
+            out = str(result or "").strip().strip('"').strip()
+            if out and _is_mostly_english(out) and out != text:
+                logger.info("rtranslate | ok | attempt=%d | q=%r → %r", attempt_num, text[:60], out[:60])
+                print(f"[RTRANSLATE] OK attempt={attempt_num} q={text[:40]!r} → {out[:60]!r}", flush=True)
+                return out
+            logger.warning("rtranslate | bad_output | attempt=%d | got=%r", attempt_num, out[:60])
+            print(f"[RTRANSLATE] BAD_OUTPUT attempt={attempt_num} got={out[:60]!r}", flush=True)
+            return None
+        except _aio.TimeoutError:
+            logger.warning("rtranslate | timeout(12s) | attempt=%d | q=%r", attempt_num, text[:60])
+            print(f"[RTRANSLATE] TIMEOUT attempt={attempt_num} q={text[:50]!r}", flush=True)
+            return None
+        except Exception as exc:
+            logger.warning("rtranslate | exception | attempt=%d | %s", attempt_num, exc, exc_info=False)
+            print(f"[RTRANSLATE] EXCEPTION attempt={attempt_num} {type(exc).__name__}: {exc!s:.80}", flush=True)
+            return None
+
+    # Attempt 1
+    result = await _attempt(1)
+    if result:
+        return result
+
+    # Attempt 2 (one retry — different session UUID avoids stale-cache effects)
+    result = await _attempt(2)
+    if result:
+        return result
+
+    # All attempts exhausted.
+    # RETURN "" so corpus_retrieve gets no keywords → zero matches → honest
+    # REFUSAL_NO_CORPUS ("I couldn't find a verified source for this").
+    # NEVER return the raw Devanagari text: it causes false positives in the
+    # English keyword corpus (e.g. "जाए" matched Cigarettes Act "entry and search").
+    logger.warning("rtranslate | GIVING_UP | returning empty → REFUSAL_NO_CORPUS | q=%r", text[:60])
+    print(f"[RTRANSLATE] GIVING_UP → empty fallback for q={text[:50]!r}", flush=True)
+    return ""
 
 # ---------- Client-side error logging ----------
 # The chat UI swallows real JS/network exceptions into a friendly "Something
@@ -3902,6 +3929,19 @@ async def voter_generate_pdf(body: VoterPdfRequest):
 from missing_media import create_missing_media_router
 app.include_router(create_missing_media_router(db, current_user))
 app.include_router(api)
+
+# ── One-time build download endpoint ──────────────────────────────────────────
+# Serves the latest web export zip so it can be downloaded directly via the
+# preview URL (/api/download/build). Remove after the Scala upload is done.
+from fastapi.responses import FileResponse as _FR
+import os as _os
+@app.get("/api/download/build")
+async def download_build():
+    _path = "/app/frontend/dist/dhara_web_build_latest.zip"
+    if not _os.path.exists(_path):
+        raise HTTPException(status_code=404, detail="Build not found")
+    return _FR(_path, media_type="application/zip", filename="dhara_web_build_latest.zip")
+# ──────────────────────────────────────────────────────────────────────────────
 
 app.add_middleware(
     CORSMiddleware,

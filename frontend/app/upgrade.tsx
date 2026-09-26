@@ -169,6 +169,7 @@ export default function Upgrade() {
       .then((r) => r.json())
       .then(setPricing)
       .catch(() => {});
+    trackEvent('upgrade_prompt_seen', { source: params.source ?? 'direct' });
   }, []);
 
   useEffect(() => {
@@ -188,6 +189,7 @@ export default function Upgrade() {
   }, [params.status, params.session_id, token, refreshUser]);
 
   const payStripe = useCallback(async () => {
+    trackEvent('upgrade_tap', { source: 'stripe' });
     if (!token) return;
     setErrorMsg(null);
     setLoadingStripe(true);
@@ -230,6 +232,7 @@ export default function Upgrade() {
 
   const payRazorpay = useCallback(async () => {
     if (!pricing?.providers?.razorpay?.link_url) return;
+    trackEvent('upgrade_tap', { source: 'razorpay' });
     setErrorMsg(null);
     setLoadingRazor(true);
     try {

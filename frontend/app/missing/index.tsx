@@ -6,6 +6,7 @@
  * DATA POLICY: No answers leave the device. PDF generated on-device only.
  * Route: /missing
  */
+import { useEffect } from 'react';
 import {
   View, Text, Pressable, ScrollView, StyleSheet, Linking,
 } from 'react-native';
@@ -15,6 +16,7 @@ import { useAuth } from '@/src/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '@/src/theme';
 import interviewData from '@/src/content/missing_interview.json';
+import { trackEvent } from '@/src/analytics';
 
 type Lang = 'en' | 'hi' | 'mr';
 
@@ -31,6 +33,10 @@ export default function MissingEntryScreen() {
   const { language: rawLang } = useAuth();
   const lang: Lang = (['en', 'hi', 'mr'].includes(rawLang.code) ? rawLang.code : 'en') as Lang;
   const router = useRouter();
+
+  useEffect(() => {
+    trackEvent('missing_person_flow_started');
+  }, []);
 
   const first = interviewData.entry_screens.first_screen;
 
