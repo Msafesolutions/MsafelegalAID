@@ -6,6 +6,7 @@ import { setStatusBarStyle } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { trackEvent } from '@/src/analytics';
 import { ComplaintsList } from '@/src/home/ComplaintsList';
 import { DisclaimerBanner } from '@/src/components/DisclaimerBanner';
 import { MarqueeBanner } from '@/src/components/MarqueeBanner';
@@ -29,9 +30,9 @@ export default function Home() {
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const firstName = user?.name?.trim().split(/\s+/)[0] || 'there';
   const help = [
-    { id: 'rights', label: 'Know Your\nRights', icon: 'shield-checkmark-outline' as const, action: () => router.push('/(tabs)/rights') },
-    { id: 'advocate', label: 'Find an\nAdvocate', icon: 'call-outline' as const, action: () => router.push('/(tabs)/advocate') },
-    { id: 'emergency', label: 'Emergency\nHelplines', icon: 'shield-outline' as const, action: () => setEmergency(true) },
+    { id: 'rights', label: 'Know Your\nRights', icon: 'shield-checkmark-outline' as const, action: () => { trackEvent('quick_help_tap', { card_type: 'rights', language: language.code }); router.push('/(tabs)/rights'); } },
+    { id: 'advocate', label: 'Find an\nAdvocate', icon: 'call-outline' as const, action: () => { trackEvent('quick_help_tap', { card_type: 'advocate', language: language.code }); router.push('/(tabs)/advocate'); } },
+    { id: 'emergency', label: 'Emergency\nHelplines', icon: 'shield-outline' as const, action: () => { trackEvent('quick_help_tap', { card_type: 'emergency', language: language.code }); setEmergency(true); } },
   ];
   return <SafeAreaView style={styles.safe} edges={['top']} testID="home-screen">
     <View testID="home-header" style={styles.header}>
@@ -50,7 +51,7 @@ export default function Home() {
         <View testID="home-greeting-panel" style={styles.greeting}><Text testID="home-greeting" style={styles.greetingText}>{greeting}, {firstName}</Text></View>
         <Text testID="home-quick-help-heading" style={styles.sectionTitle}>QUICK HELP</Text>
         <View style={styles.helpRow}>{help.map((item, i) => <Pressable key={item.id} testID={`home-help-${item.id}`} accessibilityRole="button" onPress={item.action} style={({ pressed }) => [styles.helpCard, pressed && styles.pressed]}>
-          <View style={[styles.helpIcon, i === 1 ? styles.goldIcon : i === 2 ? styles.greenIcon : null]}><Ionicons name={item.icon} size={22} color={i === 1 ? colors.brandSecondary : i === 2 ? colors.success : colors.primary} /></View>
+          <View style={[styles.helpIcon, i === 1 ? styles.goldIcon : i === 2 ? styles.greenIcon : null]}><Ionicons name={item.icon} size={24} color={i === 1 ? colors.brandSecondary : i === 2 ? colors.success : colors.primary} /></View>
           <Text style={styles.helpLabel}>{item.label}</Text>
         </Pressable>)}</View>
 
@@ -118,8 +119,8 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 11, lineHeight: 16, fontWeight: '600', letterSpacing: 1, color: colors.onSurfaceTertiary },
   helpRow: { flexDirection: 'row', gap: 10, marginTop: 10, marginBottom: 10 },
   helpCard: { flex: 1, alignItems: 'center', backgroundColor: colors.surface, paddingVertical: 10, paddingHorizontal: 4, gap: 5, minHeight: 84, borderRadius: 12, borderWidth: 1, borderColor: colors.divider },
-  helpIcon: { width: 28, height: 28, borderRadius: 9, backgroundColor: colors.navySoft, alignItems: 'center', justifyContent: 'center' },
-  goldIcon: { backgroundColor: colors.goldMuted },
+  helpIcon: { width: 40, height: 40, borderRadius: 11, backgroundColor: colors.navySoft, alignItems: 'center', justifyContent: 'center' },
+  goldIcon: { backgroundColor: colors.goldSoft },
   greenIcon: { backgroundColor: colors.successSoft },
   helpLabel: { color: colors.onSurface, fontSize: 11, lineHeight: 16, fontWeight: '600', textAlign: 'center' },
   missingCard: {

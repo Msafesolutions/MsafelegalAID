@@ -34,6 +34,7 @@ import { VoiceNotice } from '@/src/components/VoiceNotice';
 import { File, Paths } from 'expo-file-system';
 import { useAuth, API_BASE, logClientError } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { trackEvent } from '@/src/analytics';
 import { getConfiguredSTT, whisperTranscribeFile } from '@/src/voice/stt';
 import { addBookmark } from '@/src/bookmarks';
 import { t } from '@/src/i18n';
@@ -487,6 +488,8 @@ export default function ChatScreen() {
       const userId = Math.random().toString(36).slice(2);
       const assistantId = Math.random().toString(36).slice(2);
       const modeToSend: 'basic' | 'pro' = proMode ? 'pro' : 'basic';
+      // DPDP: send only length + language code, never the query text itself
+      trackEvent('ask_ai_submit', { input_length: q.length, language: language.code, mode: modeToSend });
       setMessages((prev) => [
         ...prev,
         { id: userId, role: 'user', content: q },

@@ -20,8 +20,7 @@ export function ComplaintCard({ item, scope = 'home' }: { item: Complaint; scope
         <View style={[styles.icon, ready && styles.readyIcon]}><Ionicons name={ready ? 'document-text-outline' : 'folder-open-outline'} size={23} color={ready ? colors.success : colors.brandSecondary} /></View>
         <View style={styles.titleWrap}>
           <Text testID={`${scope}-complaint-title-${item.session_id}`} style={styles.title}>{complaintTitle(item)}</Text>
-          <Text testID={`${scope}-complaint-stage-${item.session_id}`} style={styles.subtitle}>{progress.label}{!ready ? ` · Step ${progress.step} of ${progress.total}` : ''}</Text>
-          {dateLabel && <Text testID={`${scope}-complaint-date-${item.session_id}`} style={styles.date}>{dateLabel}</Text>}
+          <Text testID={`${scope}-complaint-stage-${item.session_id}`} style={styles.subtitle}>{progress.label}{!ready ? ` · Step ${progress.step} of ${progress.total}` : ''}{dateLabel ? ` · ${dateLabel}` : ''}</Text>
           {!ready && <View testID={`${scope}-complaint-progress-${item.session_id}`} accessibilityRole="progressbar" accessibilityValue={{ min: 1, max: progress.total, now: progress.step }} style={styles.track}><View style={[styles.fill, { width: `${progress.step / progress.total * 100}%` }]} /></View>}
         </View>
         <View style={[styles.badge, ready && styles.readyBadge]}>

@@ -24,6 +24,7 @@ import * as Linking from 'expo-linking';
 import * as Clipboard from 'expo-clipboard';
 import { useAuth, API_BASE } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { trackEvent } from '@/src/analytics';
 
 type Pricing = {
   pro_price_inr_paise: number;

@@ -39,6 +39,35 @@ export default function Root({ children }: PropsWithChildren) {
             `,
           }}
         />
+
+        {/* ── Google Analytics 4 ──────────────────────────────────────────
+            gtag.js is loaded async so it never blocks first paint.
+            The config call fires a default page_view which GA4 needs to
+            start session tracking; named events are sent from src/analytics. */}
+        <script
+          async
+          src="https://www.googletagmanager.com/gtag/js?id=G-JDVMP7PKCV"
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', 'G-JDVMP7PKCV', { send_page_view: false });
+            `,
+          }}
+        />
+
+        {/* ── Cloudflare Web Analytics ────────────────────────────────────
+            Lightweight beacon (< 1 KB), deferred, no cookies by default.
+            Token is safe to expose in HTML — it only allows writing stats,
+            not reading them. */}
+        <script
+          defer
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon='{"token": "4bf7b3812e52441981becae529ef1f18"}'
+        />
       </head>
       <body
         style={{
