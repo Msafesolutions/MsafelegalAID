@@ -3937,10 +3937,10 @@ from fastapi.responses import FileResponse as _FR
 import os as _os
 @app.get("/api/download/build")
 async def download_build():
-    _path = "/app/frontend/dist/dhara_web_build_latest.zip"
+    _path = "/app/frontend/dist/dhara_web_build_v18.zip"
     if not _os.path.exists(_path):
         raise HTTPException(status_code=404, detail="Build not found")
-    return _FR(_path, media_type="application/zip", filename="dhara_web_build_latest.zip")
+    return _FR(_path, media_type="application/zip", filename="dhara_web_build_v18.zip")
 # ──────────────────────────────────────────────────────────────────────────────
 
 app.add_middleware(

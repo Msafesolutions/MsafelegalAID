@@ -1,5 +1,14 @@
 # Dhara (formerly Gandhikar) — PRD
 
+## September 2026 — P0 APK/web stabilization
+- Corrected the Expo SDK 54 incompatibility: `expo-crypto` is now pinned to `~15.0.9` through Expo's installer. The prior `57.0.3` package was incompatible with the SDK 54 native runtime and was a credible APK startup-crash cause.
+- Added a root React error boundary around providers and navigation. Recoverable JavaScript/provider render failures now show a safe Dhara retry screen rather than terminating into a blank startup view.
+- Claude Sonnet 4.6 remains the configured default model (`claude-sonnet-4-6`); it was not changed to an older model.
+- The supplied Firebase `google-services.json` was not present in the job assets. `android.googleServicesFile` was intentionally not added because a nonexistent file would make the Android build fail. Add this only when the actual Firebase configuration file is supplied.
+- Web export now uses Expo static output, allowing `app/+html.tsx` to bake GA4 and Cloudflare Web Analytics into the generated files. Verified a clean `npx expo export --platform web --clear`; `/app/downloads/dhara_web_build_v18.zip` passed archive validation.
+- Backend and Expo services restarted; `/health` and `/api/health` both returned 200. Web preview rendered successfully at phone dimensions. A fresh V18 native build is still required to verify actual Android startup; desktop web preview cannot certify an APK.
+- **Deferred under the user-selected P0 stability cap:** router extraction of the 4,343-line backend. This is a distinct, high-regression-risk refactor and has not been represented as completed.
+
 ## Vision
 A dignified, free, bilingual+multilingual AI legal companion for every Indian citizen. Empower — never threaten. Named after Mahatma Gandhi. Truth, non-violence, rights.
 

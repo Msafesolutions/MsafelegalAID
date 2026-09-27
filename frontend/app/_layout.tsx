@@ -1,7 +1,7 @@
 import { Stack, useRouter, useSegments, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useRef } from "react";
-import { LogBox, View } from "react-native";
+import React, { Component, ErrorInfo, ReactNode, useEffect, useRef } from "react";
+import { LogBox, Pressable, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -23,6 +23,42 @@ import {
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
+
+type BoundaryProps = { children: ReactNode };
+type BoundaryState = { hasError: boolean };
+
+/**
+ * Keeps a recoverable JavaScript rendering error from terminating the app.
+ * Native build configuration errors still require a rebuilt APK, but ordinary
+ * provider or screen failures now present a safe recovery action instead of a
+ * blank startup screen.
+ */
+class RootErrorBoundary extends Component<BoundaryProps, BoundaryState> {
+  state: BoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): BoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.warn("Root render error", error.name, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View testID="root-error-boundary" style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 28, backgroundColor: theme.colors.surface }}>
+          <Text testID="root-error-title" style={{ color: theme.colors.primary, fontSize: 24, fontWeight: "700", textAlign: "center" }}>Dhara needs to restart</Text>
+          <Text testID="root-error-message" style={{ color: theme.colors.onSurfaceSecondary, fontSize: 16, lineHeight: 24, marginTop: 12, textAlign: "center" }}>A screen could not load safely. Your saved information is not affected.</Text>
+          <Pressable testID="root-error-retry" accessibilityRole="button" onPress={() => this.setState({ hasError: false })} style={{ backgroundColor: theme.colors.primary, borderRadius: 12, marginTop: 24, minHeight: 48, justifyContent: "center", paddingHorizontal: 22 }}>
+            <Text style={{ color: theme.colors.onBrandPrimary, fontSize: 16, fontWeight: "700" }}>Try again</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /** Redirects to /consent if the user hasn't accepted the current notice version. */
 function ConsentGuard() {
@@ -117,26 +153,28 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
-    <SafeAreaProvider>
-      <KeyboardProvider preserveEdgeToEdge>
-        {/* PostHogProvider must wrap AuthProvider so PostHogBridge can reach
-            the client while AuthProvider still owns the user state. */}
-        <PostHogProvider
-          apiKey={POSTHOG_API_KEY}
-          options={POSTHOG_OPTIONS as any}
-        >
-          <AuthProvider>
-            <PostHogBridge />
-            <AnalyticsIdentitySync />
-            <AnalyticsScreenTracker />
-            <ConsentGuard />
-            <StatusBar style="dark" />
-            <View style={{ flex: 1 }}>
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.surface } }} />
-            </View>
-          </AuthProvider>
-        </PostHogProvider>
-      </KeyboardProvider>
-    </SafeAreaProvider>
+    <RootErrorBoundary>
+      <SafeAreaProvider>
+        <KeyboardProvider preserveEdgeToEdge>
+          {/* PostHogProvider must wrap AuthProvider so PostHogBridge can reach
+              the client while AuthProvider still owns the user state. */}
+          <PostHogProvider
+            apiKey={POSTHOG_API_KEY}
+            options={POSTHOG_OPTIONS as any}
+          >
+            <AuthProvider>
+              <PostHogBridge />
+              <AnalyticsIdentitySync />
+              <AnalyticsScreenTracker />
+              <ConsentGuard />
+              <StatusBar style="dark" />
+              <View style={{ flex: 1 }}>
+                <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.surface } }} />
+              </View>
+            </AuthProvider>
+          </PostHogProvider>
+        </KeyboardProvider>
+      </SafeAreaProvider>
+    </RootErrorBoundary>
   );
 }

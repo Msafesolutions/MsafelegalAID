@@ -151,6 +151,20 @@ backend:
           comment: "⚠️ NOT TESTED: Endpoint requires actual audio file upload. Cannot test without audio sample. Endpoint is available and configured correctly based on code review."
 
 frontend:
+  - task: "Android APK startup stability (V18 candidate)"
+    implemented: true
+    working: "NA"
+    file: "frontend/package.json; frontend/app/_layout.tsx; frontend/app.json"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "user"
+        comment: "User reported the v1.0.84 APK crashes immediately on launch."
+      - working: "NA"
+        agent: "main"
+        comment: "P0 remediation: SDK-incompatible expo-crypto 57.0.3 repinned to ~15.0.9 and root error boundary added. Google services file was unavailable, so no invalid android.googleServicesFile reference was added. Clean web export and web preview passed; fresh Android build/device launch is required before marking working."
   - task: "26 September mockup: five tabs, compact Home, full-height chat, missing photos/GPS"
     implemented: true
     working: true
