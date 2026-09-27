@@ -11,10 +11,13 @@ export default function VisitorLayout() {
         headerBackTitle: 'Back',
       }}
     >
-      <Stack.Screen name="index"        options={{ title: 'Visitor Mode' }} />
-      <Stack.Screen name="intent"       options={{ title: 'How Can We Help?' }} />
-      <Stack.Screen name="emergency"    options={{ title: 'Emergency Help' }} />
+      <Stack.Screen name="index"         options={{ title: 'Visitor Mode' }} />
+      <Stack.Screen name="intent"        options={{ title: 'How Can We Help?' }} />
+      <Stack.Screen name="emergency"     options={{ title: 'Emergency Help' }} />
       <Stack.Screen name="lost-passport" options={{ title: 'Lost Passport' }} />
+      <Stack.Screen name="visa-frro"     options={{ title: 'Visa / FRRO' }} />
+      <Stack.Screen name="cyber-fraud"   options={{ title: 'Cyber Fraud' }} />
+      <Stack.Screen name="interpreter"   options={{ title: 'Two-Way Interpreter' }} />
     </Stack>
   );
 }
