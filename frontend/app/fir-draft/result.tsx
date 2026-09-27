@@ -120,6 +120,33 @@ export default function FIRResult() {
     setTimeout(() => setCopyDone(false), 2500);
   }, [draftText]);
 
+  // ── Print ──────────────────────────────────────────────────────────────────
+  const handlePrint = useCallback(async () => {
+    if (!draftText) return;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<style>body{padding:24px;font-family:Arial,sans-serif;}
+h2{color:#1B2B5B;font-size:18px;margin-bottom:4px;}
+.warn{background:#FFF8E7;border-left:4px solid #C9973A;padding:10px;font-size:12px;color:#555;margin-bottom:16px;}
+pre{white-space:pre-wrap;font-size:13px;line-height:1.7;font-family:'Courier New',monospace;}</style>
+</head><body>
+<h2>FIR Complaint Draft — DHARA</h2>
+<div class="warn"><strong>CITIZEN DRAFT — NOT A REGISTERED FIR.</strong> Present at any police station for official registration under Section 173(1) BNSS.</div>
+<pre>${draftText.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+</body></html>`;
+    if (Platform.OS === 'web') {
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } else {
+      try {
+        const Print = await import('expo-print');
+        await Print.printAsync({ html });
+      } catch {
+        Alert.alert('Print unavailable', 'Use Export PDF instead.');
+      }
+    }
+  }, [draftText]);
+
   // ── Share as text ──────────────────────────────────────────────────────────
   const handleShare = useCallback(async () => {
     if (!draftText) return;
@@ -306,6 +333,11 @@ export default function FIRResult() {
               : <Ionicons name="document-attach-outline" size={20} color="#fff" />}
             <Text style={[styles.actionBtnText, { color: '#fff' }]}>Export PDF</Text>
           </Pressable>
+          {/* Print */}
+          <Pressable testID="fir-result-print" style={[styles.actionBtn, styles.actionBtnPrint]} onPress={handlePrint}>
+            <Ionicons name="print-outline" size={20} color="#fff" />
+            <Text style={[styles.actionBtnText, { color: '#fff' }]}>Print</Text>
+          </Pressable>
         </View>
 
         {/* Next steps */}
@@ -423,6 +455,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: BORDER, minWidth: 80,
   },
   actionBtnPdf: { backgroundColor: NAVY, borderColor: NAVY, flexBasis: '100%', flex: 0 },
+  actionBtnPrint: { backgroundColor: '#2D6A4F', borderColor: '#2D6A4F', flexBasis: '100%', flex: 0 },
   actionBtnText: { fontSize: 13, color: NAVY, fontWeight: '600' },
 
   // Steps

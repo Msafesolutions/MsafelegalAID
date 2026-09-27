@@ -276,6 +276,27 @@ ${card.rights.map(r => `<div class="panel"><div class="phead">${t(r.heading, lan
     }
   };
 
+  // ── Print complaint ────────────────────────────────────────────────────
+  const handlePrint = useCallback(async () => {
+    if (!answers.missing_name) {
+      Alert.alert('No data', 'Complete the interview before printing.');
+      return;
+    }
+    const current = await loadSupport(userId!);
+    const html = buildDraftHtml(answers, lang, current, []);
+    if (Platform.OS === 'web') {
+      const blob = new Blob([html], { type: 'text/html' });
+      window.open(URL.createObjectURL(blob), '_blank');
+    } else {
+      try {
+        const Print = await import('expo-print');
+        await Print.printAsync({ html });
+      } catch {
+        Alert.alert('Print unavailable', 'Use Generate PDF instead.');
+      }
+    }
+  }, [answers, lang, userId, support]);
+
   if (loading) {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
@@ -341,6 +362,15 @@ ${card.rights.map(r => `<div class="panel"><div class="phead">${t(r.heading, lan
           <Pressable testID="missing-share-pdf" style={s.primaryBtn} onPress={sharePdf}>
             <Text style={s.primaryBtnText}>
               {lang === 'hi' ? '⬇ PDF डाउनलोड / शेयर करें' : lang === 'mr' ? '⬇ PDF डाउनलोड / शेअर करा' : '⬇ Download / Share PDF'}
+            </Text>
+          </Pressable>
+        )}
+
+        {/* Print button */}
+        {Object.keys(answers).length > 0 && !loading && (
+          <Pressable testID="missing-print" style={[s.primaryBtn, { backgroundColor: '#2D6A4F' }]} onPress={handlePrint}>
+            <Text style={s.primaryBtnText}>
+              {lang === 'hi' ? '🖨 प्रिंट करें' : lang === 'mr' ? '🖨 प्रिंट करा' : '🖨 Print Complaint'}
             </Text>
           </Pressable>
         )}

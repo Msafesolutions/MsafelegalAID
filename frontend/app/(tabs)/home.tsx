@@ -83,6 +83,23 @@ export default function Home() {
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.error} />
         </Pressable>
+
+        {/* ── International Visitor entry ───────────────────────────────── */}
+        <Pressable
+          testID="home-visitor-mode"
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.visitorCard, pressed && styles.pressed]}
+          onPress={() => router.push('/visitor')}
+        >
+          <View style={styles.missingLeft}>
+            <Text style={styles.visitorFlag}>🌍</Text>
+            <View>
+              <Text style={styles.visitorTitle}>International Visitor?</Text>
+              <Text style={styles.missingSub}>Lost passport · Emergency help · Speak For Me</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+        </Pressable>
         <View style={styles.sectionRow}><Text testID="home-complaints-heading" style={styles.sectionTitle}>YOUR COMPLAINTS</Text>
           <Pressable testID="home-see-all" accessibilityRole="button" style={styles.seeAll} onPress={() => router.push('/(tabs)/complaints')}><Text style={styles.link}>See all →</Text></Pressable>
         </View>
@@ -128,6 +145,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
     marginBottom: 4, borderWidth: 1, borderColor: colors.divider,
   },
+  visitorCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.navySoft, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    marginBottom: 4, borderWidth: 1.5, borderColor: colors.primary + '33',
+  },
+  visitorFlag:  { fontSize: 22, marginRight: 2 },
+  visitorTitle: { fontSize: 14, fontWeight: '700', color: colors.primary },
   missingLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   missingTitle: { fontSize: 14, fontWeight: '700', color: colors.error },
   missingSub:   { fontSize: 11, color: colors.onSurfaceTertiary, marginTop: 2 },
