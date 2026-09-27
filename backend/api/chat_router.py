@@ -26,6 +26,10 @@ from config.settings import (
     SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL, EMERGENT_LLM_KEY, LANGUAGES,
     PRO_FREE_SAMPLES, DRAFTS_FREE,
 )
+from engine.pipeline import (
+    run_pre_retrieval, run_post_retrieval,
+    save_case_state, classify_turn,
+)
 from corpus import (
     retrieve as corpus_retrieve,
     retrieve_state as corpus_retrieve_state,
@@ -224,12 +228,41 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         "timestamp": now,  # explicit alias for CSV clarity
     })
 
+    # -------- Gate 2: Pre-retrieval pipeline (A → B → C) --------
+    _current_session = await db.sessions.find_one({"id": session_id, "user_id": user["id"]})
+    _v2_lq, _v2_classify, _v2_fact, _v2_state = await run_pre_retrieval(
+        query=body.message,
+        language=body.language,
+        llm_key=EMERGENT_LLM_KEY,
+        session=_current_session,
+        db=db,
+    )
+    # If CLARIFICATION_ANSWER, the pipeline restores the original query in lq.normalized_query.
+    # Use that as the retrieval text so we retrieve on the original issue.
+    _retrieval_override = (
+        _v2_lq.normalized_query
+        if (_v2_lq.normalized_query and _v2_lq.normalized_query != body.message)
+        else None
+    )
+    # If Layer C says we need a material clarification question, emit it and stop.
+    if _v2_fact.answer_mode == "ESCALATE" and _v2_fact.follow_up_question:
+        async def _clarify_gen():
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id, 'tier': 'free' if not is_pro_user else 'pro', 'mode': mode, 'sample_consumed': False, 'samples_remaining_after': PRO_FREE_SAMPLES - samples_used}, ensure_ascii=False)}\n\n".encode()
+            q = _v2_fact.follow_up_question
+            yield f"data: {json.dumps({'type': 'delta', 'content': q}, ensure_ascii=False)}\n\n".encode()
+            await db.messages.insert_one({"id": str(uuid.uuid4()), "session_id": session_id, "user_id": user["id"], "role": "assistant", "content": q, "language": body.language, "mode": mode, "status": "clarification_asked", "created_at": datetime.now(timezone.utc).isoformat(), "timestamp": datetime.now(timezone.utc).isoformat()})
+            await save_case_state(db, session_id, _v2_state)
+            yield f"data: {json.dumps({'type': 'done'})}\n\n".encode()
+        return StreamingResponse(_clarify_gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
     # -------- Retrieval-language bridge (Hindi/Indic search fix) --------
-    retrieval_text = body.message
-    _is_indic = needs_retrieval_translation(body.message)
+    # Use the pipeline's restored normalized_query for clarification turns
+    _base_retrieval_text = _retrieval_override or body.message
+    retrieval_text = _base_retrieval_text
+    _is_indic = needs_retrieval_translation(_base_retrieval_text)
     if _is_indic:
-        retrieval_text = await translate_for_retrieval(body.message)
-        _same = retrieval_text == body.message
+        retrieval_text = await translate_for_retrieval(_base_retrieval_text)
+        _same = retrieval_text == _base_retrieval_text
         logger.info(
             "retrieval-bridge | indic=True | translation_ok=%s | q=%r | t=%r",
             not _same, body.message[:80], retrieval_text[:80],
@@ -405,6 +438,16 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     if state_hits:
         keep_central = max(0, 3 - len(state_hits))
         retrieved = retrieved[:keep_central] + state_hits
+
+    # -------- Gate 2: Post-retrieval pipeline (H → S) --------
+    # Layer H: Irrelevance filter — hard guards (mosque→PoW Act, IPC→BNS, Designs→SIM)
+    # Layer S: Law Status Guard — annotates SUPERSEDED/REPEALED from registry JSON
+    retrieved, db_hits = run_post_retrieval(
+        corpus_hits=retrieved,
+        db_hits=db_hits,
+        lq=_v2_lq,
+        classify_result=_v2_classify,
+    )
 
     # -------- Refusal analytics (A4 instrumentation) --------
     # Anonymized, aggregate-only event: NO user_id, NO session_id, NO raw
@@ -726,6 +769,7 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             refusal_text = localize_refusal(early_refusal, body.language)
             yield sse({"type": "delta", "content": refusal_text})
             await save_assistant(refusal_text, error=None)
+            await save_case_state(db, session_id, _v2_state)
             yield sse({"type": "done"})
             return
 
@@ -783,6 +827,8 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             # Overwrite the accumulated text on the client with the sanitized version.
             yield sse({"type": "final", "content": sanitized})
         await save_assistant(sanitized or full, errored)
+        # Gate 2: persist updated conversation state (turn count, legal_query, domain)
+        await save_case_state(db, session_id, _v2_state)
         yield sse({"type": "done"})
 
     return StreamingResponse(

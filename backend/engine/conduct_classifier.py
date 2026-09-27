@@ -41,9 +41,11 @@ DOMAIN_TAXONOMY: Dict[str, Dict] = {
     "criminal_procedure": {
         "actions": {"arrest", "detain", "bail", "search", "seize",
                     "file_fir", "file_complaint", "release",
-                    "arrest_police", "detain_police", "custody", "remand"},
+                    "arrest_police", "detain_police", "custody", "remand",
+                    "refuse_fir", "refuse_complaint"},  # FIR refusal by police
         "primary_statutes": ["BNSS (Bharatiya Nagarik Suraksha Sanhita)",
                               "BNS", "Constitution Articles 20–22"],
+        "_priority": 2,
     },
     "defamation_and_speech": {
         "actions": {"publish", "defame", "broadcast", "incite"},
@@ -62,6 +64,7 @@ DOMAIN_TAXONOMY: Dict[str, Dict] = {
         "actions": {"vote", "register_voter", "contest_election", "campaign"},
         "primary_statutes": ["Representation of People Act 1951",
                               "BNSS electoral offences", "Election Commission guidelines"],
+        "_priority": 3,   # beats criminal_procedure when register_voter matches
     },
     "marriage_and_family": {
         "actions": {"marry", "divorce", "separate", "adopt", "custody", "maintenance"},
@@ -117,16 +120,19 @@ def classify(lq: LegalQuery) -> ClassifyResult:
             continue
         matched_actions = actions_set & spec["actions"]
         if matched_actions:
-            # Base confidence on how many actions matched
-            confidence = min(0.95, 0.6 + 0.1 * len(matched_actions))
+            # Base confidence on how many actions matched + domain priority
+            priority_bonus = spec.get("_priority", 0) * 0.05
+            confidence = min(0.95, 0.6 + 0.1 * len(matched_actions) + priority_bonus)
             basis = ", ".join(sorted(matched_actions))
             scored.append((domain_id, confidence, basis))
 
     if not scored:
         # Fallback: look at candidate_issues
-        issue_str = " ".join(lq.candidate_issues + lq.objects).lower()
-        if any(w in issue_str for w in ("arrest", "police", "custody", "bail", "fir")):
+        issue_str = " ".join(lq.candidate_issues + lq.objects + lq.actions).lower()
+        if any(w in issue_str for w in ("arrest", "police", "custody", "bail", "fir", "cognizable", "refuse")):
             scored.append(("criminal_procedure", 0.5, "candidate_issues"))
+        elif any(w in issue_str for w in ("voter", "election", "vote", "ballot", "electoral")):
+            scored.append(("voter_and_elections", 0.5, "candidate_issues"))
         elif any(w in issue_str for w in ("property", "land", "tenant", "landlord")):
             scored.append(("property_access", 0.4, "candidate_issues"))
         else:
