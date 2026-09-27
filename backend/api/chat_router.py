@@ -1,0 +1,1077 @@
+"""Chat, voice, bookmarks, and notification routes.
+
+Extracted from server.py (Phase 1 Modularization).
+Depends on: dependencies.py, config/settings.py
+"""
+import io
+import re
+import json
+import uuid
+import asyncio
+from datetime import datetime, timezone
+from typing import List, Optional, AsyncGenerator
+
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Header, Request, Query
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from openai import AsyncOpenAI
+
+from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+
+from dependencies import (
+    db, current_user, current_user_optional,
+    meter_llm_use, build_system_prompt, translate_for_retrieval, logger,
+)
+from config.settings import (
+    SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL, EMERGENT_LLM_KEY,
+)
+from corpus import (
+    retrieve as corpus_retrieve,
+    retrieve_state as corpus_retrieve_state,
+    state_sensitive_topic,
+    is_non_indian_jurisdiction,
+    is_non_legal_advice,
+    public_citation,
+    sanitize_model_output,
+    REFUSAL_NO_CORPUS,
+    REFUSAL_NON_INDIAN,
+    REFUSAL_NOT_LEGAL,
+    localize_refusal,
+    top_candidate_debug,
+    classify_topic,
+)
+from corpus_db import (
+    retrieve_db as db_retrieve,
+    lookup_section as db_lookup_section,
+    check_query_for_orphan_warnings as db_orphan_check,
+    STATE_CODE_TO_JURISDICTION,
+)
+from langpolicy import needs_language_repair, repair_prompt, needs_retrieval_translation
+from personal_law import (
+    classify_personal_law_topic,
+    detect_context as detect_personal_law_context,
+    act_hint_phrase,
+    disambiguation_question,
+    act_disclaimer,
+)
+from push import register_device, unregister_device
+
+router = APIRouter()
+
+# ── Pydantic models ───────────────────────────────────────────────────────────
+
+class ChatIn(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    language: str = "en"
+    language_name: str = "English"
+    language_native: Optional[str] = None
+    mode: str = "basic"  # "basic" | "pro"
+
+class ClientErrorLogIn(BaseModel):
+    context: str
+    error_name: Optional[str] = None
+    error_message: Optional[str] = None
+    platform: Optional[str] = None
+    retried: Optional[bool] = None
+
+class RegisterPushBody(BaseModel):
+    user_id: str
+    platform: str
+    device_token: str
+
+class TTSIn(BaseModel):
+    text: str
+    language: str = "en"
+    voice: str = "alloy"
+    group: Optional[str] = None
+
+class BookmarkIn(BaseModel):
+    client_id: str
+    question: str
+    answer: str
+    language: str = "en"
+    citations: List[dict] = []
+    created_at: Optional[str] = None
+
+class ChatFollowupIn(BaseModel):
+    message: str
+    answer: str
+    language: str = "en"
+    language_name: str = "English"
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+
+def openai_client() -> AsyncOpenAI:
+    base_url = "https://integrations.emergentagent.com/llm/openai/v1"
+    return AsyncOpenAI(api_key=EMERGENT_LLM_KEY, base_url=base_url)
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+@router.post("/client-error-log")
+async def client_error_log(body: ClientErrorLogIn, user: dict = Depends(current_user)):
+    await db.client_error_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "context": body.context[:100],
+        "error_name": (body.error_name or "")[:200],
+        "error_message": (body.error_message or "")[:1000],
+        "platform": (body.platform or "")[:20],
+        "retried": bool(body.retried),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"ok": True}
+
+# ---------- Push notifications (Emergent-managed / SuprSend relay) ----------
+# Registers this device's push token with the relay so it can be targeted by
+# user_id later (daily nudge + dead-law bookmark alert — see push_jobs.py, or
+# any future ad-hoc send). Never stores the raw device token in our own DB —
+# the relay is the source of truth for token -> user_id mapping.
+@router.post("/register-push")
+async def register_push(body: RegisterPushBody, user: dict = Depends(current_user)):
+    if body.user_id != user["id"]:
+        raise HTTPException(403, "user_id mismatch")
+    try:
+        await register_device(user_id=body.user_id, platform=body.platform, device_token=body.device_token)
+    except Exception as e:
+        logger.warning(f"[push] register_push failed for user {user['id']}: {type(e).__name__}: {e}")
+        # Never fail the caller's app flow over a push-registration hiccup —
+        # the user just won't get push this session; nothing else breaks.
+        return {"status": "failed"}
+    return {"status": "registered"}
+
+# ---------- Chat ----------
+@router.post("/chat/stream")
+async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
+    session_id = body.session_id or str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    # -------- Paywall enforcement for Pro-mode capabilities --------
+    # Basic mode → always allowed, unlimited.
+    # Pro mode + is_pro → allowed, no counter.
+    # Pro mode + not is_pro + samples_used < N → allowed as SAMPLE (increment counter).
+    # Pro mode + not is_pro + samples_used >= N → HTTP 402 with paywall payload.
+    mode = (body.mode or "basic").lower()
+    is_pro_user = bool(user.get("is_pro"))
+    samples_used = int(user.get("pro_samples_used", 0))
+    is_sample_consumption = False
+    # Advocate mode: professional prompt for licensed advocates — no paywall
+    is_advocate_mode = (mode == "advocate")
+
+    if mode == "pro" and not is_pro_user and not is_advocate_mode:
+        if samples_used >= PRO_FREE_SAMPLES:
+            # Log the blocked attempt so the operator sees who's hitting the paywall
+            # and what they were trying to ask. Otherwise the query vanishes from the DB.
+            try:
+                await db.messages.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "session_id": session_id,
+                    "user_id": user["id"],
+                    "role": "user",
+                    "content": body.message,
+                    "language": body.language,
+                    "mode": mode,
+                    "status": "blocked_paywall",
+                    "created_at": now,
+                    "timestamp": now,
+                })
+            except Exception:
+                logger.exception("Failed to log paywall-blocked query")
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "paywall": True,
+                    "reason": "pro_samples_exhausted",
+                    "samples_used": samples_used,
+                    "samples_limit": PRO_FREE_SAMPLES,
+                    "pro_price_inr_paise": PRO_PRICE_INR,
+                    "pro_price_label": PRO_PRICE_LABEL,
+                    "pro_price_usd_cents": PRO_PRICE_USD,
+                    "pro_price_usd_label": PRO_PRICE_USD_LABEL,
+                    "message": (
+                        f"You've used all {PRO_FREE_SAMPLES} free Pro-quality samples. "
+                        "Upgrade to Pro to unlock unlimited lawyer-style deep answers, drafts, "
+                        "action plans and escalation paths."
+                    ),
+                },
+            )
+        is_sample_consumption = True
+
+    session = await db.sessions.find_one({"id": session_id, "user_id": user["id"]})
+    if not session:
+        title = body.message[:60]
+        await db.sessions.insert_one({
+            "id": session_id,
+            "user_id": user["id"],
+            "title": title,
+            "language": body.language,
+            "mode": mode,
+            "tier": "pro" if is_pro_user else "free",
+            "created_at": now,
+            "updated_at": now,
+        })
+
+    await db.messages.insert_one({
+        "id": str(uuid.uuid4()),
+        "session_id": session_id,
+        "user_id": user["id"],
+        "role": "user",
+        "content": body.message,
+        "language": body.language,
+        "mode": mode,
+        "status": "ok",  # updated below if refusal fires
+        "created_at": now,
+        "timestamp": now,  # explicit alias for CSV clarity
+    })
+
+    # -------- Retrieval-language bridge (Hindi/Indic search fix) --------
+    retrieval_text = body.message
+    _is_indic = needs_retrieval_translation(body.message)
+    if _is_indic:
+        retrieval_text = await translate_for_retrieval(body.message)
+        _same = retrieval_text == body.message
+        logger.info(
+            "retrieval-bridge | indic=True | translation_ok=%s | q=%r | t=%r",
+            not _same, body.message[:80], retrieval_text[:80],
+        )
+    else:
+        logger.info("retrieval-bridge | indic=False | q=%r", body.message[:80])
+
+    # -------- Retrieval + citation integrity (P1) --------
+    # (a) Non-legal / non-Indian jurisdiction → hard refusal, no LLM call
+    early_refusal: Optional[str] = None
+    if is_non_indian_jurisdiction(retrieval_text):
+        early_refusal = REFUSAL_NON_INDIAN
+    elif is_non_legal_advice(retrieval_text):
+        early_refusal = REFUSAL_NOT_LEGAL
+
+    # -------- Personal-law disambiguation (marriage/succession) --------
+    # Hindu Marriage Act vs Special Marriage Act vs Muslim/Christian personal
+    # law (same for succession) give DIFFERENT sections for the same real-life
+    # question — answering under the wrong one is a wrong citation. Ask once
+    # (remembered for the rest of THIS chat thread) instead of guessing; see
+    # personal_law.py for the full design note.
+    personal_law_topic: Optional[str] = None
+    personal_law_note: Optional[str] = None
+    if not early_refusal:
+        personal_law_topic = classify_personal_law_topic(retrieval_text)
+        if personal_law_topic:
+            personal_law_ctx = detect_personal_law_context(retrieval_text) or (
+                (session or {}).get("personal_law_context") or {}
+            ).get(personal_law_topic)
+            if not personal_law_ctx:
+                early_refusal = disambiguation_question(personal_law_topic, body.language)
+            else:
+                await db.sessions.update_one(
+                    {"id": session_id},
+                    {"$set": {f"personal_law_context.{personal_law_topic}": personal_law_ctx}},
+                )
+                hint = act_hint_phrase(personal_law_ctx, personal_law_topic)
+                if hint:
+                    retrieval_text = f"{retrieval_text} ({hint})"
+                personal_law_note = act_disclaimer(personal_law_ctx, personal_law_topic, body.language)
+
+    # (b) Corpus retrieval — deterministic keyword match against verified statutes
+    retrieved = [] if early_refusal else corpus_retrieve(retrieval_text, limit=3)
+
+    # (b0) State / UT layer — rent, liquor, traffic compounding and stamp duty are
+    # state subjects. If the user has told us their state we serve its verified
+    # rules ALONGSIDE the central law; we never substitute another state's rule.
+    user_state = (user.get("state") or "").upper()
+    state_hits = [] if early_refusal else corpus_retrieve_state(retrieval_text, user_state, limit=2)
+    state_topic = None if early_refusal else state_sensitive_topic(retrieval_text)
+
+    # (b1) Citation integrity: if the user's query explicitly names a section/article
+    # identifier (e.g. "BNS Section 999", "Article 350", "BNSS 220") and NONE of the
+    # retrieved entries actually match that identifier, void the retrieval. Otherwise
+    # unrelated but keyword-adjacent chips would appear alongside a refusal, which is
+    # dangerous and contradicts the P1 accuracy rule.
+    if retrieved and not early_refusal:
+        import re as _re_id
+        def _norm_short(s: str) -> str:
+            return _re_id.sub(r"[^a-z0-9()]+", " ", (s or "").lower()).strip()
+        query_ids: list[str] = []
+        # "Article 21", "Article 21A"
+        for m in _re_id.finditer(r"\b[Aa]rticle\s+(\d+[A-Za-z]?)\b", retrieval_text):
+            query_ids.append(f"article {m.group(1).lower()}")
+        # "BNS Section 999", "BNSS Section 43(5)", "Sec. 43 BNSS", "BNSS 43(5)",
+        # "RTI Section 6", "CPA 34", "MV 185", "Motor Vehicles Section 185"
+        for m in _re_id.finditer(
+            r"\b(BNS|BNSS|BSA|IPC|CrPC|PWDVA|RTI|CPA|MV|MVA)\b[^\w]*(?:Sec(?:tion|\.)?\s*)?(\d+[A-Za-z]?(?:\(\d+\))?)\b",
+            retrieval_text, _re_id.IGNORECASE,
+        ):
+            query_ids.append(f"{m.group(1).lower()} {m.group(2).lower()}")
+        if query_ids:
+            hit_labels = { _norm_short(it["short_label"]) for it in retrieved }
+            if not any(qid in hit_labels or any(qid in hl for hl in hit_labels) for qid in query_ids):
+                # Query names an identifier we don't cover → void retrieval so user sees refusal only
+                retrieved = []
+
+    # (b2) MongoDB corpus — 70,397 sections across CENTRAL + 12 states.
+    # Runs ALONGSIDE the Python corpus, not instead of it. Python corpus
+    # contributes scope_notes and citizen-language explanations; MongoDB
+    # contributes verbatim government text and breadth (2,120 Acts).
+    # Three safety guards enforced in code (not prompts):
+    #   G1 — dead_warning  : serve_warning prepended for is_dead_law sections
+    #   G2 — judicial_flag : user_warning from judicial_invalidations (status != UPHELD)
+    #   G3 — badge         : verify_tier==1 + verified_by → "Advocate Verified"
+    db_hits: list[dict] = []
+    if not early_refusal:
+        try:
+            db_hits = await db_retrieve(corpus_db, retrieval_text, state_code=user_state or None, limit=3)
+        except Exception:
+            db_hits = []   # MongoDB unavailable — Python corpus handles it
+
+    # (b3) Cross-corpus citation-conflict guard. Logged issue, now fixed:
+    # querying "Information Technology Act section 66A" surfaced the hand-
+    # curated Python-corpus entry "IT 43" FIRST (it scores on the generic
+    # phrase "information technology act", which the query obviously
+    # contains), ahead of MongoDB's own exact match for the section the user
+    # actually asked about. The (b1) integrity check above only recognises a
+    # closed whitelist of Act prefixes (BNS, IPC, MV, ...) and never covers
+    # this case since "Information Technology" isn't one of them.
+    #
+    # Generalised fix: whenever the query cites an explicit section number
+    # AND MongoDB found an EXACT match for that exact number, any Python-
+    # corpus hit whose OWN section number (parsed off the end of its
+    # short_label, e.g. "43" in "IT 43") is a DIFFERENT number is dropped —
+    # the user asked about one specific section, not "something in this Act
+    # family". Hits with no trailing number (e.g. "Cyber report 1930" is a
+    # helpline, not a section) are left untouched.
+    if retrieved and db_hits and not early_refusal:
+        _cited_sec_match = re.search(
+            r"(?:section|sections|sec|s\.|art(?:icle)?\.?)\s*(\d+[A-Za-z]{0,3})",
+            retrieval_text, re.IGNORECASE,
+        )
+        if _cited_sec_match:
+            _cited_sec = _cited_sec_match.group(1).upper()
+            if any((h.get("section_number") or "").upper() == _cited_sec for h in db_hits):
+                def _own_section_number(short_label: str) -> Optional[str]:
+                    m = re.search(r"(\d+[A-Za-z]{0,3})$", short_label or "")
+                    return m.group(1).upper() if m else None
+                retrieved = [
+                    it for it in retrieved
+                    if _own_section_number(it.get("short_label", "")) in (None, _cited_sec)
+                ]
+
+    # Orphan-invalidation check — sections in judicial_invalidations but NOT
+    # in legal_sections (e.g. IPC §377: IPC replaced by BNS, absent from corpus
+    # but Supreme Court ruling is tracked).  Fires only when db_hits is empty.
+    db_orphan: dict | None = None
+    if not early_refusal and not db_hits:
+        try:
+            db_orphan = await db_orphan_check(corpus_db, retrieval_text)
+        except Exception:
+            db_orphan = None
+
+    # (c) If no retrieval hit AND no early refusal, we still refuse (no verified source).
+    # db_hits = MongoDB verbatim sections; db_orphan = standalone judicial ruling
+    # for an act not in the corpus.  Either of these counts as a verified source.
+    if not early_refusal and not retrieved and not state_hits and not db_hits and not db_orphan:
+        early_refusal = REFUSAL_NO_CORPUS
+
+    logger.info(
+        "retrieval-result | corpus=%d | state=%d | db=%d | orphan=%s | branch=%s",
+        len(retrieved), len(state_hits), len(db_hits),
+        bool(db_orphan),
+        "refusal" if early_refusal else "rag",
+    )
+
+    # (c0) Cross-engine noise suppression (general rule, not per-Act — lives
+    # here once, not duplicated per topic). The curated Python corpus
+    # (`retrieved`) is hand-verified: every entry was deliberately keyword-
+    # tagged for that exact scenario. MongoDB's fuzzy $text search, in
+    # contrast, can pass a hit on nothing more than two generic words ("day",
+    # "every") shared with a completely unrelated Act — e.g. "my husband
+    # beats me every day" once also surfaced "The Representation of the
+    # People Act... paid holiday to employees on the day of poll" (shared
+    # words: "day", "every"), and "can an Indian marry twice" surfaced "The
+    # National Commission for Indian System of Medicine Act" (shared word:
+    # "indian"). `is_anchored` (corpus_db.py) marks a MongoDB hit as
+    # STRUCTURALLY trustworthy — an exact section-number lookup, or an
+    # explicit Act-label match — as opposed to bare generic-word overlap.
+    # Once ANY verified answer already exists for this query (the curated
+    # corpus answered, OR MongoDB itself found an anchored hit), a
+    # non-anchored MongoDB hit adds noise, not evidence, and is dropped. It
+    # is kept ONLY when it is the sole thing found for the query at all —
+    # never leaving the user with a refusal just because the one hit we have
+    # happens to be unanchored.
+    if db_hits and (retrieved or any(h.get("is_anchored") for h in db_hits)):
+        db_hits = [h for h in db_hits if h.get("is_anchored")]
+
+    # (c1) Merge the state rules into the citation list the user will see. State
+    # rules go LAST so the central position is read first, and the combined list
+    # stays capped at three chips.
+    if state_hits:
+        keep_central = max(0, 3 - len(state_hits))
+        retrieved = retrieved[:keep_central] + state_hits
+
+    # -------- Refusal analytics (A4 instrumentation) --------
+    # Anonymized, aggregate-only event: NO user_id, NO session_id, NO raw
+    # query text — only cause code, topic bucket, language, jurisdiction
+    # (currently always null — no state field exists yet), and the best
+    # retrieval candidate's score even when it fell below the confidence
+    # threshold or nothing matched at all. This lets us tell "no law in the
+    # corpus for this topic" apart from "a candidate existed but scored too
+    # low" apart from "the query was too vague to score anything" — a
+    # decision on where to spend corpus-building credits should never be
+    # made without this breakdown.
+    if early_refusal:
+        if early_refusal == REFUSAL_NON_INDIAN:
+            cause_code = "non_indian_jurisdiction"
+            sub_cause = None
+            dbg = {"top_score": None, "top_key": None, "content_tokens": None}
+        elif early_refusal == REFUSAL_NOT_LEGAL:
+            cause_code = "not_legal_advice_request"
+            sub_cause = None
+            dbg = {"top_score": None, "top_key": None, "content_tokens": None}
+        elif personal_law_topic and personal_law_note is None:
+            # This early_refusal is the disambiguation clarifying question,
+            # not a genuine "nothing verified for this topic" refusal.
+            cause_code = "personal_law_disambiguation"
+            sub_cause = personal_law_topic
+            dbg = {"top_score": None, "top_key": None, "content_tokens": None}
+        else:
+            cause_code = "no_corpus_match"
+            dbg = top_candidate_debug(retrieval_text)
+            if dbg["top_score"] == 0 and dbg["content_tokens"] <= 1:
+                sub_cause = "query_too_vague"
+            elif dbg["top_score"] == 0:
+                sub_cause = "no_candidate_scored"  # true coverage gap OR a
+                # phrasing mismatch against an entry that already exists —
+                # only a human spot-check of a sample can tell those apart;
+                # the score alone cannot.
+            else:
+                sub_cause = "below_confidence_threshold"  # candidate existed
+                # (dbg["top_key"]) but scored under RETRIEVAL_MIN_SCORE — a
+                # retrieval-tuning question, not necessarily a missing law.
+        try:
+            await db.refusal_events.insert_one({
+                "id": str(uuid.uuid4()),
+                "cause_code": cause_code,
+                "sub_cause": sub_cause,
+                "category": classify_topic(retrieval_text),
+                "language": body.language,
+                "state": user_state or None,
+                "top_score": dbg["top_score"],
+                "top_key": dbg["top_key"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            logging.getLogger(__name__).warning("refusal_events insert failed", exc_info=True)
+
+    # Build the verified-source context for the prompt (used ONLY when we have hits)
+    corpus_context = ""
+    if retrieved:
+        corpus_context = "\n---\n".join([
+            (
+                f"STATE RULE — applies in {state_name(it['state'])} only: {it['scope_note']}"
+                if it.get("state") else f"Scope: {it['scope_note']}"
+            )
+            for it in retrieved
+        ])
+
+    # Merge MongoDB corpus hits into context.  Safety guards (G1 dead-law, G2
+    # judicial-invalidation) are encoded as SAFETY WARNING / JUDICIAL ALERT
+    # lines BEFORE the statutory text so the LLM reads them first.
+    if db_hits:
+        db_parts: list[str] = []
+        for hit in db_hits:
+            lines: list[str] = []
+            if hit.get("dead_warning"):
+                lines.append(f"SAFETY WARNING (DEAD LAW): {hit['dead_warning']}")
+            if hit.get("judicial_flag"):
+                lines.append(f"JUDICIAL ALERT: {hit['judicial_flag']}")
+            sec_heading = hit.get("section_heading", "")
+            act_label = f"{hit.get('act_name', '')}, Section {hit.get('section_number', '')}"
+            if sec_heading:
+                act_label += f" — {sec_heading}"
+            lines.append(f"Source: {act_label}")
+            if hit.get("no_current_text"):
+                lines.append(
+                    "NOTE: Current statutory text for this section is not available "
+                    "in the corpus — the act may have been repealed or replaced by "
+                    "successor legislation (e.g. IPC superseded by BNS). "
+                    "Tell the user plainly that this section may no longer be in force "
+                    "and advise them to consult an advocate for the current legal position."
+                )
+            else:
+                sec_text = (hit.get("section_text") or "")[:600]
+                if sec_text:
+                    lines.append(f"Text: {sec_text}")
+            db_parts.append("\n".join(lines))
+        db_block = "\n---\n".join(db_parts)
+        corpus_context = (corpus_context + "\n---\n" + db_block) if corpus_context else db_block
+
+    # Orphan judicial warnings (section in judicial_invalidations but NOT in
+    # legal_sections — e.g. IPC §377).  No statutory text available, but the
+    # ruling itself is the verified source.
+    if db_orphan:
+        orphan_line = (
+            f"JUDICIAL ALERT [{db_orphan.get('status', '')}]: {db_orphan.get('user_warning', '')}\n"
+            f"Note: '{db_orphan.get('act_name', '')}' may no longer be in force in its original form "
+            "(e.g. replaced by a successor code). Advise the user to consult an advocate for current law."
+        )
+        corpus_context = (corpus_context + "\n---\n" + orphan_line) if corpus_context else orphan_line
+    # Tell the model, in plain words, when the local rule is the missing piece so
+    # it never presents the central position as the complete answer.
+    if state_topic and not state_hits:
+        if user_state:
+            corpus_context += (
+                f"\n---\nJURISDICTION GAP: {state_topic['label']} are decided by STATE law and "
+                f"no verified rule for {state_name(user_state)} is available. Say plainly that the "
+                f"local rule decides this and that the user must confirm it with "
+                f"{state_topic['authority']}. Do NOT state any local amount, limit or deadline."
+            )
+        else:
+            corpus_context += (
+                f"\n---\nJURISDICTION GAP: {state_topic['label']} are decided by STATE law and the "
+                "user has not told us their state. Say plainly that the answer depends on their "
+                "state and ask them to set their state in the app. Do NOT state any local amount, "
+                "limit or deadline."
+            )
+
+    # Pro-quality prompt if user is Pro OR consuming a free sample; else basic prompt.
+    use_pro_prompt = is_pro_user or is_sample_consumption
+
+    # Daily LLM spend cap — only counted when we are actually going to call the
+    # model (a refusal costs nothing, so it must not eat the user's allowance).
+    if not early_refusal:
+        await meter_llm_use(user, "question")
+
+    # Derive native name — fall back to LANGUAGES table if client didn't send it
+    lang_native = body.language_native
+    if not lang_native:
+        for _lang in LANGUAGES:
+            if _lang["code"] == body.language:
+                lang_native = _lang.get("native")
+                break
+    system_prompt = build_system_prompt(
+        body.language_name,
+        is_pro=use_pro_prompt,
+        corpus_context=corpus_context,
+        language_native=lang_native,
+        advocate_mode=is_advocate_mode,
+    )
+
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=session_id,
+        system_message=system_prompt,
+    ).with_model(SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL)
+
+    def sse(obj: dict) -> bytes:
+        return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
+
+    async def save_assistant(content: str, error: Optional[str] = None):
+        now_ts = datetime.now(timezone.utc).isoformat()
+        # Infer status for CSV exports & analytics
+        if error:
+            status = "error"
+        elif early_refusal == REFUSAL_NO_CORPUS:
+            status = "refused_no_corpus"
+        elif early_refusal == REFUSAL_NON_INDIAN:
+            status = "refused_non_indian"
+        elif early_refusal == REFUSAL_NOT_LEGAL:
+            status = "refused_not_legal"
+        elif personal_law_topic and personal_law_note is None and early_refusal:
+            status = "personal_law_disambiguation_asked"
+        else:
+            status = "ok"
+        doc = {
+            "id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "user_id": user["id"],
+            "role": "assistant",
+            "content": content,
+            "language": body.language,
+            "mode": mode,
+            "model_provider": SERVER_CHAT_PROVIDER,
+            "model_name": SERVER_CHAT_MODEL,
+            "tier": "pro" if is_pro_user else "free",
+            "sample_consumed": is_sample_consumption,
+            "status": status,
+            "created_at": now_ts,
+            "timestamp": now_ts,
+        }
+        if error:
+            doc["error"] = error
+        # Also attach the citations that the user was shown, so the CSV export
+        # can show what verified statutes accompanied each answer.
+        if retrieved:
+            doc["citations"] = [
+                {"short_label": it.get("short_label", ""), "citation": it.get("citation", "")}
+                for it in retrieved
+            ]
+        await db.messages.insert_one(doc)
+        await db.sessions.update_one(
+            {"id": session_id},
+            {"$set": {"updated_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        # Only debit a sample if the assistant actually returned real content (not empty error).
+        if is_sample_consumption and content and not error:
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$inc": {"pro_samples_used": 1}},
+            )
+
+    async def event_gen() -> AsyncGenerator[bytes, None]:
+        yield sse({
+            "type": "session",
+            "session_id": session_id,
+            "tier": "pro" if is_pro_user else "free",
+            "mode": mode,
+            "sample_consumed": is_sample_consumption,
+            "samples_remaining_after": max(0, PRO_FREE_SAMPLES - samples_used - (1 if is_sample_consumption else 0)),
+        })
+        # Emit verified citations FIRST — the UI shows these in a separate boxed panel.
+        # The model is instructed NEVER to include section numbers/statutory text in its
+        # own reply; the source of truth is here (from corpus.py).
+        for it in retrieved:
+            yield sse({"type": "citation", "citation": public_citation(it)})
+
+        # Emit MongoDB-corpus citations.  G1/G2 safety warnings are prepended to
+        # official_text so they appear at the top of the citation card in the UI.
+        for hit in db_hits:
+            dead_warn = hit.get("dead_warning") or ""
+            ji_warn = hit.get("judicial_flag") or ""
+            warning_prefix = "\n\n".join(filter(None, [dead_warn, ji_warn]))
+            if hit.get("no_current_text"):
+                no_text_notice = (
+                    "⚠️ Current statutory text is not available for this section. "
+                    "This may reflect a repeal or replacement by successor legislation. "
+                    "Please consult an advocate for the current legal position."
+                )
+                official = (warning_prefix + "\n\n" + no_text_notice) if warning_prefix else no_text_notice
+            else:
+                raw_text = (hit.get("section_text") or "")[:2000]
+                official = (warning_prefix + "\n\n" + raw_text) if warning_prefix else raw_text
+            sec_heading = hit.get("section_heading", "")
+            act_label = (
+                f"{hit.get('act_name', '')}, Section {hit.get('section_number', '')}"
+                + (f" — {sec_heading}" if sec_heading else "")
+            )
+            yield sse({
+                "type": "citation",
+                "citation": {
+                    "key": f"{hit.get('act_name', '')} § {hit.get('section_number', '')}",
+                    "citation": act_label,
+                    "short_label": f"§ {hit.get('section_number', '')}",
+                    "act": hit.get("act_name", ""),
+                    "official_text": official,
+                    "source_url": hit.get("source_url") or "",
+                    "verified_at": hit.get("badge") or "Sourced from Government of India",
+                    "text_kind": "verbatim" if not hit.get("no_current_text") else "judicial_ruling",
+                    "state": None if (hit.get("jurisdiction") or "CENTRAL") == "CENTRAL" else hit.get("jurisdiction"),
+                    "is_dead_law": hit.get("is_dead_law", False),
+                    "dead_warning": hit.get("dead_warning"),
+                    "judicial_flag": hit.get("judicial_flag"),
+                    "no_current_text": hit.get("no_current_text", False),
+                },
+            })
+
+        # Orphan judicial-invalidation warning (section in judicial_invalidations
+        # but NOT in legal_sections — e.g. IPC §377 replaced by BNS).
+        if db_orphan:
+            yield sse({
+                "type": "citation",
+                "citation": {
+                    "key": f"{db_orphan.get('act_name', '')} § {db_orphan.get('section_number', '')}",
+                    "citation": (
+                        f"{db_orphan.get('act_name', '')}, Section {db_orphan.get('section_number', '')}"
+                        f" [{db_orphan.get('status', '')}]"
+                    ),
+                    "short_label": f"§ {db_orphan.get('section_number', '')}",
+                    "act": db_orphan.get("act_name", ""),
+                    "official_text": db_orphan.get("user_warning", ""),
+                    "source_url": "",
+                    "verified_at": "Judicial Ruling",
+                    "text_kind": "judicial_ruling",
+                    "state": None,
+                    "is_dead_law": False,
+                    "judicial_flag": db_orphan.get("user_warning"),
+                    "status": db_orphan.get("status"),
+                },
+            })
+
+        # State-jurisdiction signalling. Two distinct cases, both honest:
+        #  - the user has no state set → ask for it once, in context
+        #  - the state is known but we hold no verified local rule yet → say so
+        if state_topic and not state_hits:
+            if not user_state:
+                yield sse({
+                    "type": "state_prompt",
+                    "topic": state_topic["topic"],
+                    "label": state_topic["label"],
+                    "message": (
+                        f"{state_topic['label'].capitalize()} are decided by state law. "
+                        "Set your state once to get the rules that actually apply to you."
+                    ),
+                })
+            else:
+                yield sse({
+                    "type": "state_note",
+                    "topic": state_topic["topic"],
+                    "state": user_state,
+                    "message": (
+                        f"No verified {state_topic['label']} rule for {state_name(user_state)} is "
+                        f"in Dhara yet. Confirm the local position with {state_topic['authority']}."
+                    ),
+                })
+
+        # Refusal path — do not call the LLM. Send the refusal as a delta so the frontend
+        # shows it in the normal chat bubble.
+        if early_refusal:
+            # Localize the refusal into the user's selected language (falls back to English)
+            refusal_text = localize_refusal(early_refusal, body.language)
+            yield sse({"type": "delta", "content": refusal_text})
+            await save_assistant(refusal_text, error=None)
+            yield sse({"type": "done"})
+            return
+
+        full = ""
+        errored: Optional[str] = None
+        try:
+            async for ev in chat.stream_message(UserMessage(text=body.message)):
+                if isinstance(ev, TextDelta):
+                    full += ev.content
+                    yield sse({"type": "delta", "content": ev.content})
+                elif isinstance(ev, StreamDone):
+                    break
+        except Exception as e:
+            logger.exception("LLM stream error")
+            errored = str(e)[:300]
+            yield sse({"type": "error", "error": errored})
+
+        # Post-processing runs outside try/finally so that a `return` here can
+        # never swallow an in-flight exception (the except above already handles
+        # stream failures).
+        # Citation-integrity: strip any leaked section/article/statute names from
+        # the model's output. The verified citations are shown by the UI from the
+        # `citation` frames — the model MUST NOT emit them itself.
+        sanitized = sanitize_model_output(full) if full else full
+
+        # Reply-language enforcement. A user who selected Tamil and receives
+        # English has been given nothing, so if the finished reply is not in the
+        # expected script we translate it ONCE and overwrite the bubble.
+        if sanitized and not errored and needs_language_repair(sanitized, body.language):
+            lang_display = (
+                f"{body.language_name} ({lang_native})"
+                if lang_native and lang_native != body.language_name
+                else body.language_name
+            )
+            logger.warning("reply-language repair: model answered outside the %s script", lang_display)
+            try:
+                fixer = LlmChat(
+                    api_key=EMERGENT_LLM_KEY,
+                    session_id=f"{session_id}-langfix",
+                    system_message=repair_prompt(lang_display),
+                ).with_model(SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL)
+                translated = await fixer.send_message(UserMessage(text=sanitized))
+                translated = sanitize_model_output(str(translated or "")).strip()
+                if translated and not needs_language_repair(translated, body.language):
+                    sanitized = translated
+            except Exception:
+                logger.exception("reply-language repair failed")
+
+        # Append the personal-law disclaimer (see above) so the user always
+        # sees which religion/marriage-type's law was applied.
+        if personal_law_note and not errored and (sanitized or full):
+            sanitized = (sanitized or full) + f"\n\n{personal_law_note}"
+
+        if sanitized != full:
+            # Overwrite the accumulated text on the client with the sanitized version.
+            yield sse({"type": "final", "content": sanitized})
+        await save_assistant(sanitized or full, errored)
+        yield sse({"type": "done"})
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+@router.get("/chat/sessions")
+async def list_sessions(user: dict = Depends(current_user)):
+    sessions = await db.sessions.find({"user_id": user["id"]}, {"_id": 0}).sort("updated_at", -1).to_list(200)
+    return sessions
+
+@router.get("/chat/sessions/{session_id}/messages")
+async def session_messages(session_id: str, user: dict = Depends(current_user)):
+    session = await db.sessions.find_one({"id": session_id, "user_id": user["id"]}, {"_id": 0})
+    if not session:
+        raise HTTPException(404, "Session not found")
+    msgs = await db.messages.find({"session_id": session_id, "user_id": user["id"]}, {"_id": 0}).sort("created_at", 1).to_list(1000)
+    return {"session": session, "messages": msgs}
+
+@router.delete("/chat/sessions/{session_id}")
+async def delete_session(session_id: str, user: dict = Depends(current_user)):
+    await db.sessions.delete_one({"id": session_id, "user_id": user["id"]})
+    await db.messages.delete_many({"session_id": session_id, "user_id": user["id"]})
+    return {"ok": True}
+
+# ---------- Saved answers (bookmarks) ----------
+# The device keeps its own copy in AsyncStorage so a saved answer opens with no
+# network at all (the "standing in a police station" case). The server copy is
+# only a sync target so the collection survives a reinstall or a new phone.
+
+
+@router.get("/bookmarks")
+async def list_bookmarks(user: dict = Depends(current_user)):
+    items = await db.bookmarks.find(
+        {"user_id": user["id"], "deleted": {"$ne": True}}, {"_id": 0, "user_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    return items
+
+
+@router.put("/bookmarks")
+async def upsert_bookmark(body: BookmarkIn, user: dict = Depends(current_user)):
+    """Idempotent on (user, client_id) so the device can re-push its queue after
+    being offline without creating duplicates."""
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "client_id": body.client_id,
+        "user_id": user["id"],
+        "question": body.question,
+        "answer": body.answer,
+        "language": body.language,
+        "citations": body.citations,
+        "created_at": body.created_at or now,
+        "deleted": False,
+        "synced_at": now,
+    }
+    await db.bookmarks.update_one(
+        {"user_id": user["id"], "client_id": body.client_id},
+        {"$set": doc, "$setOnInsert": {"id": str(uuid.uuid4())}},
+        upsert=True,
+    )
+    saved = await db.bookmarks.find_one(
+        {"user_id": user["id"], "client_id": body.client_id}, {"_id": 0, "user_id": 0}
+    )
+    return saved
+
+
+@router.delete("/bookmarks/{client_id}")
+async def delete_bookmark(client_id: str, user: dict = Depends(current_user)):
+    # Soft delete — a tombstone keeps a second device from resurrecting the row.
+    await db.bookmarks.update_one(
+        {"user_id": user["id"], "client_id": client_id},
+        {"$set": {"deleted": True, "deleted_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return {"ok": True}
+
+# ---------- Ready-to-send notice drafts ----------
+# The draft text itself is assembled ON THE DEVICE from a fixed template (no LLM
+# call, so it is deterministic and costs nothing). This endpoint only meters the
+# entitlement: the first draft is free, after that it is a Pro feature.
+DRAFT_TYPES = {"cheque_bounce", "deposit_refund", "unpaid_salary"}
+
+
+@router.post("/drafts/consume")
+async def consume_draft(payload: dict, user: dict = Depends(current_user)):
+    draft_type = (payload.get("draft_type") or "").strip()
+    if draft_type not in DRAFT_TYPES:
+        raise HTTPException(400, "Unknown draft type")
+    used = int(user.get("drafts_used", 0))
+    if not user.get("is_pro") and used >= DRAFTS_FREE:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "paywall": True,
+                "reason": "drafts_exhausted",
+                "drafts_used": used,
+                "drafts_free_limit": DRAFTS_FREE,
+                "pro_price_label": PRO_PRICE_LABEL,
+                "pro_price_usd_label": PRO_PRICE_USD_LABEL,
+                "message": (
+                    f"Your {DRAFTS_FREE} free notice draft has been used. Upgrade to Pro for "
+                    "unlimited ready-to-send legal notices."
+                ),
+            },
+        )
+    if not user.get("is_pro"):
+        await db.users.update_one({"id": user["id"]}, {"$inc": {"drafts_used": 1}})
+        used += 1
+    await db.draft_events.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "draft_type": draft_type,
+        "is_pro": bool(user.get("is_pro")),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {
+        "ok": True,
+        "draft_type": draft_type,
+        "drafts_used": used,
+        "drafts_remaining": max(0, DRAFTS_FREE - used),
+    }
+
+# ---------- Voice ----------
+
+@router.post("/voice/transcribe")
+async def transcribe(
+    audio: UploadFile = File(...),
+    language: str = Form(None),
+    user: dict = Depends(current_user),
+):
+    """
+    Whisper cloud transcription. `language` is an optional ISO 639-1 hint
+    (e.g. "hi", "ta", "en") that dramatically improves accuracy for Indian
+    languages compared to Whisper's auto-detect. Falls back to auto-detect
+    if not provided OR if the Emergent Whisper proxy rejects the specific
+    language code (silently retries without the hint so the user never
+    experiences a silent mic failure).
+    """
+    # Whisper supports these ISO 639-1 language codes in principle. The
+    # actual Emergent proxy currently rejects some of them (bn/te/gu/ml/pa/
+    # or/as/sa/sd) with a 400 unsupported_language error. We keep the full
+    # set here as an OPTIMISTIC hint list and let the retry-without-hint
+    # fallback below rescue any rejection — this is safer than a hardcoded
+    # narrow list that would silently ignore a valid hint if Emergent adds
+    # support later.
+    WHISPER_HINT_SET = {
+        "en", "hi", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa",
+        "or", "as", "ur", "sa", "sd", "ne",
+    }
+    await meter_llm_use(user, "voice")
+    try:
+        data = await audio.read()
+        oc = openai_client()
+        base_kwargs: dict = {
+            "model": "whisper-1",
+            "file": (audio.filename or "audio.m4a", data, audio.content_type or "audio/m4a"),
+        }
+        lang_hint = None
+        if language and language.lower() in WHISPER_HINT_SET:
+            lang_hint = language.lower()
+
+        # First attempt: with the language hint if we have one.
+        try:
+            kwargs = {**base_kwargs, **({"language": lang_hint} if lang_hint else {})}
+            result = await oc.audio.transcriptions.create(**kwargs)
+            return {"text": result.text, **check_script_mismatch(result.text, language)}
+        except Exception as first_err:
+            # If we sent a language hint and the proxy rejected it as
+            # unsupported, silently retry without the hint so the user still
+            # gets a transcript. Any other error re-raises.
+            err_msg = str(first_err).lower()
+            if lang_hint and (
+                "unsupported_language" in err_msg
+                or "unsupported language" in err_msg
+                or "400" in err_msg and "language" in err_msg
+            ):
+                logger.info(
+                    "Whisper rejected language hint '%s' — retrying without hint",
+                    lang_hint,
+                )
+                result = await oc.audio.transcriptions.create(**base_kwargs)
+                return {"text": result.text, **check_script_mismatch(result.text, language)}
+            raise
+    except Exception as e:
+        # A very short hold-and-release (or a race where the recorder captures
+        # almost no audio) makes Whisper reject the clip with "audio_too_short" --
+        # this is a routine, expected user action, not a server failure. Surfacing
+        # OpenAI's raw JSON error text through a 500 (as the generic branch below
+        # would) looks like a crash to the user; return a clean, actionable 400
+        # instead so the app can show "hold longer and try again" rather than a
+        # technical error blob.
+        err_msg = str(e).lower()
+        if "audio_too_short" in err_msg or "too short" in err_msg:
+            logger.info("Whisper rejected clip as too short")
+            raise HTTPException(400, "Recording was too short. Please hold the mic button and speak for at least a second.")
+        logger.exception("transcribe failed")
+        raise HTTPException(500, f"Transcription failed: {e}")
+
+@router.post("/voice/tts")
+async def tts(body: TTSIn, user: dict = Depends(current_user)):
+    # Reject empty / whitespace-only text with a clean 400 instead of letting
+    # OpenAI's own 400 bubble up as a generic 500 — the frontend caches the
+    # response as an MP3 and would otherwise write the JSON error blob to
+    # disk, causing createAudioPlayer to fail silently.
+    if not body.text or not body.text.strip():
+        raise HTTPException(400, "Text is required to synthesise speech.")
+
+    # The client splits an answer into sentences and requests them separately, so
+    # the first words start playing in ~2s instead of after the whole answer has
+    # been synthesised (which measured 13s for a 990-char reply). Metering every
+    # request would then charge a free user ~6 of their 30 daily questions for a
+    # single answer, so an answer costs one: only the first chunk of a `group`
+    # meters, the rest ride along.
+    #
+    # Reuses usage_daily deliberately — it is already partitioned by day like the
+    # counters, so this needs no new collection and no TTL index (there is no
+    # index-creation or startup hook in this service to hang one off).
+    should_meter = True
+    if body.group:
+        _day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        _res = await db.usage_daily.update_one(
+            {
+                "scope": "user",
+                "user_id": user["id"],
+                "day": _day,
+                "kind": f"voice_group:{body.group[:64]}",
+            },
+            {"$setOnInsert": {"count": 1}},
+            upsert=True,
+        )
+        # Inserted => first chunk of this answer => charge. Matched => already paid.
+        should_meter = _res.upserted_id is not None
+    if should_meter:
+        await meter_llm_use(user, "voice")
+    try:
+        oc = openai_client()
+        resp = await oc.audio.speech.create(
+            model="tts-1",
+            voice=body.voice,
+            input=body.text[:4000],
+            response_format="mp3",
+        )
+        audio_bytes = await resp.aread()
+        return StreamingResponse(io.BytesIO(audio_bytes), media_type="audio/mpeg")
+    except Exception as e:
+        logger.exception("tts failed")
+        raise HTTPException(500, f"TTS failed: {e}")
+
+@router.post("/chat/followup")
+async def chat_followup(body: ChatFollowupIn, user: dict = Depends(current_user)):
+    """Generate 2-3 short follow-up question chips after an AI chat answer."""
+    if not body.answer or len(body.answer.strip()) < 20:
+        return {"questions": []}
+
+    lang_instruction = f"in {body.language_name}" if body.language_name.lower() != "english" else "in English"
+    prompt = f"""A citizen asked a legal question.
+
+Question: "{body.message[:200]}"
+Answer summary: "{body.answer[:400]}"
+
+Generate exactly 2-3 SHORT natural follow-up questions the citizen might ask next, {lang_instruction}.
+
+Rules:
+- Each question must be under 9 words
+- Must be directly relevant to the topic
+- Phrased as a brief question (not statements)
+- No duplicates of the original question
+
+Reply ONLY with a valid JSON array of strings, nothing else:
+["question 1", "question 2", "question 3"]"""
+
+    try:
+        import json as _json
+        chat_llm = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"chat-followup-{id(body)}",
+            system_message="Generate short follow-up questions as a JSON array only."
+        ).with_model("anthropic", SERVER_CHAT_MODEL)
+
+        result = await chat_llm.send_message(UserMessage(text=prompt))
+        raw = (result or "[]").strip()
+        start = raw.find('[')
+        end = raw.rfind(']') + 1
+        if start >= 0 and end > start:
+            questions = _json.loads(raw[start:end])
+            if isinstance(questions, list):
+                valid = [str(q).strip() for q in questions if isinstance(q, str) and q.strip()][:3]
+                return {"questions": valid}
+    except Exception as e:
+        logger.error(f"[chat_followup] Error: {e}")
+
+    return {"questions": []}
