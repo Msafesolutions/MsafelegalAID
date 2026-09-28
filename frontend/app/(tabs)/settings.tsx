@@ -19,6 +19,7 @@ export default function Settings() {
   const [showTerms, setShowTerms] = useState(false);
   const [termsText, setTermsText] = useState('');
   const [pushState, setPushState] = useState<PushPermissionState>('undetermined');
+  const [pushTestBusy, setPushTestBusy] = useState(false);
   // Brief visual confirmation when language changes
   const [langConfirm, setLangConfirm] = useState<string | null>(null);
   const langFadeAnim = useRef(new Animated.Value(0)).current;
@@ -81,6 +82,38 @@ export default function Settings() {
           { text: 'Open Settings', onPress: () => Linking.openSettings() },
         ]
       );
+    }
+  };
+
+  // "Send test notification" — round-trips the SuprSend relay so the user (or
+  // an operator on a device build) can verify their token was registered and
+  // the backend can reach them. Rate-limited server-side to 1/min per user.
+  const onSendTestPush = async () => {
+    if (!token || pushTestBusy) return;
+    setPushTestBusy(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/push/self-test`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 429) {
+        crossAlert('Slow down', j?.detail || 'Please wait a minute and try again.');
+      } else if (j?.status === 'sent') {
+        crossAlert(
+          'Test notification sent',
+          'You should see a Dhara notification within a few seconds. If nothing arrives, verify permissions are on and that this is a real device build (Expo Go cannot receive push).',
+        );
+      } else {
+        crossAlert(
+          'Could not send test',
+          j?.reason || 'The push relay is not reachable from this environment. This is expected in the dev pod; try again after deploying to a real Android build.',
+        );
+      }
+    } catch (e: any) {
+      crossAlert('Network error', e?.message || 'Please try again.');
+    } finally {
+      setPushTestBusy(false);
     }
   };
 
@@ -204,6 +237,7 @@ export default function Settings() {
         </View>
 
         {pushState !== 'unsupported' && (
+          <>
           <View style={styles.row} testID="row-push-notifications">
             <Ionicons name="notifications-outline" size={22} color={theme.colors.brand} />
             <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
@@ -224,6 +258,26 @@ export default function Settings() {
               thumbColor={theme.colors.surface}
             />
           </View>
+          {pushState === 'granted' && (
+            <Pressable
+              testID="row-push-selftest"
+              style={styles.row}
+              onPress={onSendTestPush}
+              disabled={pushTestBusy}
+            >
+              <Ionicons name="paper-plane-outline" size={22} color={theme.colors.brand} />
+              <View style={{ flex: 1, marginLeft: theme.spacing.md }}>
+                <Text style={styles.rowTitle}>Send test notification</Text>
+                <Text style={styles.rowValue}>
+                  Round-trip check via the push relay. Works only on real Android/iOS builds — not Expo Go or web.
+                </Text>
+              </View>
+              {pushTestBusy
+                ? <ActivityIndicator color={theme.colors.brand} />
+                : <Ionicons name="chevron-forward" size={20} color={theme.colors.textMuted} />}
+            </Pressable>
+          )}
+          </>
         )}
 
         <View style={styles.volumeCard} testID="row-tts-volume">

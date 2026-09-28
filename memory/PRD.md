@@ -303,3 +303,16 @@ own original wording in their own language. English queries are untouched (zero 
   `build_chat()` (drop-in for `.with_model`), `send_with_fallback()`, `stream_with_fallback()`,
   and `gateway_status()`. Every call produces a structured log line with a stable `error_id`.
   chat_router's primary chat call now flows through `build_chat()`.
+
+## June 2026 — Follow-up sprint: Gateway consolidation + self-test push
+- **Gateway consolidation**: `chat_router.py` no longer instantiates `LlmChat` directly anywhere.
+  The language-repair pass (`langfix`) and the follow-up-question generator now both use
+  `services.ai_gateway.build_chat()`, so all three chat LLM sites share the same provider,
+  model, error-ID, and structured log line. `LlmChat` import removed from the router.
+- **Push self-test endpoint**: new `POST /api/push/self-test` — sends a Dhara push to the calling
+  user's own device only (rate-limited to 1/min per user). Settings now shows a "Send test
+  notification" row directly under the Push toggle when granted. Works on real Android/iOS
+  builds — Expo Go / web cannot receive push and the UI says so explicitly.
+- **Emergent-independence verifier**: new `scripts/verify_emergent_off.py`. Runs three env
+  combinations (default / EMERGENT_OFF + COMPANY_LLM_KEY / EMERGENT_OFF only) and asserts the
+  gateway's key resolution matches expectations. All three currently pass.

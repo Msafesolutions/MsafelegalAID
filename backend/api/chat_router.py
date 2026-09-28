@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+from emergentintegrations.llm.chat import UserMessage, TextDelta, StreamDone
 
 from dependencies import (
     db, current_user, current_user_optional,
@@ -183,6 +183,39 @@ async def register_push(body: RegisterPushBody, user: dict = Depends(current_use
         # the user just won't get push this session; nothing else breaks.
         return {"status": "failed"}
     return {"status": "registered"}
+
+
+# One-tap self test: sends a push to the CALLING user's own device only.
+# Rate-limited to 1 send per user per minute so a button-mash cannot spam the
+# relay (or a legit user accidentally). Safe to expose to any authenticated
+# caller — you cannot address someone else's device with this endpoint.
+_PUSH_SELFTEST_COOLDOWN_S = 60
+@router.post("/push/self-test")
+async def push_self_test(user: dict = Depends(current_user)):
+    from push import send_push as _send_push
+    import time as _time
+    now = _time.time()
+    last = user.get("push_selftest_at_ts") or 0
+    if now - float(last) < _PUSH_SELFTEST_COOLDOWN_S:
+        remaining = int(_PUSH_SELFTEST_COOLDOWN_S - (now - float(last)))
+        raise HTTPException(429, f"Please wait {remaining}s before sending another test.")
+    try:
+        await _send_push(
+            recipients=[user["id"]],
+            data={
+                "title": "Dhara — test notification",
+                "message": "If you see this, push notifications are working end-to-end. ✅",
+                "action_url": "/(tabs)/settings",
+            },
+            idempotency_key=f"selftest:{user['id']}:{int(now)}",
+        )
+    except Exception as e:
+        logger.warning(f"[push] self-test failed for user {user['id']}: {type(e).__name__}: {e}")
+        return {"status": "failed", "reason": str(e)[:200]}
+    await db.users.update_one(
+        {"id": user["id"]}, {"$set": {"push_selftest_at_ts": now}},
+    )
+    return {"status": "sent"}
 
 # ---------- Chat ----------
 @router.post("/chat/stream")
@@ -863,11 +896,10 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             )
             logger.warning("reply-language repair: model answered outside the %s script", lang_display)
             try:
-                fixer = LlmChat(
-                    api_key=EMERGENT_LLM_KEY,
+                fixer = _ai_build_chat(
                     session_id=f"{session_id}-langfix",
                     system_message=repair_prompt(lang_display),
-                ).with_model(SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL)
+                )
                 translated = await fixer.send_message(UserMessage(text=sanitized))
                 translated = sanitize_model_output(str(translated or "")).strip()
                 if translated and not needs_language_repair(translated, body.language):
@@ -1160,11 +1192,10 @@ Reply ONLY with a valid JSON array of strings, nothing else:
 
     try:
         import json as _json
-        chat_llm = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
+        chat_llm = _ai_build_chat(
             session_id=f"chat-followup-{id(body)}",
-            system_message="Generate short follow-up questions as a JSON array only."
-        ).with_model("anthropic", SERVER_CHAT_MODEL)
+            system_message="Generate short follow-up questions as a JSON array only.",
+        )
 
         result = await chat_llm.send_message(UserMessage(text=prompt))
         raw = (result or "[]").strip()
