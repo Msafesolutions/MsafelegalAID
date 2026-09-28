@@ -207,6 +207,7 @@ async def health_ready():
 
     # 5. eCourts
     from services.court_data import engine_status as _court_status
+    from services.alerts import alerts_configured as _alerts_status
     _cs = _court_status()
     report["court_service"] = {
         "status": "PASS" if (FEATURE_COURT and _cs["configured"]) else (
@@ -218,6 +219,7 @@ async def health_ready():
             else "ECOURTS_API_TOKEN not set"
         ),
         "engine": _cs,
+        "ops_alerts": _alerts_status(),
     }
 
     # 6. FIR engine
@@ -1392,6 +1394,13 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def _startup():
+    # Court Data Engine — 24h CNR lookup cache TTL index (idempotent)
+    try:
+        from services.court_data import ensure_cache_indexes as _ensure_court_cache_indexes
+        await _ensure_court_cache_indexes()
+    except Exception as e:
+        logger.warning(f"[startup] court cache index creation warning: {e}")
+
     # Advocate Door — ensure indexes exist (idempotent)
     try:
         await db.advocate_profiles.create_index("user_id", unique=True)

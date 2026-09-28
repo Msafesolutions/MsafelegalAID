@@ -26,6 +26,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -44,6 +45,9 @@ MAX_RETRIES   = int(os.getenv("ECOURTS_MAX_RETRIES", "3"))
 BREAKER_TRIP_AFTER = int(os.getenv("ECOURTS_BREAKER_TRIP_AFTER", "5"))
 BREAKER_COOLDOWN_S = float(os.getenv("ECOURTS_BREAKER_COOLDOWN_S", "60"))
 
+# 24h cache on successful CNR lookups — see `_cache_get` / `_cache_put` below.
+CNR_CACHE_TTL_S = int(os.getenv("COURT_CNR_CACHE_TTL_S", "86400"))
+
 CNR_RE = re.compile(r"^[A-Z]{4}\d{12}$")
 
 
@@ -58,6 +62,7 @@ class CourtDataResult:
     http_hint: int = 0                             # suggested HTTP status if the caller re-raises
     upstream_status: Optional[int] = None
     upstream_detail: str = ""
+    from_cache: bool = False                       # True when served from the 24h Mongo cache
 
     def is_ok(self) -> bool:
         return self.status == "ok"
@@ -76,6 +81,7 @@ class _BreakerState:
     total_ok: int = 0
     total_fail: int = 0
     last_error_id: str = ""
+    alert_fired: bool = False   # True once the "breaker opened" alert has fired for this outage
 
 _breaker = _BreakerState()
 
@@ -104,12 +110,18 @@ def engine_status() -> dict:
         },
         "counters": {"total_ok": _breaker.total_ok, "total_fail": _breaker.total_fail},
         "last_error_id": _breaker.last_error_id,
+        "cache": {"ttl_s": CNR_CACHE_TTL_S, **_cache_counters},
     }
 
 
 async def case_by_cnr(cnr: str) -> CourtDataResult:
     """Look up a case by CNR. Never raises for upstream problems —
     all failures become `CourtDataResult(status='unavailable', ...)`.
+
+    Checks the 24h Mongo cache first (see `_cache_get`) — a repeat lookup of
+    the same CNR (e.g. a litigant re-checking their next hearing date) is
+    served instantly without touching the eCourts partner API or the circuit
+    breaker at all.
     """
     cnr = (cnr or "").strip().upper()
     if not CNR_RE.match(cnr):
@@ -117,12 +129,22 @@ async def case_by_cnr(cnr: str) -> CourtDataResult:
             "CNR must be 4 capital letters followed by 12 digits "
             "(16 chars, e.g. DLHC010001232024).",
         )
-    return await _fetch(
+
+    cached = await _cache_get(cnr)
+    if cached is not None:
+        _cache_counters["hits"] += 1
+        return CourtDataResult(status="ok", data=cached, from_cache=True)
+    _cache_counters["misses"] += 1
+
+    result = await _fetch(
         f"/api/partner/case/{cnr}",
         params=None,
         normaliser=lambda p: _normalise_case(p.get("data", p), cnr),
         caller=f"case_by_cnr:{cnr[:4]}…",
     )
+    if result.is_ok():
+        await _cache_put(cnr, result.data)
+    return result
 
 
 async def search_by_party(name: str, page: int = 1) -> CourtDataResult:
@@ -312,9 +334,18 @@ def _bad_input(msg: str) -> CourtDataResult:
 
 
 def _record_ok() -> None:
+    was_open = _breaker.alert_fired
     _breaker.consecutive_failures = 0
     _breaker.open_until_ts = 0
     _breaker.total_ok += 1
+    if was_open:
+        _breaker.alert_fired = False
+        _fire_alert_bg(
+            "eCourts service RECOVERED",
+            f"The circuit breaker has closed after {_breaker.total_fail} total failures "
+            f"this outage. Court-case lookups are flowing normally again.",
+            severity="info",
+        )
 
 
 def _record_fail() -> None:
@@ -326,6 +357,73 @@ def _record_fail() -> None:
             "[court_data] circuit breaker OPENED after %d consecutive failures — cooldown %ds",
             _breaker.consecutive_failures, int(BREAKER_COOLDOWN_S),
         )
+        if not _breaker.alert_fired:
+            _breaker.alert_fired = True
+            _fire_alert_bg(
+                "eCourts circuit breaker OPENED",
+                f"{_breaker.consecutive_failures} consecutive failures against the eCourts "
+                f"partner API. Fast-failing for {int(BREAKER_COOLDOWN_S)}s before retrying. "
+                f"Last error ref: {_breaker.last_error_id or 'n/a'}.",
+                severity="critical",
+            )
+
+
+def _fire_alert_bg(title: str, detail: str, *, severity: str) -> None:
+    """Fire-and-forget ops alert — never blocks or raises into the caller."""
+    try:
+        from services.alerts import send_ops_alert
+        loop = asyncio.get_event_loop()
+        loop.create_task(send_ops_alert(title, detail, severity=severity))
+    except Exception as e:                                              # pragma: no cover
+        logger.warning("[court_data] could not schedule ops alert: %s", e)
+
+
+# ── 24h Mongo cache (CNR lookups only — see case_by_cnr) ──────────────────────
+
+_cache_counters = {"hits": 0, "misses": 0}
+
+
+def _cache_collection():
+    """Lazy import — keeps this module importable (e.g. under pytest) without
+    a live Mongo connection unless a cache operation is actually invoked."""
+    from dependencies import db
+    return db.court_case_cache
+
+
+async def ensure_cache_indexes() -> None:
+    """Call once at app startup. TTL index auto-deletes entries after
+    CNR_CACHE_TTL_S seconds — no manual purge job needed. Idempotent."""
+    try:
+        await _cache_collection().create_index(
+            "cached_at", expireAfterSeconds=CNR_CACHE_TTL_S, name="cnr_cache_ttl",
+        )
+    except Exception as e:
+        logger.warning("[court_data] cache index creation warning: %s", e)
+
+
+async def _cache_get(cnr: str) -> Optional[dict]:
+    try:
+        doc = await _cache_collection().find_one({"_id": cnr})
+    except Exception as e:
+        logger.warning("[court_data] cache read failed (degrading to live fetch): %s", e)
+        return None
+    if not doc:
+        return None
+    data = dict(doc.get("data") or {})
+    data["_cache"] = {"hit": True, "cached_at": doc.get("cached_at")}
+    return data
+
+
+async def _cache_put(cnr: str, data: dict) -> None:
+    try:
+        await _cache_collection().update_one(
+            {"_id": cnr},
+            {"$set": {"data": data, "cached_at": datetime.now(timezone.utc)}},
+            upsert=True,
+        )
+    except Exception as e:
+        # Cache-write failure must never fail the (already successful) lookup.
+        logger.warning("[court_data] cache write failed (non-fatal): %s", e)
 
 
 def _log(caller: str, error_id: str, status: str, *, elapsed_ms: Optional[int] = None, detail: str = "") -> None:

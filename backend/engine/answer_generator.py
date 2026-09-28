@@ -149,8 +149,37 @@ def augment_prompt_with_status_guard(prompt: str, hits: Iterable[dict]) -> str:
 
 # ── Post-processor ────────────────────────────────────────────────────────────
 
-_LEAK_SECTION = re.compile(
-    r"\b(BNS|BNSS|BSA|IPC|CrPC|PWDVA|POSH|RTI|MV|MVA|DPDP)\s*(?:Section|Sec\.?)?\s*\d+[A-Za-z]?(?:\(\d+\))?",
+# Includes both acronyms AND the spelled-out "(Indian) Evidence Act" — the
+# pre-existing regex only ever recognised the acronyms, so a leaked
+# "Evidence Act Section 27" (real, common phrasing since BSA replaced it)
+# was never scrubbed by either ordering. Longer alternative listed first so
+# the regex engine doesn't stop at a partial word-boundary match.
+_ACT_NAMES = r"(?:(?:Indian\s+)?Evidence\s+Act|BNS|BNSS|BSA|IPC|CrPC|PWDVA|POSH|RTI|MV|MVA|DPDP)"
+
+# Forward order — "IPC Section 302", "IPC 420", "BNS Sec. 318(2)".
+_LEAK_SECTION_FWD = re.compile(
+    rf"\b{_ACT_NAMES}\s*(?:Section|Sec\.?)?\s*\d+[A-Za-z]?(?:\(\d+\))?",
+    re.IGNORECASE,
+)
+# Reverse order — "Section 302 of the IPC", "u/s 420 IPC", "under Section 154 CrPC".
+# This is the phrasing gap real-world LLM leaks most often use, since it
+# reads more naturally in English than the forward "IPC Section 302" form.
+# NOTE: "under" is deliberately NOT one of the leading keywords here — when
+# it precedes a bare number ("punishable under 376 IPC") it must survive the
+# substitution so "under the law" still reads correctly; that bare case is
+# caught separately by _LEAK_BARE_NUM_ACT below, which never consumes "under".
+_LEAK_SECTION_REV = re.compile(
+    rf"\b(?:u/s\.?|Section|Sec\.?)\s*\d+[A-Za-z]?(?:\(\d+\))?"
+    rf"\s*(?:of\s+the\s+|of\s+|under\s+the\s+|under\s+)?{_ACT_NAMES}\b",
+    re.IGNORECASE,
+)
+# Bare number immediately followed by the act name, no keyword at all —
+# "376 IPC", "420 BNS", "punishable under 376 IPC" (only "376 IPC" matches,
+# "under" is left intact). Digit run capped at 3 (plus an optional letter
+# suffix like "304B") so 4-digit years ("1860 IPC was enacted") are not
+# mistaken for a section number.
+_LEAK_BARE_NUM_ACT = re.compile(
+    rf"\b\d{{1,3}}[A-Za-z]?\b\s*{_ACT_NAMES}\b",
     re.IGNORECASE,
 )
 _LEAK_ARTICLE = re.compile(r"\bArticle\s+\d+[A-Za-z]?\b", re.IGNORECASE)
@@ -161,13 +190,23 @@ def strip_leaked_citations(text: str) -> str:
     from the LLM reply. Paired with corpus.sanitize_model_output so a regex
     miss on one side is caught by the other.
 
+    Catches BOTH citation orderings real-world replies use:
+      • forward:  "IPC Section 420", "BNS 318"
+      • reverse:  "Section 420 of the IPC", "u/s 420 IPC", "under Section 154 CrPC"
+      • bare:     "376 IPC" (no "Section"/"u/s" keyword at all)
+
     Intentionally conservative: only strips the identifier itself, leaving
     surrounding grammar intact. If the reply reads oddly after stripping, the
     citation chips shown separately in the UI still convey the exact rule.
     """
     if not text:
         return text
-    text = _LEAK_SECTION.sub("the law", text)
+    # Order matters: reverse/keyword-anchored patterns first (more specific),
+    # then the forward act-first pattern, then the bare-number fallback —
+    # each pass only touches text the earlier passes left untouched.
+    text = _LEAK_SECTION_REV.sub("the law", text)
+    text = _LEAK_SECTION_FWD.sub("the law", text)
+    text = _LEAK_BARE_NUM_ACT.sub("the law", text)
     text = _LEAK_ARTICLE.sub("the constitutional right", text)
     # Collapse doubled spaces / punctuation left by the substitution.
     text = re.sub(r"\s{2,}", " ", text)

@@ -6,14 +6,21 @@ import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, ScrollView, Pressable,
   StyleSheet, Modal, FlatList, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  useAudioRecorder, RecordingPresets, setAudioModeAsync, AudioModule,
+} from 'expo-audio';
 import { theme } from '@/src/theme';
 import {
   STATES_UTS, DISTRICTS, CNR_STATE_CODES, CNR_COURT_CODES,
 } from '@/src/courtData';
+import { useAuth, API_BASE } from '@/src/auth';
+import { whisperTranscribeFile } from '@/src/voice/stt';
+import { parseSpokenCaseRef } from '@/src/voice/spokenCnrParser';
 
 const NAVY  = theme.colors.primary;
 const GOLD  = theme.colors.gold;
@@ -118,12 +125,23 @@ function PickerRow({
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function LookupScreen() {
+  const { token } = useAuth();
   const [mode, setMode] = useState<Mode>('cnr');
 
   // CNR
   const [cnr, setCnr]           = useState('');
   const [cnrState, setCnrState] = useState('');
   const [cnrCourt, setCnrCourt] = useState('');
+
+  // Voice-assisted CNR entry
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [heardSummary, setHeardSummary] = useState<string | null>(null);
+  const micIntroShownRef = useRef(false);
+  const webStreamRef = useRef<any>(null);
+  const webRecorderRef = useRef<any>(null);
+  const webChunksRef = useRef<any[]>([]);
 
   // Party
   const [selState,  setSelState]   = useState<{ code: string; name: string } | null>(null);
@@ -142,6 +160,140 @@ export default function LookupScreen() {
     setCnrState(v.length >= 2 ? (CNR_STATE_CODES[v.slice(0, 2)] ?? '') : '');
     setCnrCourt(v.length >= 4 ? (CNR_COURT_CODES[v.slice(2, 4)] ?? '') : '');
   };
+
+  // ── Voice-only CNR entry ────────────────────────────────────────────────
+  // Speak the CNR (or just "case number 427 of 2024") — we transcribe, parse
+  // the spoken numbers/letters, and fill in whatever was heard. Nothing is
+  // fabricated: if only a case number + year were spoken, only those are
+  // filled — the user completes the rest by hand.
+  const applyTranscript = useCallback((text: string) => {
+    if (!text || !text.trim()) {
+      setHeardSummary('Did not catch that — please try again or type the CNR.');
+      return;
+    }
+    const parsed = parseSpokenCaseRef(text);
+    setHeardSummary(parsed.heardSummary);
+    if (!parsed.isEmpty && parsed.bestGuessCnr) {
+      handleCNR(parsed.bestGuessCnr);
+    }
+  }, []);
+
+  const startMicRecording = useCallback(async () => {
+    if (!micIntroShownRef.current) {
+      micIntroShownRef.current = true;
+      Alert.alert(
+        'Speak your CNR',
+        'Say the CNR, or just the case number and year (e.g. "case number four two seven of twenty twenty-four"). Dhara only records while you speak.',
+      );
+    }
+    setHeardSummary(null);
+
+    if (Platform.OS === 'web') {
+      try {
+        if (!(navigator as any)?.mediaDevices?.getUserMedia) {
+          Alert.alert('Not supported', 'Voice input is not supported in this browser. Please type the CNR.');
+          return;
+        }
+        const stream = await (navigator as any).mediaDevices.getUserMedia({ audio: true });
+        webStreamRef.current = stream;
+        const WMR = (window as any).MediaRecorder;
+        const mimeType = (WMR && WMR.isTypeSupported('audio/webm;codecs=opus')) ? 'audio/webm;codecs=opus' : 'audio/webm';
+        const mr = new WMR(stream, { mimeType });
+        webChunksRef.current = [];
+        mr.ondataavailable = (e: any) => { if (e.data?.size > 0) webChunksRef.current.push(e.data); };
+        mr.start();
+        webRecorderRef.current = mr;
+        setIsRecording(true);
+      } catch {
+        Alert.alert('Microphone blocked', 'Click the lock icon next to the address bar to allow microphone access, or type the CNR.');
+      }
+      return;
+    }
+
+    try {
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
+      if (!perm.granted) {
+        if (!perm.canAskAgain) {
+          Alert.alert(
+            'Microphone permission needed',
+            'Microphone access is blocked for Dhara. Open Settings to allow it, or type the CNR instead.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ],
+          );
+        } else {
+          Alert.alert('Microphone permission', 'Please allow microphone access to speak your CNR.');
+        }
+        return;
+      }
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setIsRecording(true);
+    } catch (e: any) {
+      Alert.alert('Recording failed', e?.message || 'Could not access the microphone. Please type the CNR.');
+    }
+  }, [recorder]);
+
+  const stopMicRecording = useCallback(async () => {
+    setIsRecording(false);
+    setTranscribing(true);
+
+    if (Platform.OS === 'web') {
+      const mr = webRecorderRef.current;
+      if (!mr) { setTranscribing(false); return; }
+      try {
+        const audioBlob: Blob = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('Recording stop timeout')), 8000);
+          mr.onstop = () => {
+            clearTimeout(timeout);
+            resolve(new Blob(webChunksRef.current, { type: 'audio/webm' }));
+          };
+          try { mr.stop(); } catch (e) { clearTimeout(timeout); reject(e); }
+        });
+        try { webStreamRef.current?.getTracks()?.forEach((t: any) => t.stop()); } catch {}
+        webRecorderRef.current = null;
+        webStreamRef.current = null;
+        if (!audioBlob || audioBlob.size === 0) {
+          setHeardSummary('No audio captured. Please hold and try again.');
+          return;
+        }
+        const blobUrl = URL.createObjectURL(audioBlob);
+        try {
+          if (!API_BASE || !token) throw new Error('Voice input is unavailable');
+          const result = await whisperTranscribeFile(API_BASE, token, blobUrl, 'en');
+          applyTranscript(result?.text || '');
+        } finally {
+          URL.revokeObjectURL(blobUrl);
+        }
+      } catch {
+        setHeardSummary('Could not transcribe. Please try again or type the CNR.');
+      } finally {
+        setTranscribing(false);
+      }
+      return;
+    }
+
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      if (!uri) throw new Error('No recording captured');
+      if (!API_BASE || !token) throw new Error('Voice input is unavailable');
+      const result = await whisperTranscribeFile(API_BASE, token, uri, 'en');
+      applyTranscript(result?.text || '');
+    } catch {
+      setHeardSummary('Could not transcribe. Please try again or type the CNR.');
+    } finally {
+      setTranscribing(false);
+    }
+  }, [recorder, token, applyTranscript]);
+
+  const onMicPress = useCallback(() => {
+    if (transcribing) return;
+    if (isRecording) stopMicRecording();
+    else startMicRecording();
+  }, [isRecording, transcribing, startMicRecording, stopMicRecording]);
 
   const pickState = (s: { code: string; name: string }) => {
     setSelState(s);
@@ -238,11 +390,37 @@ export default function LookupScreen() {
                   onSubmitEditing={cnrComplete ? handleSearch : undefined}
                 />
                 {cnr.length > 0 && (
-                  <Pressable onPress={() => { setCnr(''); setCnrState(''); setCnrCourt(''); }} hitSlop={8}>
+                  <Pressable onPress={() => { setCnr(''); setCnrState(''); setCnrCourt(''); setHeardSummary(null); }} hitSlop={8}>
                     <Ionicons name="close-circle" size={18} color={HINT} />
                   </Pressable>
                 )}
+                <Pressable
+                  onPress={onMicPress}
+                  disabled={transcribing}
+                  hitSlop={8}
+                  style={[styles.micBtn, isRecording && styles.micBtnActive]}
+                  accessibilityLabel={isRecording ? 'Stop recording' : 'Speak your CNR'}
+                >
+                  {transcribing
+                    ? <ActivityIndicator size="small" color={isRecording ? '#fff' : NAVY} />
+                    : <Ionicons name={isRecording ? 'stop-circle' : 'mic-outline'} size={20} color={isRecording ? '#fff' : NAVY} />}
+                </Pressable>
               </View>
+
+              {(isRecording || transcribing || heardSummary) && (
+                <View style={styles.voiceStatusRow}>
+                  <Ionicons
+                    name={isRecording ? 'radio-outline' : transcribing ? 'sync-outline' : 'chatbubble-ellipses-outline'}
+                    size={14}
+                    color={NAVY}
+                  />
+                  <Text style={styles.voiceStatusText}>
+                    {isRecording ? 'Listening… tap the mic again to stop.'
+                      : transcribing ? 'Transcribing…'
+                      : heardSummary}
+                  </Text>
+                </View>
+              )}
 
               {cnr.length > 0 && (
                 <View style={styles.cnrProgress}>
@@ -269,7 +447,7 @@ export default function LookupScreen() {
               )}
 
               <Text style={styles.inputHint}>
-                CNR = 16 characters · found on your case notice or the eCourts portal
+                CNR = 16 characters · found on your case notice or the eCourts portal · or tap 🎙 and speak it
               </Text>
             </View>
           )}
@@ -458,6 +636,11 @@ const styles = StyleSheet.create({
   cnrProgress: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cnrBar:  { height: 3, borderRadius: 2, backgroundColor: NAVY },
   cnrCount: { fontSize: 11, color: NAVY, fontWeight: '700' },
+
+  micBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3EFE7' },
+  micBtnActive: { backgroundColor: '#DC2626' },
+  voiceStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EEF2FF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7 },
+  voiceStatusText: { flex: 1, fontSize: 12.5, color: NAVY, lineHeight: 17 },
 
   decodedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   decodedChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EEF2FF', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },

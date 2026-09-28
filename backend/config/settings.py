@@ -54,6 +54,16 @@ APP_DAILY_LLM_CALLS = int(os.environ.get("APP_DAILY_LLM_CALLS", "3000"))
 ECOURTS_TOKEN = os.getenv("ECOURTS_API_TOKEN", "")
 ECOURTS_BASE  = os.getenv("ECOURTS_API_BASE",  "https://webapi.ecourtsindia.com")
 
+# 24h cache on successful CNR lookups so a repeated hearing-date check does
+# not re-hit the eCourts partner API. See services/court_data.py.
+COURT_CNR_CACHE_TTL_S = int(os.getenv("COURT_CNR_CACHE_TTL_S", "86400"))
+
+# Ops alert channels for the eCourts circuit breaker (see services/alerts.py).
+# Both optional — leave blank to disable. Fill in later without a redeploy
+# by editing backend/.env.
+OPS_ALERT_EMAIL             = os.getenv("OPS_ALERT_EMAIL", "").strip()
+OPS_ALERT_SLACK_WEBHOOK_URL = os.getenv("OPS_ALERT_SLACK_WEBHOOK_URL", "").strip()
+
 # ── Language registry (22 official + English) ─────────────────────────────────
 LANGUAGES = [
     {"code": "en",  "name": "English",    "native": "English",         "tts": "en-IN"},
