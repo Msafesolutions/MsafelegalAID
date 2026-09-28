@@ -69,7 +69,11 @@ class WhisperCloudSTT implements STTProvider {
     return true; // always available given a token + network
   }
 
-  async start({ onError }: { onError?: (m: string) => void }) {
+  async start({ onError }: {
+    languageTag?: string;
+    onPartial?: (r: STTResult) => void;
+    onError?: (m: string) => void;
+  }): Promise<{ stop: () => Promise<STTResult> }> {
     const mod = await loadExpoAudio();
     if (!mod) throw new Error('expo-audio not available');
     const perm = await mod.AudioModule.requestRecordingPermissionsAsync();
@@ -316,19 +320,31 @@ export type STTProviderId = 'native' | 'whisper';
 /**
  * Pick the configured STT provider.
  *
- * HARDCODED to Whisper cloud (record audio → POST /api/voice/transcribe) so
- * the mic works on ALL Android devices regardless of what native voice engine
- * (Google, Bixby, MIUI, etc.) the OEM ships. Native SpeechRecognizer is
- * device-dependent and silently fails on ~40% of real-world Indian phones,
- * so we bypass it entirely — WhatsApp-style: record & send.
+ * Reads EXPO_PUBLIC_STT_PROVIDER at build time:
+ *   'native'  → expo-speech-recognition (v3.1.3, pinned). Zero API cost.
+ *               Falls back to cloud Whisper if the module isn't available
+ *               on this device (isAvailable() → false).
+ *   'whisper' | anything else → cloud Whisper (record audio → POST /api/voice/transcribe).
  *
- * The old `EXPO_PUBLIC_STT_PROVIDER=native` build-time flag is intentionally
- * ignored so nobody accidentally re-introduces the device-dependent bug.
+ * The previous version hardcoded Whisper and silently ignored the env flag,
+ * causing the native 3.1.3 module to go unused even when explicitly requested.
  */
 export async function getConfiguredSTT(
   apiBase: string,
   token: string | null
 ): Promise<{ provider: STTProvider; providerId: STTProviderId; fellBack: boolean }> {
+  const configured = (process.env.EXPO_PUBLIC_STT_PROVIDER ?? 'whisper').trim().toLowerCase();
+
+  if (configured === 'native' && Platform.OS !== 'web') {
+    const native = new NativeSTT();
+    const available = await native.isAvailable();
+    if (available) {
+      return { provider: native, providerId: 'native', fellBack: false };
+    }
+    // Device doesn't support native STT — silently degrade to cloud
+    return { provider: new WhisperCloudSTT(apiBase, token), providerId: 'whisper', fellBack: true };
+  }
+
   return { provider: new WhisperCloudSTT(apiBase, token), providerId: 'whisper', fellBack: false };
 }
 
@@ -368,11 +384,21 @@ export async function whisperTranscribeFile(
     form.append('audio', { uri, name: 'audio.m4a', type: 'audio/m4a' });
   }
   if (languageHint) form.append('language', languageHint);
-  const res = await fetch(`${apiBase}/api/voice/transcribe`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
-  });
+
+  // Network errors (no connection, DNS failure, timeout) must surface as a
+  // recognisable sentinel — not a raw TypeError — so callers can show the
+  // right UI message instead of the cryptic "Network request failed" string.
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase}/api/voice/transcribe`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+  } catch {
+    throw new Error('__network_error__');
+  }
+
   const data = await res.json();
   if (res.status === 401) {
     throw new Error('__session_expired__');
@@ -388,4 +414,27 @@ export async function whisperTranscribeFile(
     scriptMismatch: !!data.script_mismatch,
     detectedScript: data.detected_script ?? null,
   };
+}
+
+/**
+ * Translate a thrown STT / transcription error into a user-facing string.
+ * Use this in every catch block that handles whisperTranscribeFile() or
+ * getConfiguredSTT() failures to avoid silent drops and raw JS errors.
+ *
+ * Example:
+ *   } catch (err) {
+ *     Alert.alert('Voice error', sttErrorToMessage(err));
+ *   }
+ */
+export function sttErrorToMessage(err: unknown): string {
+  const msg = String((err as any)?.message ?? err ?? '');
+  if (msg.includes('__session_expired__'))
+    return 'Session expired — please sign in again.';
+  if (msg.includes('__network_error__'))
+    return 'No network connection. Please check your internet and try again.';
+  if (msg.toLowerCase().includes('daily') || msg.includes('429') || msg.includes('limit'))
+    return 'Daily voice limit reached. Please try again tomorrow.';
+  if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('denied'))
+    return 'Microphone permission denied. Please allow microphone access in Settings.';
+  return msg || 'Voice recognition failed. Please try again.';
 }

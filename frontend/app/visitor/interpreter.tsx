@@ -5,14 +5,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet, ScrollView,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import { theme } from '@/src/theme';
 import { loadVisitorSession, VisitorSession } from '@/src/visitor/session';
 import { API_BASE, useAuth } from '@/src/auth';
-import { whisperTranscribeFile } from '@/src/voice/stt';
+import { whisperTranscribeFile, sttErrorToMessage } from '@/src/voice/stt';
 
 const C = theme.colors;
 
@@ -69,7 +70,27 @@ export default function InterpreterScreen() {
   }, [token]);
 
   // ── TTS playback ──────────────────────────────────────────────────────────
+  // Native (iOS/Android): expo-speech speaks the translated text directly —
+  // avoids window.Audio which is browser-only and silent on APK builds.
+  // Web: fall back to the backend TTS endpoint + HTMLAudioElement.
   const playTTS = useCallback(async (text: string, lang: string) => {
+    if (Platform.OS !== 'web') {
+      // Map ISO 639-1 to a BCP-47 tag expo-speech understands (e.g. 'hi' → 'hi-IN')
+      const bcp47: Record<string, string> = {
+        hi: 'hi-IN', en: 'en-IN', fr: 'fr-FR', de: 'de-DE',
+        es: 'es-ES', pt: 'pt-PT', it: 'it-IT', ja: 'ja-JP',
+        ko: 'ko-KR', zh: 'zh-CN', ar: 'ar-SA', ru: 'ru-RU',
+      };
+      return new Promise<void>((resolve) => {
+        Speech.stop(); // stop any previous utterance
+        Speech.speak(text, {
+          language: bcp47[lang] ?? lang,
+          onDone:  () => resolve(),
+          onError: () => resolve(), // never block the conversation on TTS error
+        });
+      });
+    }
+    // Web fallback: stream from backend TTS endpoint
     const res = await fetch(`${API_BASE}/api/voice/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -81,7 +102,7 @@ export default function InterpreterScreen() {
       const url = URL.createObjectURL(blob);
       const audio = new (window as any).Audio(url);
       audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-      audio.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Audio failed')); };
+      audio.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Audio playback failed')); };
       audio.play().catch(reject);
     });
   }, [token]);
@@ -147,7 +168,7 @@ export default function InterpreterScreen() {
     } catch (e: any) {
       setPhase('idle');
       setStatusText('');
-      Alert.alert('Error', e?.message || 'Something went wrong. Please try again.');
+      Alert.alert('Voice error', sttErrorToMessage(e));
     }
   }, [mode, srcLang, tgtLang, tgtLabel, token, translateText, playTTS]);
 
