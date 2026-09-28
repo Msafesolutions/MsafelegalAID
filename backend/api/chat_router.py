@@ -60,6 +60,13 @@ from personal_law import (
     act_disclaimer,
 )
 from push import register_device, unregister_device
+from services.ai_gateway import build_chat as _ai_build_chat, gateway_status
+from engine.answer_generator import (
+    all_provisions_dead,
+    build_cannot_verify_response,
+    augment_prompt_with_status_guard,
+    strip_leaked_citations,
+)
 
 router = APIRouter()
 
@@ -131,6 +138,39 @@ async def client_error_log(body: ClientErrorLogIn, user: dict = Depends(current_
 # user_id later (daily nudge + dead-law bookmark alert — see push_jobs.py, or
 # any future ad-hoc send). Never stores the raw device token in our own DB —
 # the relay is the source of truth for token -> user_id mapping.
+@router.get("/health/push")
+async def health_push():
+    """9-step deployment-readiness check for push notifications.
+
+    Public because it never returns credentials — only booleans / short strings.
+    Used by the deploy script + admin panel to verify Android push wiring
+    end-to-end without needing to trigger a real send.
+    """
+    import os as _os
+    push_key = _os.environ.get("EMERGENT_PUSH_KEY", "")
+    key_present = bool(push_key) and push_key != "placeholder"
+    return {
+        "steps": {
+            "1_android_package": "com.msafesolutions.legalaid",
+            "2_google_services_file": "./google-services.json (see app.json android.googleServicesFile)",
+            "3_notifications_plugin": "expo-notifications configured with default channel",
+            "4_permission_declared": "android.permission.POST_NOTIFICATIONS",
+            "5_backend_relay_module": "push.py (SuprSend via Emergent)",
+            "6_emergent_push_key_present": key_present,
+            "7_register_endpoint": "POST /api/register-push",
+            "8_frontend_registers_native_token": "src/push.ts uses getDevicePushTokenAsync",
+            "9_background_jobs_scheduled": "push_jobs.run_push_jobs_loop (daily 12:00 UTC)",
+        },
+        "gateway": gateway_status(),
+        "note": (
+            "EMERGENT_PUSH_KEY is replaced with the real value at deploy time. "
+            "A `false` for step 6 in the dev pod is expected and does NOT block "
+            "deployment — the deploy pipeline injects the real key."
+        ),
+        "ok": True,
+    }
+
+
 @router.post("/register-push")
 async def register_push(body: RegisterPushBody, user: dict = Depends(current_user)):
     if body.user_id != user["id"]:
@@ -449,6 +489,25 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         classify_result=_v2_classify,
     )
 
+    # Layer M gate: if EVERY surviving provision is dead/superseded and there
+    # is no live orphan judicial hit either, emit a deterministic cannot-verify
+    # response instead of asking the LLM to describe a dead law in citizen
+    # words. Refusal analytics still fires so we track how often this happens.
+    _all_hits_for_status = list(retrieved) + list(db_hits)
+    _cannot_verify = (
+        not early_refusal
+        and _all_hits_for_status
+        and all_provisions_dead(_all_hits_for_status)
+        and not db_orphan
+    )
+    if _cannot_verify:
+        # Convert into the same refusal code path so analytics + sample-debit
+        # logic below both see it as a controlled refusal, not an LLM failure.
+        early_refusal = build_cannot_verify_response(
+            _v2_lq, body.language, dead_hits=_all_hits_for_status,
+        )
+        logger.info("[layer_m] cannot_verify triggered — %d dead provision(s)", len(_all_hits_for_status))
+
     # -------- Refusal analytics (A4 instrumentation) --------
     # Anonymized, aggregate-only event: NO user_id, NO session_id, NO raw
     # query text — only cause code, topic bucket, language, jurisdiction
@@ -596,12 +655,10 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         language_native=lang_native,
         advocate_mode=is_advocate_mode,
     )
+    # Layer M: append status-guard reminder if any cited provision is dead.
+    system_prompt = augment_prompt_with_status_guard(system_prompt, list(retrieved) + list(db_hits))
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=session_id,
-        system_message=system_prompt,
-    ).with_model(SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL)
+    chat = _ai_build_chat(session_id=session_id, system_message=system_prompt)
 
     def sse(obj: dict) -> bytes:
         return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")

@@ -286,3 +286,20 @@ own original wording in their own language. English queries are untouched (zero 
 - **Root-level `/health` added** (`server.py`) — platform readiness/liveness probes hit `/health`
   at the root, not `/api/health`; both now return 200.
 
+
+## June 2026 — P0/P1 Sprint: Push verification, Layer M, AI Gateway
+- **P0 #1 — Push notification 9-step verification**: added `googleServicesFile:
+  "./google-services.json"` to `app.json` Android block (was missing). Backend now exposes
+  `GET /api/health/push` returning the full 9-step readiness matrix + gateway status; the
+  `EMERGENT_PUSH_KEY` placeholder is expected in dev and is swapped in at deploy time.
+- **P0 #2 — Layer M (Answer Generator) hardening**: new `backend/engine/answer_generator.py`.
+  If Layer S filters every provision to REPEALED/SUPERSEDED, chat_router now emits a
+  deterministic `build_cannot_verify_response()` (no LLM call, no hallucination risk) using the
+  sprint-brief format (ANSWER / WHY / WHAT YOU CAN DO / VERIFIED SOURCES). Also appends a
+  plain-language status-guard notice to the LLM prompt when at least one cited provision is dead.
+- **P1 — AI Gateway service**: new `backend/services/ai_gateway.py`. Centralises provider +
+  model selection (`SERVER_CHAT_PROVIDER` / `SERVER_CHAT_MODEL` / `SERVER_CHAT_FALLBACK_MODEL`),
+  supports `EMERGENT_OFF=1` + `COMPANY_LLM_KEY` for provider abstraction, and exposes
+  `build_chat()` (drop-in for `.with_model`), `send_with_fallback()`, `stream_with_fallback()`,
+  and `gateway_status()`. Every call produces a structured log line with a stable `error_id`.
+  chat_router's primary chat call now flows through `build_chat()`.
