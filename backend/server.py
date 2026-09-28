@@ -1433,10 +1433,33 @@ async def _startup():
     # scheduled run internally; costs nothing at boot.
     asyncio.create_task(run_push_jobs_loop(db, corpus_db))
 
-    # Fire-and-forget: DPDP/PIPEDA data-retention purge (see bottom of file).
-    # Runs immediately at startup then every 24 hours.
-    # consent_log is never touched by this job (retained indefinitely).
-    asyncio.create_task(run_retention_purge_loop())
+    # ============================================================
+    # DPDP Act Compliance: Automatic Session Purge (730 days)
+    # ============================================================
+    # Rationale: Data minimisation and purpose limitation under
+    # the Digital Personal Data Protection Act, 2023.
+    # Citizens have no reasonable expectation that DHARA retains
+    # their queries indefinitely. Old dormant sessions are purged
+    # on schedule per the privacy policy retention section.
+    #
+    # Controlled by: RETENTION_PURGE_ENABLED env flag (default: true)
+    # Disable only if retention policy changes or legal guidance shifts.
+    # Update privacy.html retention section if this changes.
+    # ============================================================
+    #
+    # Gated by RETENTION_PURGE_ENABLED (default "true") — an explicit ops
+    # off-switch for this specific job only, so an operator can pause it
+    # without a code change (e.g. mid-incident/migration) while every other
+    # startup task keeps running normally. Default is "true" to preserve the
+    # DPDP-compliant purge schedule out of the box. See run_retention_purge_loop()'s
+    # docstring (bottom of file) for the full retention-period table.
+    if os.getenv("RETENTION_PURGE_ENABLED", "true").strip().lower() not in ("false", "0", "no"):
+        asyncio.create_task(run_retention_purge_loop())
+    else:
+        logger.warning(
+            "[retention] RETENTION_PURGE_ENABLED=false — DPDP data-minimisation "
+            "purge is DISABLED. Re-enable before extended production use.",
+        )
 
 
 @app.on_event("shutdown")
@@ -1743,6 +1766,23 @@ async def request_data_export(user: dict = Depends(current_user)):
 # ═══════════════════════════════════════════════════════════════════════════════
 # RETENTION PURGE JOB — DPDP §8(3): Data minimisation
 # consent_log is EXEMPT — retained indefinitely per T&C v2.0 clause 10.5
+#
+# ⚠️ THIS IS A DELIBERATE COMPLIANCE CONTROL, NOT A BUG OR HOUSEKEEPING TASK.
+# Do not remove, soft-delete-ify, or disable this job without first updating
+# privacy.html's retention section and notifying the Data Protection Board if
+# required. Rationale (confirmed with product owner, 28 Sep 2026):
+#   - DPDP Act data-minimisation and purpose-limitation are obligations, not
+#     options — a citizen asking about their FIR/rights has no reasonable
+#     expectation DHARA retains that query 2 years later.
+#   - A scheduled purge on a documented, published retention schedule is
+#     exactly what the Data Protection Board expects to see as evidence of
+#     compliance if ever audited.
+#   - Soft-delete would create a new category of data that exists but is
+#     inaccessible to users — a disclosure/erasure liability with no user
+#     benefit — so it is deliberately NOT used here.
+#   - Disabling the purge means indefinite retention, which directly
+#     contradicts data minimisation and would require a privacy-policy
+#     update before it could ship.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def run_retention_purge_loop():
@@ -1754,6 +1794,9 @@ async def run_retention_purge_loop():
     - password_resets / otps   : 24 hours (security hygiene)
     - consent_log              : EXEMPT — never purged (legal proof)
     - grievance_tickets        : EXEMPT — purge only by explicit deletion request
+
+    See the module-level comment block immediately above for why this job
+    must not be silently removed, softened, or disabled by a future change.
     """
     while True:
         try:
