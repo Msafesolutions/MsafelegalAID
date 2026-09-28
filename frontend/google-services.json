@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1030010972587",
+    "project_id": "msafelegalaid",
+    "storage_bucket": "msafelegalaid.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1030010972587:android:09fbdb4a36a458061a4aee",
+        "android_client_info": {
+          "package_name": "com.msafesolutions.legalaid"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDSEehZRnKiljlaudTPHsx380d6at-45dw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
