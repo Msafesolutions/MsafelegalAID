@@ -316,3 +316,24 @@ own original wording in their own language. English queries are untouched (zero 
 - **Emergent-independence verifier**: new `scripts/verify_emergent_off.py`. Runs three env
   combinations (default / EMERGENT_OFF + COMPANY_LLM_KEY / EMERGENT_OFF only) and asserts the
   gateway's key resolution matches expectations. All three currently pass.
+
+## June 2026 — Sprint tail: Court Data Engine + Golden Legal Tests
+- **Court Data Engine isolation**: new `backend/services/court_data.py`. The eCourts partner
+  API is now behind a `CourtDataEngine` with the same graceful-failure pattern as the AI
+  Gateway: config check, structured logs with `error_id`, retry with exponential backoff,
+  and a **circuit breaker** (trip after 5 consecutive failures, cool down 60s). Every failure
+  becomes a `CourtDataResult(status="unavailable", ...)` — the eCourts partner can no longer
+  drag down chat / FIR / voice by throwing raw HTTPExceptions from deep in the request path.
+  `server.py` now has thin route wrappers that call the engine; `/health/ready` exposes the
+  full engine snapshot (breaker state, counters, last error_id).
+- **Golden legal tests**: new `backend/tests/test_layer_m_golden.py`. **40 pure-python cases**
+  covering `all_provisions_dead` (12), `build_cannot_verify_response` (10),
+  `augment_prompt_with_status_guard` (8), and `strip_leaked_citations` (10). Runs in 0.4s in
+  CI — no LLM, no network. All 40 pass.
+- **Notes for operator tasks**:
+  - Live push round-trip: after redeploy + APK, log in on device → Settings → Push ON →
+    tap "Send test notification" — the rate-limited `POST /api/push/self-test` proves the
+    token round-trip.
+  - Emergent-independence rollout: set `EMERGENT_OFF=1` and `COMPANY_LLM_KEY=<key>` in
+    staging env, then run `python /app/backend/scripts/verify_emergent_off.py` — the script
+    prints which key the gateway resolved and asserts the switch is safe.

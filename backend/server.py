@@ -206,11 +206,18 @@ async def health_ready():
     }
 
     # 5. eCourts
+    from services.court_data import engine_status as _court_status
+    _cs = _court_status()
     report["court_service"] = {
-        "status": "PASS" if (FEATURE_COURT and ECOURTS_TOKEN) else (
+        "status": "PASS" if (FEATURE_COURT and _cs["configured"]) else (
             "DEGRADED" if FEATURE_COURT else "DISABLED"
         ),
-        "detail": "token configured" if ECOURTS_TOKEN else "ECOURTS_API_TOKEN not set",
+        "detail": (
+            "token configured; breaker open" if (_cs["configured"] and _cs["breaker"]["open"])
+            else "token configured" if _cs["configured"]
+            else "ECOURTS_API_TOKEN not set"
+        ),
+        "engine": _cs,
     }
 
     # 6. FIR engine
@@ -918,76 +925,43 @@ async def get_download(filename: str):
 
 
 # ─── eCourts Case Lookup (Dhara Lookup tab) ───────────────────────────────────
-# Proxy all calls so ECOURTS_API_TOKEN never reaches the frontend.
-
-CNR_RE = re.compile(r"^[A-Z]{4}\d{12}$")   # e.g. DLHC010001232024
-
-
-async def _eci_get(path: str, params: dict | None = None) -> dict:
-    if not ECOURTS_TOKEN:
-        raise HTTPException(503, "eCourts API is not configured on this server.")
-    headers = {"Authorization": f"Bearer {ECOURTS_TOKEN}", "Accept": "application/json"}
-    for attempt in range(3):
-        async with httpx.AsyncClient(base_url=ECOURTS_BASE, timeout=20) as client:
-            r = await client.get(path, params=params, headers=headers)
-        if r.status_code == 429 and attempt < 2:
-            await asyncio.sleep(2 ** attempt)
-            continue
-        if r.status_code >= 400:
-            try:
-                msg = r.json().get("message") or r.json().get("error", {}).get("message", "")
-            except Exception:
-                msg = ""
-            raise HTTPException(
-                status_code=502 if r.status_code >= 500 else r.status_code,
-                detail=msg or f"eCourts upstream returned {r.status_code}",
-            )
-        return r.json()
-    raise HTTPException(429, "eCourts rate limit — please try again.")
+# Actual logic lives in services/court_data.py — this file only exposes the
+# thin route wrapper so the eCourts partner cannot drag the rest of the API
+# down when its SLA slips. See services/court_data.py::CourtDataResult for
+# the failure envelope.
+from services.court_data import (
+    case_by_cnr as _court_case_by_cnr,
+    search_by_party as _court_search_by_party,
+    engine_status as court_engine_status,
+)
 
 
-def _nc(item: dict, cnr_hint: str | None = None) -> dict:
-    d = item.get("courtCaseData", item)
-    return {
-        "cnr":               d.get("cnr")             or item.get("cnr")             or cnr_hint,
-        "case_status":       d.get("caseStatus")      or item.get("caseStatus"),
-        "next_hearing_date": d.get("nextHearingDate") or item.get("nextHearingDate"),
-        "court_name":        d.get("courtName")       or item.get("courtName"),
-        "district":          d.get("district")        or item.get("district"),
-        "state":             d.get("state")           or item.get("state"),
-        "case_type":         d.get("caseType")        or item.get("caseType"),
-        "filing_date":       d.get("filingDate")      or item.get("filingDate"),
-        "petitioners":       d.get("petitioners")     or item.get("petitioners") or [],
-        "respondents":       d.get("respondents")     or item.get("respondents") or [],
-    }
+def _raise_from_court_result(result) -> None:
+    """Translate a non-OK CourtDataResult into an HTTPException with a stable
+    correlation ref that also appears in the server log. Keeps the caller-side
+    contract identical to the pre-refactor behaviour for clients."""
+    detail = result.message
+    if result.error_id and result.status != "invalid":
+        detail = f"{detail} (ref {result.error_id})"
+    raise HTTPException(status_code=result.http_hint or 502, detail=detail)
 
 
 @api.get("/cases/cnr/{cnr}", summary="Look up a court case by CNR number")
 async def case_by_cnr(cnr: str, user: dict = Depends(current_user)):
-    cnr = cnr.strip().upper()
-    if not CNR_RE.match(cnr):
-        raise HTTPException(
-            400,
-            "CNR must be 4 capital letters followed by 12 digits "
-            "(16 chars, e.g. DLHC010001232024).",
-        )
-    payload = await _eci_get(f"/api/partner/case/{cnr}")
-    return _nc(payload.get("data", payload), cnr)
+    result = await _court_case_by_cnr(cnr)
+    if result.is_ok():
+        return result.data
+    if result.status == "not_found":
+        raise HTTPException(404, "No matching case was found.")
+    _raise_from_court_result(result)
 
 
 @api.get("/cases/search", summary="Search court cases by party name")
 async def search_cases(name: str, page: int = 1, user: dict = Depends(current_user)):
-    name = name.strip()
-    if len(name) < 2:
-        raise HTTPException(400, "Party name must be at least 2 characters.")
-    payload = await _eci_get(
-        "/api/partner/search",
-        {"litigants": name, "nameMatchMode": "phrase", "page": page, "pageSize": 20},
-    )
-    rows = payload.get("data", {}).get("results", [])
-    if isinstance(rows, dict):
-        rows = rows.get("results", [])
-    return {"results": [_nc(x) for x in (rows or [])], "page": page}
+    result = await _court_search_by_party(name, page)
+    if result.is_ok():
+        return result.data
+    _raise_from_court_result(result)
 
 # ─────────────────────────────────────────────────────────────────────────────
 
