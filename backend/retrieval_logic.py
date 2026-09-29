@@ -147,7 +147,7 @@ SIG_STOPWORDS: set = {
     "will", "would", "should", "could", "shall", "any", "all", "some",
     "what", "why", "how", "when", "where", "who", "which", "this", "that",
     "without", "with", "not", "no", "from", "than", "then", "into", "about",
-    "if", "as", "but", "so", "there", "their", "them", "his", "her", "its",
+    "if", "as", "but", "so", "there", "their", "them", "they", "his", "her", "its",
     "am", "get", "got", "make", "made", "tell", "know", "want", "need",
     "please", "sir", "madam", "against", "per", "under",
     "act", "acts", "section", "sections", "rule", "rules", "code", "codes",
@@ -164,6 +164,16 @@ SIG_STOPWORDS: set = {
     "contravenes", "regard", "respect", "matter", "matters", "case", "cases",
     "name", "names", "address", "addresses", "give", "giving", "given",
     "arrested", "arrest",
+    # Generic words that surface disproportionately in LLM-normalised query
+    # paraphrases ("A user claims they were defrauded...") and, separately,
+    # appear across huge unrelated swaths of the corpus without real topical
+    # signal — "claim"/"claims" in virtually any tribunal/compensation Act,
+    # "user" as the property-law term for "usage" in easement/water-rights
+    # clauses. Left unguarded, two documents sharing only these words were
+    # scoring as corroborated on pure coincidence (e.g. an online-fraud
+    # question matching the Northern India Canal and Drainage Act, whose
+    # only real overlap was "user" + "claims").
+    "user", "users", "claim", "claims", "claimed", "claiming",
     # Generic time/manner connectors — near-zero topical signal on their own.
     "time", "times", "period", "periods", "date", "dates", "days", "month",
     "months", "year", "years", "limit", "limits", "manner", "necessary",
@@ -310,25 +320,45 @@ def corroboration_score(question_sig: set, doc: dict, act_hint: str | None) -> i
                      happens to contain those words — see
                      `_act_name_leads_with`). Always surfaces; sorted first
                      regardless of text-index score.
-    Returns N ≥ 0 → count of significant-word overlap between query and the
-                     doc's act_name + section_heading + section_text[:800].
+    Returns N ≥ 0 → see weighting below.
 
     Threshold for inclusion (applied by callers): score >= MIN_COROBORATION_WORDS.
 
-    Why this beats raw textScore for ranking: MongoDB's textScore weights
-    section_heading (×10) and act_name (×5) far above section_text (×1), so a
-    section whose topic appears only in body text can fall outside a narrow
-    candidate window entirely. Corroboration scoring looks at the full
-    section_text so those sections bubble back up.
+    IMPORTANT: the inclusion floor is always checked against the RAW
+    (unweighted) significant-word overlap — exactly the original behaviour —
+    so a single generic heading-word match (e.g. a query about "online
+    sellers" sharing only the word "online" with an unrelated Online Gaming
+    Act heading) still cannot clear the floor alone. The heading bonus below
+    is added ONLY on top of an already-qualifying raw score, and therefore
+    only ever affects ranking ORDER among candidates that already passed the
+    same floor as before — it can never pull in a new, weaker match.
+
+    Heading bonus (ranking only, not eligibility)
+    -----------------------------------------------
+    A plain (unweighted) overlap count let procedural "power to arrest
+    without warrant" clauses (Railway Protection Force Act, CISF Act, etc.)
+    outrank the actual offence-defining BNS section for everyday queries
+    like "I was physically assaulted" — those clauses exist specifically to
+    enumerate MANY trigger offences in one sentence ("voluntarily causes
+    hurt... assaults... uses criminal force...") so they share several
+    significant words with almost any personal-safety query, even though
+    their own heading ("Power to arrest without warrant") has nothing to do
+    with the topic. A section's HEADING is its clearest, most reliable topic
+    signal — mirrors MongoDB's own $text index, which already weights
+    section_heading ×10 vs section_text ×1 (see module docstring) — so once
+    a candidate has already qualified on raw overlap, each of its heading
+    words additionally counts double towards the final (ranking) score.
     """
     doc_act_name = doc.get("act_name") or ""
     if act_hint and _act_name_leads_with(doc_act_name, act_hint):
         return 9999  # Explicit act-label match → always surface
-    doc_sig = significant_words(
-        doc_act_name + " " + (doc.get("section_heading") or "") + " "
-        + (doc.get("section_text") or "")[:800]
-    )
-    return len(question_sig & doc_sig)
+    heading_sig = significant_words(doc_act_name + " " + (doc.get("section_heading") or ""))
+    doc_sig = heading_sig | significant_words((doc.get("section_text") or "")[:800])
+    raw = len(question_sig & doc_sig)
+    if raw < MIN_COROBORATION_WORDS:
+        return raw   # unchanged from original behaviour — correctly excluded by callers
+    heading_overlap = len(question_sig & heading_sig)
+    return raw + heading_overlap * 2
 
 
 def corroborates(question_sig: set, doc: dict, act_hint: str | None) -> bool:
