@@ -19,7 +19,7 @@ from openai import AsyncOpenAI
 from emergentintegrations.llm.chat import UserMessage, TextDelta, StreamDone
 
 from dependencies import (
-    db, current_user, current_user_optional,
+    db, corpus_db, current_user, current_user_optional,
     meter_llm_use, build_system_prompt, translate_for_retrieval, logger,
 )
 from config.settings import (
@@ -425,8 +425,9 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     if not early_refusal:
         try:
             db_hits = await db_retrieve(corpus_db, retrieval_text, state_code=user_state or None, limit=3)
-        except Exception:
+        except Exception as e:
             db_hits = []   # MongoDB unavailable — Python corpus handles it
+            logger.warning("[chat] db_retrieve failed (falling back to Python corpus only): %s", e)
 
     # (b3) Cross-corpus citation-conflict guard. Logged issue, now fixed:
     # querying "Information Technology Act section 66A" surfaced the hand-
@@ -467,8 +468,9 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     if not early_refusal and not db_hits:
         try:
             db_orphan = await db_orphan_check(corpus_db, retrieval_text)
-        except Exception:
+        except Exception as e:
             db_orphan = None
+            logger.warning("[chat] db_orphan_check failed: %s", e)
 
     # (c) If no retrieval hit AND no early refusal, we still refuse (no verified source).
     # db_hits = MongoDB verbatim sections; db_orphan = standalone judicial ruling
