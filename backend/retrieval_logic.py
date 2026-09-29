@@ -66,6 +66,17 @@ _SYNONYMS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b(?:ask|get\s+information\s+from)\s+(?:the\s+)?(?:government|govt)\b", re.I), "right to information RTI"),
     # Dowry
     (re.compile(r"\bdowry\s+(?:harassment|demand|torture)\b", re.I),     "dowry prohibition BNS cruelty"),
+    # Physical assault / hurt — everyday phrasing ("I was physically assaulted",
+    # "he hit/beat/slapped/punched/kicked me") uses verb tenses that never
+    # literally appear in the BNS Hurt/Assault chapter headings (§115 "Voluntarily
+    # causing hurt", §130 "Assault"), so plain significant-word overlap alone
+    # was scoring 0 and these queries fell through to a flat refusal even though
+    # the exact right sections exist in the corpus. Appending the statutory
+    # vocabulary here (not replacing the user's words) restores the overlap.
+    (re.compile(r"\bassault(?:ed|ing|s)?\b", re.I),                      "assault criminal force voluntarily causing hurt"),
+    (re.compile(r"\b(?:beat|beaten|hit|punched|slapped|kicked|attacked)\s+(?:me|him|her|us|them)\b", re.I),
+                                                                          "assault hurt voluntarily causing hurt criminal force"),
+    (re.compile(r"\bphysically\s+(?:abused|hurt|injured|attacked)\b", re.I), "assault hurt voluntarily causing hurt"),
 ]
 
 

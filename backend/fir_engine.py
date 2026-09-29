@@ -885,16 +885,11 @@ def _keyword_classify(narrative: str) -> list[str]:
 PROBE_Q: dict[str, dict] = {
     "probe_date": {
         "message": "When did this happen? (date and year if possible)",
-        "slot": "incident_date", "input_type": INPUT_TEXT, "skip_label": "Skip",
-    },
-    "probe_date_confirm": {
-        # message is set dynamically; placeholder here
-        "message": "Could you confirm the date of the incident?",
-        "slot": "incident_date", "input_type": INPUT_TEXT, "skip_label": "Skip — keep as extracted",
+        "slot": "incident_date", "input_type": INPUT_VOICE_TEXT, "skip_label": "Skip",
     },
     "probe_time": {
         "message": "At approximately what time did this happen?",
-        "slot": "incident_time", "input_type": INPUT_TEXT, "skip_label": "Skip",
+        "slot": "incident_time", "input_type": INPUT_VOICE_TEXT, "skip_label": "Skip",
     },
     "probe_place_text": {
         "message": "Where did this happen? (area / street / city / state)",
@@ -935,11 +930,11 @@ PROBE_Q: dict[str, dict] = {
     },
     "probe_witnesses": {
         "message": "Were there any witnesses?\nNames and contact numbers if available.",
-        "slot": "witnesses", "input_type": INPUT_TEXT, "skip_label": "No witnesses",
+        "slot": "witnesses", "input_type": INPUT_VOICE_TEXT, "skip_label": "No witnesses",
     },
     "probe_witnesses_detail": {
         "message": "You mentioned witnesses were present — could you share their names or contact numbers so the police can reach them?",
-        "slot": "witnesses_detail", "input_type": INPUT_TEXT,
+        "slot": "witnesses_detail", "input_type": INPUT_VOICE_TEXT,
         "skip_label": "Not available right now",
     },
     "probe_evidence": {
@@ -950,11 +945,11 @@ PROBE_Q: dict[str, dict] = {
     # ── Informant details (always required for the final draft) ───────────────
     "probe_informant_name": {
         "message": "Almost done! I need your personal details for the FIR.\n\nYour full name (as it will appear on the complaint):",
-        "slot": "informant_name", "input_type": INPUT_TEXT,
+        "slot": "informant_name", "input_type": INPUT_VOICE_TEXT,
     },
     "probe_informant_address": {
         "message": "Your full address (house/flat number, street, area, city, PIN code):",
-        "slot": "informant_address", "input_type": INPUT_TEXT,
+        "slot": "informant_address", "input_type": INPUT_VOICE_TEXT,
     },
     "probe_informant_phone": {
         "message": "Your mobile number (the police can reach you on this):",
