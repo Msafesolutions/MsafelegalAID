@@ -13,7 +13,8 @@ export function resolveApiBase(platform: string, currentHost: string, backend: s
 const extra = Constants.expoConfig?.extra;
 export const API_BASE = resolveApiBase(
   Platform.OS,
-  typeof window !== 'undefined' ? window.location.host : '',
+  // On native, `window` exists but `window.location` is undefined — reading .host crashed the APK at launch.
+  Platform.OS === 'web' && typeof window !== 'undefined' && window.location ? window.location.host : '',
   extra?.backendUrl ?? process.env.EXPO_PUBLIC_BACKEND_URL ?? '',
   extra?.packagerHostname ?? '',
 );
