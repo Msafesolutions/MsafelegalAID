@@ -4,7 +4,9 @@ Imported by all API routers. Creates the single MongoDB connection used
 across the entire backend.
 """
 import bcrypt
+import hmac
 import jwt
+import os
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
@@ -43,6 +45,23 @@ def check_pw(pw: str, hashed: str) -> bool:
         return bcrypt.checkpw(pw.encode(), hashed.encode())
     except Exception:
         return False
+
+
+# ── Admin auth ──────────────────────────────────────────────────────────────
+# Shared by all admin-only endpoints (CSV export in server.py, journeys admin
+# import in api/journeys_router.py, etc.) — moved here from server.py so
+# non-server modules can use it too without a circular import. The key MUST
+# be sent in the X-Admin-Key header (never a ?key= query param, which leaks
+# into access logs / proxy logs / browser history):
+#   curl -H "X-Admin-Key: $ADMIN_KEY" <API>/api/admin/...
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
+
+
+def check_admin_key(key: Optional[str]) -> None:
+    if not ADMIN_KEY:
+        raise HTTPException(503, "Admin access is not configured on this server.")
+    if not key or not hmac.compare_digest(key, ADMIN_KEY):
+        raise HTTPException(401, "Invalid admin key.")
 
 
 def make_token(user_id: str) -> str:

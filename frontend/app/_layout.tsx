@@ -145,12 +145,21 @@ function AnalyticsIdentitySync() {
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
+  // Safety net: never block app boot forever on a font fetch. If icons
+  // haven't resolved within 4s (e.g. a stalled network request), render the
+  // app anyway — icons repaint themselves the instant the font does arrive,
+  // which is a far better failure mode than an indefinite blank splash.
+  const [timedOut, setTimedOut] = React.useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setTimedOut(true), 4000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
-    if (loaded || error) SplashScreen.hideAsync();
-  }, [loaded, error]);
+    if (loaded || error || timedOut) SplashScreen.hideAsync();
+  }, [loaded, error, timedOut]);
 
-  if (!loaded && !error) return null;
+  if (!loaded && !error && !timedOut) return null;
 
   return (
     <RootErrorBoundary>

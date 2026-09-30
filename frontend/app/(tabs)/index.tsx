@@ -1248,7 +1248,12 @@ export default function ChatScreen() {
         }
       } else {
         // --- Native: stop expo-audio recorder, upload file ---
-        await recorder.stop();
+        // recorder.stop() throws (double-stop / recorder never actually
+        // started / native session already torn down) on some Android
+        // builds — every other recorder.stop() call in this file is
+        // guarded the same way; this one was the odd one out and could
+        // leave the mic UI stuck or surface as an unhandled rejection.
+        try { await recorder.stop(); } catch {}
         const uri = recorder.uri;
         try {
           await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false });

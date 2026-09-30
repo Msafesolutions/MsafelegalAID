@@ -46,9 +46,16 @@ const iconFontMap = (): Record<string, string> =>
 
 // On web: only load the Ionicons font (most used icon family) to prevent
 // the "icon flash" on first render while keeping load time minimal.
-// Full CDN map is only needed in Expo Go (StoreClient) on Android.
-const webFontMap = (): Record<string, string> => ({
-  ionicons: cdnUrl("Ionicons"),
+// Loaded from the LOCAL node_modules copy (bundled by Metro), not the CDN —
+// app boot must never depend on an external network fetch succeeding.
+// If cdn.jsdelivr.net is slow/unreachable (sandboxed/offline preview,
+// corporate proxy, flaky network), useFonts() would hang and the whole app
+// would stay on a blank splash screen until the browser's own connection
+// timeout, since RootLayout returns null until loaded/error resolves.
+// Full CDN map is only needed in Expo Go (StoreClient) on Android, where the
+// local Metro-bundled .ttf is served as 0 bytes by the asset resolver.
+const webFontMap = (): Record<string, any> => ({
+  ionicons: require("../../node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf"),
 });
 
 export const useIconFonts = (): readonly [boolean, Error | null] =>
@@ -56,6 +63,6 @@ export const useIconFonts = (): readonly [boolean, Error | null] =>
     Constants.executionEnvironment === ExecutionEnvironment.StoreClient
       ? iconFontMap()        // Expo Go Android: all families from CDN
       : typeof document !== "undefined"
-        ? webFontMap()       // Web: Ionicons only to fix icon flash
+        ? webFontMap()       // Web: Ionicons only, bundled locally
         : {},                // Native dev/prod build: autolinking handles it
   );

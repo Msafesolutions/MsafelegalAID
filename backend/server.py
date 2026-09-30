@@ -137,7 +137,7 @@ api = APIRouter(prefix="/api")
 
 # ── Modular routers (Phase 1 extraction) ─────────────────────────────────────
 # db/corpus_db/current_user and shared utilities live in dependencies.py (single connection)
-from dependencies import db, corpus_db, current_user, current_user_optional, hash_pw, check_pw, make_token, public_user, meter_llm_use, build_system_prompt, translate_for_retrieval, logger  # noqa: E501
+from dependencies import db, corpus_db, current_user, current_user_optional, hash_pw, check_pw, make_token, public_user, meter_llm_use, build_system_prompt, translate_for_retrieval, logger, check_admin_key as _check_admin_key  # noqa: E501
 from api.auth_router    import router as auth_router
 from api.chat_router    import router as chat_router
 from api.fir_router     import router as fir_router
@@ -700,14 +700,8 @@ async def health():
 # dumps every user's PII and chat history.
 #   curl -H "X-Admin-Key: $ADMIN_KEY" <API>/api/admin/export/users.csv
 # Password hashes are NEVER exported. Rows are streamed so this handles large tables.
-
-ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
-
-def _check_admin_key(key: Optional[str]):
-    if not ADMIN_KEY:
-        raise HTTPException(503, "Admin export is not configured on this server.")
-    if not key or not hmac.compare_digest(key, ADMIN_KEY):
-        raise HTTPException(401, "Invalid admin key.")
+# `_check_admin_key` now lives in dependencies.py (shared with other admin
+# endpoints, e.g. api/journeys_router.py) — imported above.
 
 @api.get("/admin/export/users.csv")
 async def export_users_csv(x_admin_key: Optional[str] = Header(None)):
