@@ -1079,7 +1079,15 @@ async def transcribe(
     WHISPER_HINT_SET = {
         "en", "hi", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa",
         "or", "as", "ur", "sa", "sd", "ne",
+        # Visitor-mode tourist languages
+        "fr", "de", "es", "pt", "it", "ja", "ko", "zh", "ar", "ru",
     }
+    # Screens send either bare ISO codes ("mr") or BCP-47 tags ("mr-IN" from the
+    # FIR assistant). Whisper and the script check only understand the bare
+    # code; an unrecognised tag silently drops the hint and Whisper falls back
+    # to auto-detect, which can return text in an unrelated language.
+    if language:
+        language = re.split(r"[-_]", language.strip())[0].lower() or None
     await meter_llm_use(user, "voice")
     try:
         data = await audio.read()

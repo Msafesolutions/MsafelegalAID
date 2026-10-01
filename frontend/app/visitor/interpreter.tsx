@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Speech from 'expo-speech';
+import { useAudioRecorder, RecordingPresets, setAudioModeAsync, AudioModule } from 'expo-audio';
 import { theme } from '@/src/theme';
 import { loadVisitorSession, VisitorSession } from '@/src/visitor/session';
 import { API_BASE, useAuth } from '@/src/auth';
@@ -38,14 +39,14 @@ export default function InterpreterScreen() {
   const [statusText, setStatusText] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
-  // expo-audio recorder ref (loaded lazily)
-  const recorderRef = useRef<any>(null);
-  const audioModRef = useRef<any>(null);
+  // Native: expo-audio recorder. Web: browser MediaRecorder (expo-audio can't record on web).
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const webRecorderRef = useRef<any>(null);
+  const webStreamRef = useRef<any>(null);
+  const webChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     loadVisitorSession().then(s => setSession(s));
-    // Pre-load expo-audio
-    import('expo-audio').then(m => { audioModRef.current = m; }).catch(() => {});
   }, []);
 
   const touristLang = session?.touristLang.code || 'en';
@@ -110,23 +111,30 @@ export default function InterpreterScreen() {
   // ── Main recording + translation flow ────────────────────────────────────
   const startRecording = useCallback(async () => {
     if (!token) { Alert.alert('Sign in required', 'Sign in to DHARA to use Interpreter.'); return; }
-    const mod = audioModRef.current;
-    if (!mod) { Alert.alert('Not available', 'expo-audio not loaded.'); return; }
-
     try {
-      const perm = await mod.AudioModule.requestRecordingPermissionsAsync();
-      if (!perm.granted) { Alert.alert('Microphone permission denied'); return; }
-      await mod.setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
-
-      // Fallback: use RecordingPresets if direct recorder API is available
-      const rec = new mod.Recording();
-      await rec.prepareToRecordAsync(mod.RecordingOptionsPresets?.HIGH_QUALITY || {
-        android: { extension: '.m4a', outputFormat: 2, audioEncoder: 3, sampleRate: 16000, numberOfChannels: 1, bitRate: 128000 },
-        ios:     { extension: '.m4a', outputFormat: 'aac', audioQuality: 127, sampleRate: 16000, numberOfChannels: 1, bitRate: 128000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
-        web:     { mimeType: 'audio/webm', bitsPerSecond: 128000 },
-      });
-      await rec.startAsync();
-      recorderRef.current = rec;
+      if (Platform.OS === 'web') {
+        const nav = (globalThis as any).navigator;
+        if (!nav?.mediaDevices?.getUserMedia) {
+          Alert.alert('Not available', 'This browser does not support audio recording.');
+          return;
+        }
+        const stream = await nav.mediaDevices.getUserMedia({ audio: true });
+        const WMR = (globalThis as any).MediaRecorder;
+        const mimeType = WMR?.isTypeSupported?.('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+          : WMR?.isTypeSupported?.('audio/mp4') ? 'audio/mp4' : '';
+        const mr = mimeType ? new WMR(stream, { mimeType }) : new WMR(stream);
+        webChunksRef.current = [];
+        mr.ondataavailable = (e: any) => { if (e.data?.size > 0) webChunksRef.current.push(e.data); };
+        mr.start();
+        webStreamRef.current = stream;
+        webRecorderRef.current = mr;
+      } else {
+        const perm = await AudioModule.requestRecordingPermissionsAsync();
+        if (!perm.granted) { Alert.alert('Microphone permission denied'); return; }
+        await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+        await recorder.prepareToRecordAsync();
+        recorder.record();
+      }
       setPhase('recording');
       setStatusText(`Recording ${srcLabel}… (tap stop when done)`);
       setCurrentTranscript('');
@@ -134,21 +142,43 @@ export default function InterpreterScreen() {
     } catch (e: any) {
       Alert.alert('Recording error', e?.message || String(e));
     }
-  }, [token, srcLabel]);
+  }, [token, srcLabel, recorder]);
+
+  // Stops whichever recorder is running; returns a URI whisperTranscribeFile can read ('' if nothing captured).
+  const finishRecording = useCallback(async (): Promise<string> => {
+    if (Platform.OS === 'web') {
+      const mr = webRecorderRef.current;
+      if (!mr) return '';
+      const blob: Blob = await new Promise((resolve) => {
+        mr.onstop = () => resolve(new Blob(webChunksRef.current, { type: mr.mimeType || 'audio/webm' }));
+        mr.stop();
+      });
+      try { webStreamRef.current?.getTracks()?.forEach((t: any) => t.stop()); } catch {}
+      webRecorderRef.current = null;
+      webStreamRef.current = null;
+      webChunksRef.current = [];
+      return blob.size ? URL.createObjectURL(blob) : '';
+    }
+    try { await recorder.stop(); } catch {}
+    try { await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false }); } catch {}
+    return recorder.uri || '';
+  }, [recorder]);
 
   const stopAndProcess = useCallback(async () => {
-    const rec = recorderRef.current;
-    if (!rec) return;
     setPhase('transcribing');
     setStatusText('Transcribing…');
     try {
-      await rec.stopAndUnloadAsync();
-      const uri = rec.getURI?.() || '';
-      recorderRef.current = null;
+      const uri = await finishRecording();
 
       if (!uri) throw new Error('No recording URI');
       const langHint = ISO_TO_BCP47[srcLang] || 'en';
-      const { text } = await whisperTranscribeFile(API_BASE, token!, uri, langHint);
+      let text: string;
+      try {
+        ({ text } = await whisperTranscribeFile(API_BASE, token!, uri, langHint));
+      } finally {
+        if (Platform.OS === 'web') URL.revokeObjectURL(uri);
+      }
+      if (!text.trim()) throw new Error('Could not hear anything. Please speak a little longer and try again.');
       setCurrentTranscript(text);
 
       setPhase('translating');
@@ -170,17 +200,14 @@ export default function InterpreterScreen() {
       setStatusText('');
       Alert.alert('Voice error', sttErrorToMessage(e));
     }
-  }, [mode, srcLang, tgtLang, tgtLabel, token, translateText, playTTS]);
+  }, [mode, srcLang, tgtLang, tgtLabel, token, translateText, playTTS, finishRecording]);
 
   const cancelRecording = useCallback(async () => {
-    const rec = recorderRef.current;
-    if (rec) {
-      try { await rec.stopAndUnloadAsync(); } catch {}
-      recorderRef.current = null;
-    }
+    const uri = await finishRecording();
+    if (uri && Platform.OS === 'web') URL.revokeObjectURL(uri);
     setPhase('idle');
     setStatusText('');
-  }, []);
+  }, [finishRecording]);
 
   if (!session) {
     return (

@@ -725,7 +725,7 @@ Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
         }
         const blobUrl = URL.createObjectURL(audioBlob);
         try {
-          const langCode = FIR_LANGUAGES.find(l => l.code === language)?.sttLang || 'en-IN';
+          const langCode = FIR_LANGUAGES.find(l => l.code === language)?.code || 'en';
           if (!API_BASE || !token) throw new Error('Voice input is unavailable');
           const result = await whisperTranscribeFile(API_BASE, token, blobUrl, langCode);
           const text = result?.text || '';
@@ -746,7 +746,7 @@ Allowed: JPG, PNG, HEIC, MP4, MOV, PDF, DOC, DOCX`);
       await recorder.stop();
       const uri = recorder.uri;
       if (!uri) throw new Error('No recording URI');
-      const langCode = FIR_LANGUAGES.find(l => l.code === language)?.sttLang || 'en-IN';
+      const langCode = FIR_LANGUAGES.find(l => l.code === language)?.code || 'en';
       if (!API_BASE || !token) throw new Error('Voice input is unavailable');
       const result = await whisperTranscribeFile(API_BASE, token, uri, langCode);
       const text = result?.text || '';
