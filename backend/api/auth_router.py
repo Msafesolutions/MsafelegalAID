@@ -21,6 +21,7 @@ from legal import TERMS_VERSION
 from states import is_valid_state, state_name
 from mailer import send_email, password_reset_otp_email, account_deletion_otp_email, email_configured
 from account_deletion import hard_delete_user
+from push import unregister_device
 
 router = APIRouter()
 

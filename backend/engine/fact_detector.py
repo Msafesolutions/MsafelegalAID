@@ -9,6 +9,7 @@ import logging
 from typing import Dict, List, Optional, Tuple
 
 from engine.models import LegalQuery, ClassifyResult, FactCheckResult, CaseState
+from engine.irrelevance_filter import _ENTRY_ACTIONS
 
 logger = logging.getLogger("gandhikar")
 

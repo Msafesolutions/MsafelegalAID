@@ -4,6 +4,7 @@ Extracted from server.py (Phase 1 Modularization).
 Depends on: dependencies.py, config/settings.py
 """
 import io
+import logging
 import re
 import json
 import uuid
@@ -25,7 +26,10 @@ from dependencies import (
 from config.settings import (
     SERVER_CHAT_PROVIDER, SERVER_CHAT_MODEL, EMERGENT_LLM_KEY, LANGUAGES,
     PRO_FREE_SAMPLES, DRAFTS_FREE,
+    PRO_PRICE_INR, PRO_PRICE_LABEL, PRO_PRICE_USD, PRO_PRICE_USD_LABEL,
 )
+from script_guard import check_script_mismatch
+from states import state_name
 from engine.pipeline import (
     run_pre_retrieval, run_post_retrieval,
     save_case_state, classify_turn,
@@ -1045,6 +1049,12 @@ async def consume_draft(payload: dict, user: dict = Depends(current_user)):
 
 # ---------- Voice ----------
 
+def _script_check(text: str, language: str | None) -> dict:
+    """check_script_mismatch() plus the `script_mismatch` key the app reads."""
+    result = check_script_mismatch(text, language)
+    return {**result, "script_mismatch": result["mismatch"]}
+
+
 @router.post("/voice/transcribe")
 async def transcribe(
     audio: UploadFile = File(...),
@@ -1086,7 +1096,7 @@ async def transcribe(
         try:
             kwargs = {**base_kwargs, **({"language": lang_hint} if lang_hint else {})}
             result = await oc.audio.transcriptions.create(**kwargs)
-            return {"text": result.text, **check_script_mismatch(result.text, language)}
+            return {"text": result.text, **_script_check(result.text, language)}
         except Exception as first_err:
             # If we sent a language hint and the proxy rejected it as
             # unsupported, silently retry without the hint so the user still
@@ -1102,7 +1112,7 @@ async def transcribe(
                     lang_hint,
                 )
                 result = await oc.audio.transcriptions.create(**base_kwargs)
-                return {"text": result.text, **check_script_mismatch(result.text, language)}
+                return {"text": result.text, **_script_check(result.text, language)}
             raise
     except Exception as e:
         # A very short hold-and-release (or a race where the recorder captures

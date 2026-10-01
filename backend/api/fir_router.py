@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
 from fastapi.responses import StreamingResponse, Response as _Resp
 from pydantic import BaseModel
 
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 from dependencies import db, corpus_db, current_user, current_user_optional, logger
 from config.settings import EMERGENT_LLM_KEY
 from fir_engine import (
