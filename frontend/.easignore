@@ -41,3 +41,6 @@ __pycache__/
 *.tsbuildinfo
 
 app-example
+
+# stray binary-named junk files break EAS tarball upload (lstat ENOENT)
+*@@*9@8
