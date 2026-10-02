@@ -1,14 +1,19 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-export function resolveApiBase(platform: string, currentHost: string, backend: string, preview: string) {
+export function resolveApiBase(platform: string, currentHost: string, backend: string, _preview: string) {
   const base = backend.replace(/\/+$/, '');
-  if (platform !== 'web' || !currentHost) return base;
-  const host = (value: string) => {
-    try { return value ? new URL(value.includes('://') ? value : `https://${value}`).host.toLowerCase() : ''; }
-    catch { return ''; }
-  };
-  return currentHost.toLowerCase() === host(base) || (host(preview) && currentHost.toLowerCase() === host(preview)) ? '' : base;
+  // On web, THIS app's own domain — preview sandbox OR any production/custom
+  // domain (e.g. app.dhara.msafesolutions.com) — always routes /api/* to this
+  // same backend via the platform's ingress rule. The same-origin relative
+  // path is therefore always correct and must be used.
+  // Bug this replaces: the old logic only recognised two specific hardcoded
+  // hosts and fell back to the PREVIEW backend's absolute URL for any other
+  // host (e.g. the production custom domain), so signup/login on production
+  // silently hit the stale preview backend and got back HTML, which the
+  // client then failed to JSON.parse.
+  if (platform === 'web' && currentHost) return '';
+  return base;
 }
 const extra = Constants.expoConfig?.extra;
 export const API_BASE = resolveApiBase(

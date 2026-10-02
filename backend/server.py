@@ -147,6 +147,34 @@ api.include_router(chat_router)
 api.include_router(fir_router)
 api.include_router(visitor_router)
 
+# ---------------------------------------------------------------------------
+# Build-only fix (live prod bug, 2025-06 — stale-client JSON error):
+# some deployed client builds call /auth/signup, /auth/login, /auth/session
+# WITHOUT the /api/ prefix. On this platform's ingress, paths without /api/
+# route to the frontend (port 3000) and return an HTML page, which the
+# client then fails to JSON.parse. These three aliases are registered on
+# `app` directly (not on `api`, so no /api prefix) to match that exact path,
+# and just forward straight into the existing /api/auth/* handlers below —
+# zero duplicated logic, zero behaviour change, always JSON (FastAPI's
+# default error handlers are JSON too, never HTML).
+from api.auth_router import (
+    RegisterIn as _AliasRegisterIn, LoginIn as _AliasLoginIn, GoogleSessionIn as _AliasGoogleSessionIn,
+    AuthOut as _AliasAuthOut,
+    register as _alias_register_fn, login as _alias_login_fn, google_auth_session as _alias_google_session_fn,
+)
+
+@app.post("/auth/signup", response_model=_AliasAuthOut)
+async def _alias_auth_signup(body: _AliasRegisterIn):
+    return await _alias_register_fn(body)
+
+@app.post("/auth/login", response_model=_AliasAuthOut)
+async def _alias_auth_login(body: _AliasLoginIn):
+    return await _alias_login_fn(body)
+
+@app.post("/auth/session", response_model=_AliasAuthOut)
+async def _alias_auth_session(body: _AliasGoogleSessionIn):
+    return await _alias_google_session_fn(body)
+
 
 
 @app.get("/health")
