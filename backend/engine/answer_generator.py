@@ -147,6 +147,87 @@ def augment_prompt_with_status_guard(prompt: str, hits: Iterable[dict]) -> str:
     return prompt + guard
 
 
+# ── ACTOR-CONDUCT LOCK (structural invariant — see README_DEPLOYMENT.md) ─────
+# Primary defence: a prompt-level instruction (same pattern as the Layer S
+# status-guard above). Only fires when engine.conduct_classifier.classify()
+# (Layer B) has already determined, from positive evidence in the query, that
+# the user is asking about an actor OTHER than themselves.
+
+_OBLIGATION_TOKENS = re.compile(
+    r"\b(must|required to|is liable|are liable|liable|responsible|duty|shall|cannot)\b",
+    re.IGNORECASE,
+)
+# Conservative, high-precision, per-phrase replacements — only the clearest
+# "duty imposed directly on the addressee" phrasings. Deliberately excludes
+# "you cannot ..." from auto-reframing: that phrasing is frequently a RIGHT
+# correctly addressed to the user (e.g. "you cannot be denied an FIR"), and a
+# blind actor-swap would corrupt it into nonsense. "cannot" still counts
+# toward has_obligation_language() for observability, just not auto-rewritten.
+_DIRECT_OBLIGATION_REPLACEMENTS = [
+    (re.compile(r"\byou must\b", re.IGNORECASE), "the {actor} must"),
+    (re.compile(r"\byou shall\b", re.IGNORECASE), "the {actor} shall"),
+    (re.compile(r"\byou are required to\b", re.IGNORECASE), "the {actor} is required to"),
+    (re.compile(r"\byou are liable\b", re.IGNORECASE), "the {actor} is liable"),
+    (re.compile(r"\byou are responsible\b", re.IGNORECASE), "the {actor} is responsible"),
+    (re.compile(r"\byour duty is\b", re.IGNORECASE), "the {actor}'s duty is"),
+]
+_DIRECT_OBLIGATION_TO_USER = re.compile(
+    "|".join(p.pattern for p, _ in _DIRECT_OBLIGATION_REPLACEMENTS), re.IGNORECASE,
+)
+
+
+def augment_prompt_with_actor_conduct_lock(prompt: str, classify_result) -> str:
+    """ACTOR-CONDUCT LOCK — append a reframing instruction when Layer B found
+    a mismatch between who the user says they are and who is actually
+    regulated by the conduct in question. No-op when there is no mismatch.
+    """
+    if not getattr(classify_result, "actor_mismatch", False):
+        return prompt
+    regulated_actor = classify_result.regulated_actor or "the other party"
+    regulated_conduct = classify_result.regulated_conduct or "this matter"
+    user_role = classify_result.user_role or "the user"
+    guard = (
+        "\n\nACTOR-CONDUCT LOCK NOTICE:\n"
+        f"The user identifies as a '{user_role}', NOT as the '{regulated_actor}' who is "
+        f"legally regulated regarding '{regulated_conduct}'. Do NOT phrase any obligation, "
+        f"duty, liability, or must/required/shall language as applying TO the user. "
+        f"Reframe the answer around the '{user_role}''s OWN rights and remedies — what "
+        f"they can do or demand if the '{regulated_actor}' fails to comply — and never "
+        f"present the '{regulated_actor}''s legal duty as if it were the user's own obligation."
+    )
+    return prompt + guard
+
+
+def has_obligation_language(text: str) -> bool:
+    """Pure predicate — true if obligation-language tokens are present."""
+    return bool(_OBLIGATION_TOKENS.search(text or ""))
+
+
+def reframe_misdirected_obligations(text: str, classify_result) -> str:
+    """ACTOR-CONDUCT LOCK — defence-in-depth post-processor.
+
+    If Layer B flagged an actor mismatch AND the generated text still
+    directly addresses the user with obligation language ("You must...",
+    "your duty is..."), soften/reframe it toward the regulated actor. Runs
+    alongside (not instead of) the prompt-level instruction above — the
+    same belt-and-braces pattern as strip_leaked_citations for citations.
+
+    Deliberately does NOT touch "you cannot ..." — that phrasing is
+    frequently a RIGHT correctly addressed to the user (e.g. "you cannot be
+    denied an FIR"), and a blind actor-swap would corrupt it into nonsense.
+    """
+    if not getattr(classify_result, "actor_mismatch", False) or not text:
+        return text
+    if not has_obligation_language(text):
+        return text
+    if not _DIRECT_OBLIGATION_TO_USER.search(text):
+        return text
+    regulated_actor = classify_result.regulated_actor or "the other party"
+    for pattern, template in _DIRECT_OBLIGATION_REPLACEMENTS:
+        text = pattern.sub(template.format(actor=regulated_actor), text)
+    return text
+
+
 # ── Post-processor ────────────────────────────────────────────────────────────
 
 # Includes both acronyms AND the spelled-out "(Indian) Evidence Act" — the

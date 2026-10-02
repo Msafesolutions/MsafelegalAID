@@ -70,6 +70,8 @@ from engine.answer_generator import (
     build_cannot_verify_response,
     augment_prompt_with_status_guard,
     strip_leaked_citations,
+    augment_prompt_with_actor_conduct_lock,
+    reframe_misdirected_obligations,
 )
 
 router = APIRouter()
@@ -749,6 +751,10 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     )
     # Layer M: append status-guard reminder if any cited provision is dead.
     system_prompt = augment_prompt_with_status_guard(system_prompt, list(retrieved) + list(db_hits))
+    # ACTOR-CONDUCT LOCK: if Layer B found the user asking about someone
+    # else's regulated conduct, instruct the LLM not to transfer that
+    # obligation onto the user (see README_DEPLOYMENT.md > Engine Architecture).
+    system_prompt = augment_prompt_with_actor_conduct_lock(system_prompt, _v2_classify)
 
     chat = _ai_build_chat(session_id=session_id, system_message=system_prompt)
 
@@ -949,6 +955,11 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         # the model's output. The verified citations are shown by the UI from the
         # `citation` frames — the model MUST NOT emit them itself.
         sanitized = sanitize_model_output(full) if full else full
+        # ACTOR-CONDUCT LOCK: defence-in-depth — reframe any obligation
+        # language still directly addressed to the user when Layer B found
+        # an actor mismatch (prompt-level instruction is the primary guard).
+        if sanitized:
+            sanitized = reframe_misdirected_obligations(sanitized, _v2_classify)
 
         # Reply-language enforcement. A user who selected Tamil and receives
         # English has been given nothing, so if the finished reply is not in the

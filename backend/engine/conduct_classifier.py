@@ -143,6 +143,8 @@ def classify(lq: LegalQuery) -> ClassifyResult:
     primary_domain, primary_conf, action_basis = scored[0]
     secondary = [d for d, _, _ in scored[1:3]]
 
+    regulated_actor, regulated_conduct, user_role, actor_mismatch = extract_actor_conduct(lq)
+
     result = ClassifyResult(
         primary_domain=primary_domain,
         secondary_domains=secondary,
@@ -150,10 +152,82 @@ def classify(lq: LegalQuery) -> ClassifyResult:
         action_basis=action_basis,
         excluded_domains=list(excluded.keys()),
         exclusion_reasons=excluded,
+        regulated_actor=regulated_actor,
+        regulated_conduct=regulated_conduct,
+        user_role=user_role,
+        actor_mismatch=actor_mismatch,
     )
-    logger.info("[classify] domain=%s conf=%.2f basis=%s excl=%s",
-                primary_domain, primary_conf, action_basis, list(excluded.keys()))
+    logger.info("[classify] domain=%s conf=%.2f basis=%s excl=%s actor_mismatch=%s",
+                primary_domain, primary_conf, action_basis, list(excluded.keys()), actor_mismatch)
     return result
+
+
+# ── ACTOR-CONDUCT LOCK — Layer B extraction ──────────────────────────────────
+# Structural invariant (see README_DEPLOYMENT.md > Engine Architecture).
+# Before any obligation language (must/required/liable/responsible/duty/
+# shall/cannot) reaches the user, the engine answers four questions:
+#   1. WHO is regulated by this law/rule?       -> regulated_actor
+#   2. WHAT specific conduct does it regulate?   -> regulated_conduct
+#   3. Is the user asking about that actor?      -> user_role == regulated_actor ?
+#   4. Did the user describe performing it?      -> same check, via actor_roles
+# If 3 or 4 is "no", the engine must NOT transfer that obligation to the user
+# (enforced downstream in engine/answer_generator.py's prompt augmentation +
+# output reframing, wired into chat_router.py).
+
+# Small alias groups so "officer" / "police" / "cop" etc. are recognised as
+# the same regulated actor without needing an exhaustive exact-match list.
+_ACTOR_ALIASES: List[set] = [
+    {"police", "officer", "police officer", "cop", "constable", "sho", "station house officer"},
+    {"landlord", "owner", "property owner", "property_owner"},
+    {"employer", "company", "management", "organisation", "organization"},
+    {"organizer", "organiser", "protest organizer", "protest organiser", "event organizer"},
+]
+
+
+def _normalise_role(role: Optional[str]) -> str:
+    return (role or "").strip().lower()
+
+
+def _roles_match(a: Optional[str], b: Optional[str]) -> bool:
+    """True if two role strings plausibly refer to the same actor."""
+    na, nb = _normalise_role(a), _normalise_role(b)
+    if not na or not nb:
+        return False
+    if na == nb or na in nb or nb in na:
+        return True
+    for group in _ACTOR_ALIASES:
+        if any(na == g or na in g for g in group) and any(nb == g or nb in g for g in group):
+            return True
+    return False
+
+
+def extract_actor_conduct(lq: LegalQuery) -> tuple:
+    """Layer B — actor-conduct extraction (pre-retrieval).
+
+    Returns (regulated_actor, regulated_conduct, user_role, actor_mismatch).
+
+    regulated_actor / regulated_conduct come straight from what the query
+    itself says is performing / being done (lq.actor_roles / lq.actions) —
+    this is architecture-level, not a per-domain lookup table, so it applies
+    uniformly to every domain without needing a maintained action→actor map.
+
+    actor_mismatch is ONLY ever True when the user has EXPLICITLY stated
+    their own role (asking_as_role) and it does not match the regulated
+    actor — i.e. positive evidence of a mismatch. If the user's role is not
+    stated, we default to no-mismatch (preserves existing behaviour for the
+    vast majority of queries where this never comes up).
+    """
+    regulated_actor = (lq.actor_roles[0] if lq.actor_roles else None)
+    regulated_conduct = (
+        lq.actions[0] if lq.actions
+        else (lq.candidate_issues[0] if lq.candidate_issues else None)
+    )
+    user_role = lq.asking_as_role
+
+    actor_mismatch = bool(
+        user_role and regulated_actor and not _roles_match(user_role, regulated_actor)
+    )
+    return regulated_actor, regulated_conduct, user_role, actor_mismatch
 
 
 def get_domain_statutes(domain_id: str) -> List[str]:

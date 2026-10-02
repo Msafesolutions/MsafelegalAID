@@ -29,6 +29,13 @@ class LegalQuery(BaseModel):
     missing_material_facts: List[str] = Field(default_factory=list)
     urgency: str = "standard"           # immediate | standard | informational
     requested_outcome: str = ""
+    # ACTOR-CONDUCT LOCK (structural invariant — see README_DEPLOYMENT.md).
+    # The role the USER explicitly identifies as (e.g. "tenant", "bystander",
+    # "journalist", "employee", "victim") — DISTINCT from `actor_roles`, which
+    # is who PERFORMS the regulated conduct described in the query (e.g.
+    # "landlord", "police", "employer"). These two are often different
+    # people; conflating them is exactly the bug this invariant prevents.
+    asking_as_role: Optional[str] = None
 
     def merge_update(self, new: "LegalQuery") -> "LegalQuery":
         """Merge a CLARIFICATION turn into existing state.
@@ -75,6 +82,12 @@ class ClassifyResult(BaseModel):
     action_basis: str = ""
     excluded_domains: List[str] = Field(default_factory=list)
     exclusion_reasons: Dict[str, str] = Field(default_factory=dict)
+    # ACTOR-CONDUCT LOCK fields (see README_DEPLOYMENT.md > Engine Architecture).
+    regulated_actor: Optional[str] = None      # WHO is regulated by this conduct
+    regulated_conduct: Optional[str] = None    # WHAT conduct is regulated
+    user_role: Optional[str] = None            # who the USER says they are
+    actor_mismatch: bool = False               # True => user is asking about
+                                                # someone ELSE's obligations
 
 
 class FactCheckResult(BaseModel):
