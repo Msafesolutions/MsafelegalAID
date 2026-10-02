@@ -10,7 +10,7 @@ import { theme } from '@/src/theme';
 type Session = { id: string; title: string; updated_at: string; language: string };
 
 export default function History() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -38,11 +38,31 @@ export default function History() {
     ]);
   };
 
+  // Guest Mode: persistent chat history requires a registered account.
+  if (user?.is_guest) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']} testID="history-screen">
+        <View style={styles.header}>
+          <Text style={styles.h1}>Your Conversations</Text>
+          <Text style={styles.h2}>Every question you&apos;ve asked, saved.</Text>
+        </View>
+        <View style={styles.empty}>
+          <Ionicons name="lock-closed-outline" size={64} color={theme.colors.brandSecondary} />
+          <Text style={styles.emptyTitle}>Create a free account</Text>
+          <Text style={styles.emptySub}>Saved conversation history is available for registered users.</Text>
+          <Pressable testID="guest-history-signup-btn" style={styles.startBtn} onPress={() => router.push('/signup')}>
+            <Text style={styles.startBtnText}>Create Free Account</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']} testID="history-screen">
       <View style={styles.header}>
         <Text style={styles.h1}>Your Conversations</Text>
-        <Text style={styles.h2}>Every question you've asked, saved.</Text>
+        <Text style={styles.h2}>Every question you&apos;ve asked, saved.</Text>
       </View>
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={theme.colors.brand} /></View>

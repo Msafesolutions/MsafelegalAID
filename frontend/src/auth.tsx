@@ -17,7 +17,7 @@ const AUTO_SPEAK_KEY = 'dhara_auto_speak';
 const TTS_VOLUME_KEY = 'dhara_tts_volume';
 const TTS_VOICE_KEY  = 'dhara_tts_voice';
 
-export type User = { id: string; email: string; name: string; phone?: string; language: string; state?: string | null; state_name?: string; is_grandfathered?: boolean; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; drafts_used?: number; drafts_free_limit?: number; drafts_remaining?: number; daily_queries_cap?: number | null; daily_queries_left?: number | null; daily_questions_cap?: number | null; daily_questions_left?: number | null; daily_voice_cap?: number | null; daily_voice_left?: number | null; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string };
+export type User = { id: string; email: string; name: string; phone?: string; language: string; state?: string | null; state_name?: string; is_grandfathered?: boolean; is_pro?: boolean; pro_since?: string | null; pro_samples_used?: number; pro_samples_limit?: number; pro_samples_remaining?: number; drafts_used?: number; drafts_free_limit?: number; drafts_remaining?: number; daily_queries_cap?: number | null; daily_queries_left?: number | null; daily_questions_cap?: number | null; daily_questions_left?: number | null; daily_voice_cap?: number | null; daily_voice_left?: number | null; terms_accepted?: boolean; terms_version?: string; terms_accepted_at?: string; is_guest?: boolean; guest_question_count?: number; guest_question_limit?: number; guest_expires_at?: string };
 export type Language = { code: string; name: string; native: string; tts: string };
 export type ModelChoice = { label: string; recommended?: boolean };
 
@@ -38,6 +38,8 @@ type AuthCtx = {
   setUserState: (code: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, phone: string, terms_accepted: boolean, terms_version: string) => Promise<void>;
+  /** Anonymous trial — no email/phone/password. Server enforces a 5-question quota + 24h expiry. */
+  continueAsGuest: (language?: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -144,6 +146,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({ email, password, name, phone, terms_accepted, terms_version }),
     });
     if (!r.ok) throw new Error((await r.json()).detail || 'Register failed');
+    const data = await r.json();
+    await persist(data.token, data.user);
+  };
+
+  const continueAsGuest = async (langCode?: string) => {
+    const r = await fetch(`${API}/api/auth/guest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: langCode || language.code || 'en' }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || 'Could not start guest session');
     const data = await r.json();
     await persist(data.token, data.user);
   };
@@ -271,7 +284,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token, forceLogout]);
 
   return (
-    <Ctx.Provider value={{ token, user, loading, language, setLanguage, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, ttsVoiceMode, setTtsVoiceMode, setUserState, login, register, loginWithGoogle, logout, refreshUser, hydrateSession: persist, sessionExpired, clearSessionExpired, forceLogout }}>
+    <Ctx.Provider value={{ token, user, loading, language, setLanguage, autoSpeak, setAutoSpeak, ttsVolume, setTtsVolume, ttsVoiceMode, setTtsVoiceMode, setUserState, login, register, continueAsGuest, loginWithGoogle, logout, refreshUser, hydrateSession: persist, sessionExpired, clearSessionExpired, forceLogout }}>
       {children}
     </Ctx.Provider>
   );

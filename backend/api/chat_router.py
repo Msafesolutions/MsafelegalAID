@@ -227,12 +227,62 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     session_id = body.session_id or str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
+    # -------- Guest Mode: 24h expiry + 5-question quota --------
+    # Guests are real `users` docs (is_guest=True, minted by POST /api/auth/guest)
+    # that flow through this ENTIRE pipeline unchanged below — this is the only
+    # new block. Mode is pinned to "basic" so a guest never reaches the
+    # Pro-paywall branch right after this.
+    is_guest = bool(user.get("is_guest"))
+    guest_question_count: Optional[int] = None
+    guest_question_limit = int(user.get("guest_question_limit", 5)) if is_guest else None
+    guest_warning = False
+    if is_guest:
+        expires_raw = user.get("guest_expires_at")
+        try:
+            expires_dt = datetime.fromisoformat(expires_raw) if expires_raw else None
+        except Exception:
+            expires_dt = None
+        if expires_dt and datetime.now(timezone.utc) > expires_dt:
+            raise HTTPException(401, {
+                "guest_expired": True,
+                "message": "Your guest session has expired. Create a free account to keep using Dhara.",
+            })
+        current_count = int(user.get("guest_question_count", 0))
+        if current_count >= guest_question_limit:
+            def _guest_sse(obj: dict) -> bytes:
+                return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8")
+
+            async def _guest_limit_gen():
+                yield _guest_sse({
+                    "type": "session", "session_id": session_id, "tier": "guest", "mode": "basic",
+                    "sample_consumed": False, "samples_remaining_after": 0,
+                    "guest": True, "guest_question_count": guest_question_limit,
+                    "guest_question_limit": guest_question_limit,
+                })
+                yield _guest_sse({
+                    "type": "guest_limit_reached",
+                    "message": "You've reached the guest limit. Create a free account to continue.",
+                })
+                yield _guest_sse({"type": "done"})
+            return StreamingResponse(
+                _guest_limit_gen(), media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+        updated = await db.users.find_one_and_update(
+            {"id": user["id"]},
+            {"$inc": {"guest_question_count": 1}},
+            return_document=True,
+        )
+        guest_question_count = int((updated or {}).get("guest_question_count", current_count + 1))
+        guest_warning = guest_question_count == guest_question_limit - 1
+
     # -------- Paywall enforcement for Pro-mode capabilities --------
     # Basic mode → always allowed, unlimited.
     # Pro mode + is_pro → allowed, no counter.
     # Pro mode + not is_pro + samples_used < N → allowed as SAMPLE (increment counter).
     # Pro mode + not is_pro + samples_used >= N → HTTP 402 with paywall payload.
-    mode = (body.mode or "basic").lower()
+    # Guests are always pinned to basic mode — they never see the Pro paywall.
+    mode = "basic" if is_guest else (body.mode or "basic").lower()
     is_pro_user = bool(user.get("is_pro"))
     samples_used = int(user.get("pro_samples_used", 0))
     is_sample_consumption = False
@@ -324,11 +374,14 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
     # If Layer C says we need a material clarification question, emit it and stop.
     if _v2_fact.answer_mode == "ESCALATE" and _v2_fact.follow_up_question:
         async def _clarify_gen():
-            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id, 'tier': 'free' if not is_pro_user else 'pro', 'mode': mode, 'sample_consumed': False, 'samples_remaining_after': PRO_FREE_SAMPLES - samples_used}, ensure_ascii=False)}\n\n".encode()
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id, 'tier': 'guest' if is_guest else ('pro' if is_pro_user else 'free'), 'mode': mode, 'sample_consumed': False, 'samples_remaining_after': PRO_FREE_SAMPLES - samples_used, 'guest': is_guest, 'guest_question_count': guest_question_count, 'guest_question_limit': guest_question_limit, 'guest_warning': guest_warning}, ensure_ascii=False)}\n\n".encode()
             q = _v2_fact.follow_up_question
             yield f"data: {json.dumps({'type': 'delta', 'content': q}, ensure_ascii=False)}\n\n".encode()
             await db.messages.insert_one({"id": str(uuid.uuid4()), "session_id": session_id, "user_id": user["id"], "role": "assistant", "content": q, "language": body.language, "mode": mode, "status": "clarification_asked", "created_at": datetime.now(timezone.utc).isoformat(), "timestamp": datetime.now(timezone.utc).isoformat()})
             await save_case_state(db, session_id, _v2_state)
+            if is_guest and guest_question_count == guest_question_limit:
+                _limit_msg = "You've reached the guest limit. Create a free account to continue."
+                yield f"data: {json.dumps({'type': 'guest_limit_reached', 'message': _limit_msg}, ensure_ascii=False)}\n\n".encode()
             yield f"data: {json.dumps({'type': 'done'})}\n\n".encode()
         return StreamingResponse(_clarify_gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -758,10 +811,14 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         yield sse({
             "type": "session",
             "session_id": session_id,
-            "tier": "pro" if is_pro_user else "free",
+            "tier": "guest" if is_guest else ("pro" if is_pro_user else "free"),
             "mode": mode,
             "sample_consumed": is_sample_consumption,
             "samples_remaining_after": max(0, PRO_FREE_SAMPLES - samples_used - (1 if is_sample_consumption else 0)),
+            "guest": is_guest,
+            "guest_question_count": guest_question_count,
+            "guest_question_limit": guest_question_limit,
+            "guest_warning": guest_warning,
         })
         # Emit verified citations FIRST — the UI shows these in a separate boxed panel.
         # The model is instructed NEVER to include section numbers/statutory text in its
@@ -866,6 +923,8 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
             yield sse({"type": "delta", "content": refusal_text})
             await save_assistant(refusal_text, error=None)
             await save_case_state(db, session_id, _v2_state)
+            if is_guest and guest_question_count == guest_question_limit:
+                yield sse({"type": "guest_limit_reached", "message": "You've reached the guest limit. Create a free account to continue."})
             yield sse({"type": "done"})
             return
 
@@ -924,6 +983,8 @@ async def chat_stream(body: ChatIn, user: dict = Depends(current_user)):
         await save_assistant(sanitized or full, errored)
         # Gate 2: persist updated conversation state (turn count, legal_query, domain)
         await save_case_state(db, session_id, _v2_state)
+        if is_guest and guest_question_count == guest_question_limit:
+            yield sse({"type": "guest_limit_reached", "message": "You've reached the guest limit. Create a free account to continue."})
         yield sse({"type": "done"})
 
     return StreamingResponse(

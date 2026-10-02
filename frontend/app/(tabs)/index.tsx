@@ -220,6 +220,11 @@ export default function ChatScreen() {
     message: string;
   }>(null);
   const [samplesRemaining, setSamplesRemaining] = useState<number | null>(null);
+  // Guest Mode: 5-question quota banner/limit state, driven by SSE "session"
+  // and "guest_limit_reached" frames from /api/chat/stream.
+  const [guestQuota, setGuestQuota] = useState<{
+    count: number; limit: number; warning: boolean; limitReached: boolean; limitMessage: string | null;
+  }>({ count: user?.guest_question_count ?? 0, limit: user?.guest_question_limit ?? 5, warning: false, limitReached: false, limitMessage: null });
   const [, setSttProviderLabel] = useState<string>('');
   // WhatsApp-style voice UX state
   const [transcriptPreview, setTranscriptPreview] = useState<string>('');
@@ -485,6 +490,7 @@ export default function ChatScreen() {
     async (text: string) => {
       const q = text.trim();
       if (!q || streaming || !token) return;
+      if (user?.is_guest && guestQuota.limitReached) return;
       const userId = Math.random().toString(36).slice(2);
       const assistantId = Math.random().toString(36).slice(2);
       const modeToSend: 'basic' | 'pro' = proMode ? 'pro' : 'basic';
@@ -594,6 +600,10 @@ export default function ChatScreen() {
         // SSE session-frame update against a stale in-flight response.
         const capturedConvKey = convKeyRef.current;
         const stateMeta: { prompt: string | null; note: string | null } = { prompt: null, note: null };
+        const guestMeta: {
+          count: number | null; limit: number | null; warning: boolean;
+          limitReached: boolean; limitMessage: string | null;
+        } = { count: null, limit: null, warning: false, limitReached: false, limitMessage: null };
         const parseSseBuffer = (
           buf: string,
           prevAcc: string,
@@ -634,6 +644,15 @@ export default function ChatScreen() {
                 if (typeof payload.samples_remaining_after === 'number') {
                   setSamplesRemaining(payload.samples_remaining_after);
                 }
+                if (payload.guest === true) {
+                  if (typeof payload.guest_question_count === 'number') guestMeta.count = payload.guest_question_count;
+                  if (typeof payload.guest_question_limit === 'number') guestMeta.limit = payload.guest_question_limit;
+                  if (payload.guest_warning === true) guestMeta.warning = true;
+                }
+                break;
+              case 'guest_limit_reached':
+                guestMeta.limitReached = true;
+                if (typeof payload.message === 'string') guestMeta.limitMessage = payload.message;
                 break;
               case 'citation':
                 if (payload.citation && typeof payload.citation === 'object') {
@@ -763,6 +782,20 @@ export default function ChatScreen() {
           ),
         );
 
+        // -------- Guest Mode: quota banner state + analytics --------
+        if (user?.is_guest) {
+          trackEvent('guest_question_asked', { count: guestMeta.count ?? undefined });
+          setGuestQuota((prev) => ({
+            count: guestMeta.count ?? prev.count,
+            limit: guestMeta.limit ?? prev.limit,
+            warning: guestMeta.warning,
+            limitReached: guestMeta.limitReached || prev.limitReached,
+            limitMessage: guestMeta.limitMessage ?? prev.limitMessage,
+          }));
+          if (guestMeta.warning) trackEvent('guest_limit_warning');
+          if (guestMeta.limitReached) trackEvent('guest_limit_reached');
+        }
+
         // Auto-speak the reply if the user has that setting on and we got real text
         if (autoSpeak && displayText.trim().length && !hadError) {
           // slight delay so the message renders before speech starts
@@ -819,7 +852,7 @@ export default function ChatScreen() {
         setStreaming(false);
       }
     },
-    [streaming, token, sessionId, language, proMode, refreshUser, autoSpeak, forceLogout]
+    [streaming, token, sessionId, language, proMode, refreshUser, autoSpeak, forceLogout, user, guestQuota.limitReached]
   );
 
   /**
@@ -1974,6 +2007,41 @@ export default function ChatScreen() {
           {streaming && <ActivityIndicator style={{ marginTop: 12 }} color={theme.colors.brand} />}
         </ScrollView>
 
+        {/* Guest Mode: 1-question-left warning (non-blocking, input stays usable) */}
+        {!!user?.is_guest && guestQuota.warning && !guestQuota.limitReached && (
+          <View style={styles.guestWarningBanner} testID="guest-warning-banner">
+            <Ionicons name="information-circle-outline" size={18} color={theme.dhara.navy} />
+            <Text style={styles.guestWarningText}>
+              You have 1 free question left. Create a free account to save your legal history and continue using DHARA.
+            </Text>
+          </View>
+        )}
+
+        {/* Guest Mode: limit reached — blocks further questions, offers conversion */}
+        {!!user?.is_guest && guestQuota.limitReached && (
+          <View style={styles.guestLimitBar} testID="guest-limit-bar">
+            <Text style={styles.guestLimitText}>
+              {guestQuota.limitMessage || "You've reached the guest limit. Create a free account to continue."}
+            </Text>
+            <View style={styles.guestLimitBtnRow}>
+              <Pressable
+                testID="guest-create-account-btn"
+                style={styles.guestLimitPrimaryBtn}
+                onPress={() => { trackEvent('guest_converted_to_account'); router.push('/signup'); }}
+              >
+                <Text style={styles.guestLimitPrimaryBtnText}>Create Free Account</Text>
+              </Pressable>
+              <Pressable
+                testID="guest-sign-in-btn"
+                style={styles.guestLimitSecondaryBtn}
+                onPress={() => router.push('/login')}
+              >
+                <Text style={styles.guestLimitSecondaryBtnText}>Sign In</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
         {/* Unified input / recording bar — mic button always mounted for gesture continuity */}
         {locked && recording ? (
           /* Hands-free locked recording bar — replaces the composer entirely.
@@ -2077,7 +2145,7 @@ export default function ChatScreen() {
                   placeholder={`Ask in ${language.native}…`}
                   placeholderTextColor={theme.colors.onSurfaceTertiary}
                   multiline
-                  editable={!streaming && !transcribing}
+                  editable={!streaming && !transcribing && !(user?.is_guest && guestQuota.limitReached)}
                   returnKeyType={Platform.OS !== 'web' ? 'send' : 'default'}
                   blurOnSubmit={false}
                   onSubmitEditing={
@@ -2776,6 +2844,30 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colors.divider,
     backgroundColor: theme.colors.surface,
   },
+  guestWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.dhara.gold + '33',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.divider,
+  },
+  guestWarningText: { flex: 1, color: theme.colors.onSurface, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  guestLimitBar: {
+    backgroundColor: theme.colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.divider,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+  guestLimitText: { color: theme.colors.onSurface, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  guestLimitBtnRow: { flexDirection: 'row', gap: theme.spacing.sm },
+  guestLimitPrimaryBtn: { flex: 1, backgroundColor: theme.colors.brand, borderRadius: theme.radius.md, padding: theme.spacing.md, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  guestLimitPrimaryBtnText: { color: theme.colors.onBrandPrimary, fontWeight: '700', fontSize: 15 },
+  guestLimitSecondaryBtn: { flex: 1, borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing.md, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  guestLimitSecondaryBtnText: { color: theme.colors.onSurface, fontWeight: '700', fontSize: 15 },
   input: {
     flex: 1,
     minHeight: 48,

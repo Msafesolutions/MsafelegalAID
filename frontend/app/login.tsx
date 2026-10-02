@@ -5,15 +5,17 @@ import { useRouter, Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth';
 import { theme } from '@/src/theme';
+import { trackEvent } from '@/src/analytics';
 
 export default function Login() {
-  const { login, loginWithGoogle, sessionExpired, clearSessionExpired } = useAuth();
+  const { login, loginWithGoogle, continueAsGuest, sessionExpired, clearSessionExpired } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const onSubmit = async () => {
@@ -41,6 +43,21 @@ export default function Login() {
       setError(e?.message || 'Google sign-in failed');
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const onGuestContinue = async () => {
+    setError(null);
+    clearSessionExpired();
+    setGuestLoading(true);
+    try {
+      await continueAsGuest();
+      trackEvent('guest_started');
+      router.replace('/(tabs)/home');
+    } catch (e: any) {
+      setError(e?.message || 'Could not start guest session');
+    } finally {
+      setGuestLoading(false);
     }
   };
 
@@ -152,6 +169,29 @@ export default function Login() {
             </View>
           </View>
 
+          {/* ── Guest Mode ── */}
+          <View style={styles.guestCard} testID="guest-mode-card">
+            <Text style={styles.guestHeading}>Try DHARA without signing up</Text>
+            <Text style={styles.guestBody}>
+              Ask up to 5 legal questions as a guest. Create a free account anytime to save your conversations and documents.
+            </Text>
+            <Pressable
+              testID="continue-as-guest-button"
+              style={[styles.guestBtn, guestLoading && { opacity: 0.6 }]}
+              disabled={guestLoading}
+              onPress={onGuestContinue}
+            >
+              {guestLoading ? (
+                <ActivityIndicator color={theme.colors.onSurface} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="person-outline" size={18} color={theme.colors.onSurface} />
+                  <Text style={styles.guestBtnText}>Continue as Guest</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+
           <Text style={styles.footer}>सत्य • अहिंसा • अधिकार</Text>
           <Text testID="login-copyright" style={styles.copyright}>© {new Date().getFullYear()} Callistus Moses · An Msafe product</Text>
         </ScrollView>
@@ -190,6 +230,18 @@ const styles = StyleSheet.create({
   // "Forgot password?": navy-on-cream — 11.92:1 ✅ (already had underline)
   forgotLink: { color: theme.dhara.textPrimary, fontWeight: '600', fontSize: 14, textDecorationLine: 'underline' },
   error: { color: theme.colors.error, marginTop: theme.spacing.md },
+  guestCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.lg,
+    marginTop: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  guestHeading: { fontFamily: theme.fonts.display, fontSize: 17, color: theme.colors.onSurface, fontWeight: '700', textAlign: 'center' },
+  guestBody: { color: theme.colors.onSurfaceSecondary, fontSize: 13, textAlign: 'center', marginTop: theme.spacing.sm, lineHeight: 18 },
+  guestBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: theme.radius.md, padding: theme.spacing.md, minHeight: 48, marginTop: theme.spacing.md, backgroundColor: theme.colors.surfaceSecondary },
+  guestBtnText: { color: theme.colors.onSurface, fontWeight: '700', fontSize: 15 },
   sessionExpiredBanner: {
     flexDirection: 'row',
     alignItems: 'center',

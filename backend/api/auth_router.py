@@ -9,7 +9,7 @@ import httpx
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from pydantic import BaseModel, EmailStr, Field
 
 from dependencies import db, current_user, hash_pw, check_pw, make_token, public_user, logger
@@ -39,6 +39,9 @@ class RegisterIn(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+
+class GuestStartIn(BaseModel):
+    language: str = "en"
 
 class ForgotPasswordIn(BaseModel):
     email: EmailStr
@@ -125,6 +128,68 @@ async def login(body: LoginIn):
     if not user or not check_pw(body.password, user.get("password_hash", "")):
         raise HTTPException(401, "Invalid credentials")
     return {"token": make_token(user["id"]), "user": public_user(user)}
+
+
+# ---- Guest Mode: anonymous trial, no email/phone/password ----
+# A guest is a real `users` document (is_guest=True) that mints a normal JWT
+# via the SAME make_token()/current_user() used by everyone else — the core
+# auth code path below is completely untouched. The 5-question quota and 24h
+# expiry are enforced server-side in chat_router.chat_stream(), keyed off the
+# fields written here. IP rate-limiting (reusing the existing usage_daily
+# counter pattern) stops someone farming unlimited 5-question sessions by
+# repeatedly refreshing the app.
+GUEST_SESSION_HOURS = 24
+GUEST_QUESTION_LIMIT = 5
+GUEST_IP_DAILY_LIMIT = 15
+
+
+@router.post("/auth/guest", response_model=AuthOut)
+async def start_guest(body: GuestStartIn, request: Request):
+    ip = (request.client.host if request.client else "unknown") or "unknown"
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    throttle = await db.usage_daily.find_one_and_update(
+        {"scope": "guest_ip", "day": day, "ip": ip},
+        {"$inc": {"count": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    if int(throttle.get("count", 0)) > GUEST_IP_DAILY_LIMIT:
+        raise HTTPException(
+            429,
+            "Too many guest sessions started from this network today. "
+            "Please create a free account to continue.",
+        )
+
+    now = datetime.now(timezone.utc)
+    uid = f"guest_{uuid.uuid4().hex[:16]}"
+    doc = {
+        "id": uid,
+        "email": f"{uid}@guest.dhara.local",
+        "name": "Guest",
+        "phone": "",
+        "password_hash": "",
+        "language": (body.language or "en"),
+        "is_pro": False,
+        "pro_samples_used": 0,
+        "drafts_used": 0,
+        "is_grandfathered": False,
+        "is_guest": True,
+        "guest_created_at": now.isoformat(),
+        "guest_expires_at": (now + timedelta(hours=GUEST_SESSION_HOURS)).isoformat(),
+        "guest_question_count": 0,
+        "guest_question_limit": GUEST_QUESTION_LIMIT,
+        "terms_accepted": True,
+        "terms_version": TERMS_VERSION,
+        "terms_accepted_at": now.isoformat(),
+        "created_at": now.isoformat(),
+    }
+    await db.users.insert_one(doc)
+    out = public_user(doc)
+    out["is_guest"] = True
+    out["guest_question_count"] = 0
+    out["guest_question_limit"] = GUEST_QUESTION_LIMIT
+    out["guest_expires_at"] = doc["guest_expires_at"]
+    return {"token": make_token(uid), "user": out}
 
 
 # ---- Google Sign-In via Emergent OAuth ----
@@ -423,6 +488,11 @@ async def verify_deletion_otp(body: VerifyDeletionOTPIn):
 @router.get("/auth/me")
 async def me(user: dict = Depends(current_user)):
     out = public_user(user)
+    out["is_guest"] = bool(user.get("is_guest"))
+    if out["is_guest"]:
+        out["guest_question_count"] = int(user.get("guest_question_count", 0))
+        out["guest_question_limit"] = int(user.get("guest_question_limit", GUEST_QUESTION_LIMIT))
+        out["guest_expires_at"] = user.get("guest_expires_at")
     # Today's LLM allowance. Free users share ONE 30-query/day bucket across
     # both text and voice — voice is an accessibility floor, not a premium
     # feature. Pro users are unlimited (no per-user cap).

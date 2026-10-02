@@ -8,7 +8,7 @@ import { theme } from '@/src/theme';
 import { Bookmark, loadLocal, removeBookmark, syncBookmarks } from '@/src/bookmarks';
 
 export default function SavedScreen() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [items, setItems] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,6 +39,25 @@ export default function SavedScreen() {
     const next = await removeBookmark(API_BASE as string, token, clientId);
     setItems(next);
   };
+
+  // Guest Mode: saved/bookmarked answers require a registered account.
+  if (user?.is_guest) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']} testID="saved-screen">
+        <View style={styles.header}>
+          <Text style={styles.h1}>Saved answers</Text>
+          <Text style={styles.h2}>Kept on this phone — opens without internet</Text>
+        </View>
+        <View style={styles.empty}>
+          <Ionicons name="lock-closed-outline" size={56} color={theme.colors.brandSecondary} />
+          <Text style={styles.emptyTitle}>Create a free account</Text>
+          <Text style={styles.emptySub}>
+            Saving answers is available for registered users. Create a free account to bookmark and keep answers.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (loading) {
     return (
